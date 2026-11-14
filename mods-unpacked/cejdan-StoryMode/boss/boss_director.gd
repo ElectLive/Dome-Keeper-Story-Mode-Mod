@@ -48,6 +48,8 @@ var arena: Rect2 = Rect2()
 var _booted: bool = false
 var _seal_flash: float = 0.0
 var _cam_blend: float = 0.0
+var _chase_left_dome: bool = false
+var dev_path: Array = []      # the shaft `--boss=chase` drilled (tile cells, bottom to top)
 
 
 static func instance():
@@ -205,6 +207,7 @@ func _resume() -> void:
 				_stop_waves()
 				var k = Keepers.first()
 				_start_chase(layer.to_local(k.global_position) + Vector2(0, 220))
+				_chase_left_dome = true
 		"finale":
 			if _ensure_layer():
 				_stop_waves()
@@ -284,6 +287,7 @@ func _start_chase(origin: Vector2) -> void:
 	chase.name = "Chase"
 	layer.add_child(chase)
 	chase.setup(health, origin)
+	_chase_left_dome = false
 	Sfx.play("roar", -2.0, 1.2)
 	InputSystem.shake(18.0, 1.0, 18.0)
 
@@ -347,20 +351,25 @@ func _keeper_died(cause: String) -> void:
 
 
 # Dev command (editor only): `-- --story --boss` drops the keeper into Velle's
-# chamber with Heat Shielding IV and the Suit Blaster; `--boss=chase` starts
-# at the chase (Velle already dead), `--boss=finale` at the surface battle.
+# chamber; `--boss=chase` starts at the chase (Velle already dead, a winding
+# shaft drilled from the chamber up to the dome), `--boss=finale` at the
+# surface battle. All three start with the gear a keeper has by then
+# (dev/boss_dev.gd): Heat Shielding IV, the Suit Blaster, all of the drill and
+# the jetpack, Laser III.
 func _dev_boss(what: String) -> void:
 	ModLoaderLog.info("Dev command: boss (%s)" % what, Story.LOG)
 	if not _ensure_layer():
 		return
+	var dev = load(Story.MOD_DIR + "dev/boss_dev.gd")
 	var keeper = Keepers.first()
 	Data.apply("team1.suit.heatshield", 4)
-	if not GameWorld.boughtUpgrades.has(keeper.playerId + ".suitblaster"):
-		GameWorld.serverAddUpgrade(keeper.playerId + ".suitblaster", keeper.teamId)
+	var gear: Array = dev.give_gear()
+	ModLoaderLog.info("Dev command: gear " + ", ".join(PackedStringArray(gear)), Story.LOG)
 	if what == "finale":
 		_stop_waves()
-		_set_state("chase")
-		_start_chase(Vector2(0, 400))
+		health.refill()
+		_set_state("finale")
+		_start_finale()
 		return
 	var ch: Rect2i = _chamber()
 	var cells: Array = []
@@ -374,7 +383,13 @@ func _dev_boss(what: String) -> void:
 		played.append("boss_chamber")
 		Data.apply("team1.story.beatsplayed", ",".join(PackedStringArray(played)))
 	Data.apply(Awakening.AWAKE, true)
-	keeper.teleport(Level.map.getTilePos(Vector2(ch.position + Vector2i(3, 2))))
+	var start: Vector2i = ch.position + Vector2i(3, 2)
+	if what == "chase":
+		# The way home: an open shaft, as the keeper would have drilled it.
+		dev_path = dev.path_cells(ch, int(Level.levelSeed), dev.pool_cells())
+		dev.carve(dev_path)
+		start = Vector2i(dev_path[0].x, ch.position.y + 2)
+	keeper.teleport(Level.map.getTilePos(Vector2(start)))
 	var cam = Level.viewports.getPlayerCam(keeper.playerId) if Level.viewports != null else null
 	if cam != null:
 		cam.position = keeper.position
@@ -383,3 +398,10 @@ func _dev_boss(what: String) -> void:
 		health.refill()
 		_set_state("chase")
 		_start_chase(arena.get_center() + Vector2(0, 80))
+		# Tiles far from the keeper are made late, and some come back (a tile
+		# that was mid-reveal when it was cleared): keep the shaft swept for
+		# as long as the chase runs.
+		while current() == "chase" and is_inside_tree():
+			for f in 12:
+				await get_tree().physics_frame
+			dev.carve_leftovers(dev_path)
