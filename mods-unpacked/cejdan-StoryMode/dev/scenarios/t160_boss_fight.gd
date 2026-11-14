@@ -110,12 +110,19 @@ func run(h) -> void:
 	await h.shot("bomb_popped_stalk")
 	h.check("the bomb's explosion pops the stalk next to it", not target["alive"], velle.stats)
 
+	# ---- the lid holds while stalks live
+	var hp0: float = velle.hp
+	Director.explosion_at(velle.to_global(velle.eye_pos()), "bomb")
+	await h.wait(0.2)
+	await h.shot("lid_holds")
+	h.check("the shut eye takes no damage", velle.hp == hp0 and velle.stats["blocked"] == 1, velle.stats)
+
 	# ---- the real Suit Blaster pops a stalk, and recharges fast down here
 	var pid: String = h.keeper().playerId
 	GameWorld.serverAddUpgrade(pid + ".suitblaster", "team1")
 	await h.wait(0.5)
 	Data.apply(pid + ".suitblaster.charge", 1.0)
-	var s2: Dictionary = velle.stalks[2]
+	var s2: Dictionary = velle.stalks[0]
 	h.keeper().global_position = velle.to_global(s2["pos"] + Vector2(-24, 10))
 	await h.frames(3)
 	await h.press("keeper_gadget1")
@@ -129,13 +136,6 @@ func run(h) -> void:
 	var c1: float = float(Data.of(pid + ".suitblaster.charge"))
 	h.check("the blaster recharges fast in the chamber (%.0f s a charge)" % Boss.BLASTER_RECHARGE, c1 - c0 > 0.2, [c0, c1])
 	await h.teleport_tile(ch.position + Vector2i(10, 4))
-
-	# ---- the lid holds while stalks live
-	var hp0: float = velle.hp
-	Director.explosion_at(velle.to_global(velle.eye_pos()), "bomb")
-	await h.wait(0.2)
-	await h.shot("lid_holds")
-	h.check("the shut eye takes no damage", velle.hp == hp0 and velle.stats["blocked"] == 1, velle.stats)
 
 	# ---- all stalks gone: the eye opens
 	await _pop_all(h, velle)

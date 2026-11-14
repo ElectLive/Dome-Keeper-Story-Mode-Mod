@@ -18,6 +18,7 @@ var dead: bool = false
 var hits: int = 0
 var _time: float = 0.0
 var _lost_flash: float = 0.0
+var _gain_flash: float = 0.0
 var _push: Vector2 = Vector2.ZERO
 var _push_t: float = 0.0
 var _flash: ColorRect = null
@@ -47,6 +48,15 @@ func hearts() -> int:
 func refill() -> void:
 	Data.apply(KEY, Boss.HEARTS)
 	dead = false
+
+
+# One heart back. False when already full (or dead).
+func heal() -> bool:
+	if dead or hearts() >= Boss.HEARTS:
+		return false
+	Data.apply(KEY, hearts() + 1)
+	_gain_flash = 0.6
+	return true
 
 
 # One heart of damage from something at `from` (this node's space). False when
@@ -83,6 +93,7 @@ func _physics_process(delta: float) -> void:
 	_time += delta
 	invulnerable = maxf(0.0, invulnerable - delta)
 	_lost_flash = maxf(0.0, _lost_flash - delta)
+	_gain_flash = maxf(0.0, _gain_flash - delta)
 	_flash.color.a = maxf(0.0, _flash.color.a - delta * 0.9)
 	var keeper = Keepers.first()
 	if keeper == null or not is_instance_valid(keeper):
@@ -114,4 +125,5 @@ func _draw() -> void:
 		var bob: float = 0.0
 		if have == 1 and full:
 			bob = round(sin(_time * 10.0))
-		Pix.heart(self, p + Vector2(i * 8.0, bob), full, Color("ff3b4f"), just_lost and fposmod(_time * 14.0, 1.0) < 0.5)
+		var just_won: bool = i == have - 1 and _gain_flash > 0.0
+		Pix.heart(self, p + Vector2(i * 8.0, bob), full, Color("ff3b4f"), (just_lost or just_won) and fposmod(_time * 14.0, 1.0) < 0.5)
