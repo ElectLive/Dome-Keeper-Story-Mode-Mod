@@ -31,8 +31,10 @@ func run(h) -> void:
 		return
 	var fin = boss.finale
 	var m = boss.music
-	await h.until(func(): return m.intro_time() >= 0.0, 3.0)
-	h.check("the bell intro plays", m.intro_time() >= 0.0, m.playing())
+	var b0: float = h.now()
+	await h.until(func(): return m.intro_time() >= 0.0, Boss.FINALE_BREATH + 4.0)
+	h.check("the bell intro plays, after a breath of %.0f s with the keeper idle" % Boss.FINALE_BREATH,
+		m.intro_time() >= 0.0 and fin.bells_by == "idle" and h.now() - b0 >= Boss.FINALE_BREATH - 0.2, [snappedf(h.now() - b0, 0.01), fin.bells_by, m.playing()])
 	var tolls: Array = []
 	var seen: int = -1
 	var t0: float = h.now()

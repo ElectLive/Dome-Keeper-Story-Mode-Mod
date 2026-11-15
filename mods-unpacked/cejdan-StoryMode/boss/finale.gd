@@ -1,7 +1,9 @@
 extends Node2D
 
 # The final battle on the surface (#162, #171, third pass #173). The keeper
-# made it home; the ground splits beside the dome and the tentacles break out.
+# made it home. A breath of silence (step "breath", #196) until the keeper
+# takes the dome's weapon; then the bells toll, the ground splits beside the
+# dome on each one, and the tentacles break out on the music's drop.
 # Three rounds of tentacles (boss/surface_tentacle.gd, real targets for the
 # dome's weapon). Each tentacle comes up with a row of eyes, and every few
 # seconds one tears free as a flyer that shoots the dome (boss/eye_flyer.gd),
@@ -36,7 +38,8 @@ const RUMBLE := 2.6           # seconds of cracking ground before rounds 2 and 3
 # The first cracking follows the finale music's bell intro (#172): see
 # Boss.FINALE_TOLLS. It ends, and round 1 breaks out, on the music's drop.
 
-var step: String = "rumble"   # rumble, round1, lull, round2, lull, round3, fall, allies, thanks, done
+var step: String = "breath"   # breath, rumble, round1, lull, round2, lull, round3, fall, allies, thanks, done
+var bells_by: String = ""     # what ended the breath: battle, idle, console
 var great = null              # Velle's great eye (last round)
 var fall_side: float = 1.0    # the side of the dome it falls to: +1 right, -1 left
 var fight_t: float = 0.0      # seconds of battle so far (the rounds, not the pauses)
@@ -60,6 +63,9 @@ var _toll_flash: float = 0.0  # the cracks' flash from the last toll, fading
 var _toll_grow: float = 0.0   # how far the cracks are open, 0..1, eased
 var _toll_roll: bool = false  # the snare roll: the cracks tear open
 var _clock_fallback: bool = false
+var _idle_ms: float = 0.0     # real ms of the breath spent out of the shop
+static var _alarm_loud: AudioStream = null   # the game's own alarm, while ours stands in
+var _idle_last: int = -1
 
 
 func setup() -> void:
@@ -74,9 +80,105 @@ func setup() -> void:
 	# The dome goes to battle stations, as for a wave.
 	Data.apply("team1.monsters.wavepresent", true)
 	Data.apply("team1.monsters.wavebattle", true)
+	# The breath is silent: no wave-start gong riser (the game plays it when a
+	# wave begins), and the blinking alarm is turned down for the bells.
+	for p in Audio.soundPlayers:
+		if p.playing and p.stream == Audio.wavestart:
+			p.stop()
+	quiet_alarm(true)
 	ModLoaderLog.info("Finale: tentacle %.0f, great eye %.0f, flyer %.0f health" % [Boss.FINALE_TENTACLE_HP, Boss.FINALE_EYE_HP, Boss.FINALE_FLYER_HP], "cejdan-StoryMode")
-	InputSystem.shake(14.0, 2.0, 18.0)
-	Sfx.play("burrow", 0.0, 0.6)
+	# The chase music fades into the breath of silence.
+	var m = _music()
+	if m != null:
+		m.hush()
+	ModLoaderLog.info("Finale: breath", "cejdan-StoryMode")
+
+
+func _exit_tree() -> void:
+	quiet_alarm(false)
+
+
+# Swaps the game's alarm sound for a copy Boss.FINALE_ALARM_DB quieter (on),
+# or puts the game's own back (off).
+static func quiet_alarm(on: bool) -> void:
+	if on and _alarm_loud == null:
+		var q = quieter(Audio.alarm, Boss.FINALE_ALARM_DB)
+		if q != null:
+			_alarm_loud = Audio.alarm
+			Audio.alarm = q
+	elif not on and _alarm_loud != null:
+		Audio.alarm = _alarm_loud
+		_alarm_loud = null
+
+
+# A copy of a 16-bit WAV stream, `db` louder (negative: quieter); null for
+# any other kind of stream.
+static func quieter(s, db: float) -> AudioStreamWAV:
+	if not (s is AudioStreamWAV) or s.format != AudioStreamWAV.FORMAT_16_BITS:
+		return null
+	var q: AudioStreamWAV = s.duplicate()
+	var data: PackedByteArray = s.data
+	var g: float = db_to_linear(db)
+	for i in range(0, data.size() - 1, 2):
+		data.encode_s16(i, int(data.decode_s16(i) * g))
+	q.data = data
+	return q
+
+
+func _music():
+	var d = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd").instance()
+	return d.music if d != null else null
+
+
+# What the player is doing, by the deepest input processor: "battle" at the
+# dome's weapon, "console" in the console's menu, "keeper" walking about, or
+# "" for anything else (the shop, the pause menu).
+static func activity() -> String:
+	var leaf = InputSystem.getLastChild()
+	if leaf == null:
+		return ""
+	if leaf is BattleInputProcessor:
+		return "battle"
+	if leaf is KeeperInputProcessor:
+		return "keeper"
+	var sc = leaf.get_script()
+	if sc != null and sc.resource_path.ends_with("StationInputProcessor.gd"):
+		return "console"
+	return ""
+
+
+# The breath before the bells. Runs on real time, as the console's menu and
+# the shop pause the game.
+func _breath() -> void:
+	var now: int = Time.get_ticks_msec()
+	var dt: float = 0.0 if _idle_last < 0 else float(now - _idle_last)
+	_idle_last = now
+	var doing: String = activity()
+	if doing == "battle":
+		_start_bells("battle")
+		return
+	if doing == "":
+		_idle_ms = 0.0   # in the shop: the breath starts over when it closes
+		return
+	_idle_ms += dt
+	if _idle_ms < Boss.FINALE_BREATH * 1000.0:
+		return
+	if doing == "console":
+		# Idle in the console's menu: it takes Battle, as the player would,
+		# so the bells ring over a running world.
+		var leaf = InputSystem.getLastChild()
+		leaf.popup.moveOut()
+		Level.stage.startBattleInput(leaf.keeper, leaf.station)
+	_start_bells("console" if doing == "console" else "idle")
+
+
+func _start_bells(by: String) -> void:
+	bells_by = by
+	ModLoaderLog.info("Finale: the bells (%s)" % by, "cejdan-StoryMode")
+	var m = _music()
+	if m != null:
+		m.finale()
+	_set_step("rumble")
 
 
 func _set_step(s: String) -> void:
@@ -171,6 +273,10 @@ func living() -> int:
 
 
 func _physics_process(delta: float) -> void:
+	if step == "breath":
+		if not GameWorld.lost:
+			_breath()
+		return
 	if GameWorld.paused or GameWorld.lost:
 		return
 	t += delta
@@ -217,6 +323,7 @@ func _physics_process(delta: float) -> void:
 					# Everything else is dead: the closed eye comes down.
 					Data.apply("team1.monsters.wavepresent", false)
 					Data.apply("team1.monsters.wavebattle", false)
+					quiet_alarm(false)
 					if is_instance_valid(great):
 						great.fall(fall_side)
 					_set_step("fall")
@@ -385,8 +492,8 @@ func _toll_rumble(delta: float) -> void:
 
 func _on_toll(k: int) -> void:
 	_toll_flash = 1.0
+	# No sound of its own: the bell is the crack.
 	InputSystem.shake(7.0 + 3.0 * k, 0.6, 14.0)
-	Sfx.play("drop", -12.0 + 1.5 * k, _rng.randf_range(0.55, 0.7))
 	_burst(10 + 5 * k, 0.8 + 0.15 * k)
 	ModLoaderLog.info("Finale: toll %d (cracks %.2f)" % [k, float(k + 1) / float(Boss.FINALE_TOLLS.size() + 1)], "cejdan-StoryMode")
 

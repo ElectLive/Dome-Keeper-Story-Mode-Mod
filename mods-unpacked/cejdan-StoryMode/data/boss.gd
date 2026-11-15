@@ -153,6 +153,14 @@ const FINALE_FURY_FLOOR := 0.45
 # its end. Beats count from the start of the intro. On each toll the ground
 # jolts and the cracks open a step further; the kicks before the drop thud;
 # from the snare roll on the cracks tear right open.
+# Before the bells, a breath of silence (#196): the bells start the moment
+# the keeper takes the dome's weapon (Battle at the console), or after this
+# many seconds out of the shop (walking about, or idle in the console's menu,
+# which then takes Battle itself). The shop holds them off.
+const FINALE_BREATH := 4.0
+# The wave alarm (the HUD's blinking beep while nobody is at the console) is
+# this much quieter during the finale, so the bells come through (#196).
+const FINALE_ALARM_DB := -8.0
 const FINALE_BEAT := 60.0 / 174.0
 const FINALE_INTRO_BEATS := 28
 const FINALE_TOLLS := [0.0, 4.0, 8.0, 12.0, 16.0, 20.0]

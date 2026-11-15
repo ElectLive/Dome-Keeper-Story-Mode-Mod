@@ -69,6 +69,9 @@ func run(h) -> void:
 	var Tentacle = load("res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd")
 	var Flyer = load("res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd")
 	h.check("the hearts are put away: the keeper is home", not boss.health.visible)
+	# A breath of silence (#196); the keeper stands idle, so the bells come
+	# after Boss.FINALE_BREATH seconds.
+	await h.until(func(): return fin.step == "rumble", Boss.FINALE_BREATH + 4.0)
 	await h.wait(1.0)
 	await h.shot("ground_cracking_early")
 	await h.wait(7.0)
