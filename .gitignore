@@ -21,3 +21,7 @@
 
 # Godot import sidecars the editor writes next to images in docs/
 /docs/**/*.import
+
+# Score previews and Python caches (art/music/score.py --preview)
+/art/music/preview/
+__pycache__/

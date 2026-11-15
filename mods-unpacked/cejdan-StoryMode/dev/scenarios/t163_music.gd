@@ -1,7 +1,7 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
-# Ticket 163: the boss music. Logs which of the game's layered tracks are
-# audible in each stage of the boss sequence (fight phases 1-3, chase, finale),
+# Tickets 163 and 172: the boss music. Logs which layers of the mod's score
+# are audible in each stage of the boss sequence (fight phases 1-3, chase, finale),
 # that the mining music stays silent meanwhile, and that everything fades when
 # the sequence ends. Whether it fits is for a human ear.
 
@@ -41,19 +41,19 @@ func run(h) -> void:
 	boss.health.invulnerable = 9999.0
 	await h.wait(4.0)
 	h.note("phase 1", m.playing())
-	h.check("phase 1: final-wave layer 1 alone", m.playing().size() == 1 and "1" in _files(m)[0], m.playing())
+	h.check("phase 1: the fight's first layer alone", m.playing().size() == 1 and _files(m)[0] == "boss_fight_1.ogg", m.playing())
 	h.check("the mining music has stepped aside", not Audio.isMusicPlaying())
 	velle.phase = 1
 	await h.wait(3.0)
 	h.note("phase 2", m.playing())
 	h.check("phase 2: layer 2 joins", m.playing().size() == 2, m.playing())
+	h.check("the score loaded (no missing files)", m.cues["fight"].all(func(p): return p.stream != null), [])
 	velle.phase = 2
 	await h.wait(3.0)
 	h.note("phase 3", m.playing())
-	h.check("phase 3: both layers full and faster", m.playing().all(func(e): return e["db"] >= -0.5 and e["pitch"] > 1.0), m.playing())
-	var p0: float = m.players[0].get_playback_position()
-	var p1: float = m.players[1].get_playback_position()
-	h.check("the two layers are in step", absf(p0 - p1) < 0.08, [p0, p1])
+	h.check("phase 3: all three layers, full", m.playing().size() == 3 and m.playing().all(func(e): return e["db"] >= -0.5), m.playing())
+	var pos: Array = m.cues["fight"].map(func(p): return p.get_playback_position())
+	h.check("the three layers are in step", absf(pos[0] - pos[1]) < 0.08 and absf(pos[0] - pos[2]) < 0.08, pos)
 	# The chase.
 	velle.hp = 0.1
 	velle.state = "open"
@@ -62,7 +62,7 @@ func run(h) -> void:
 	await h.until(func(): return Director.current() == "chase", 10.0)
 	await h.wait(4.0)
 	h.note("chase", m.playing())
-	h.check("the chase: the relic-retrieval layers", m.playing().size() >= 1 and _files(m).all(func(f): return "elic" in f), m.playing())
+	h.check("the chase: the chase layers", m.playing().size() >= 1 and _files(m).all(func(f): return f.begins_with("boss_chase")), m.playing())
 	# Home: the finale.
 	await h.dig_room(Vector2i(-1, 1), Vector2i(1, 9))
 	await h.teleport_tile(Vector2i(0, 3))
@@ -71,8 +71,7 @@ func run(h) -> void:
 	h.up("ui_up")
 	await h.wait(4.0)
 	h.note("finale", m.playing())
-	h.check("the finale: both final-wave layers", m.playing().size() == 2 and _files(m).all(func(f): return not ("elic" in f)), m.playing())
-	h.note("music set", m.set_id)
+	h.check("the finale: both finale layers", m.playing().size() == 2 and _files(m).all(func(f): return f.begins_with("boss_finale")), m.playing())
 	# The end: it all fades.
 	var fin = boss.finale
 	await h.until(func(): return fin.step == "round1", 6.0)
