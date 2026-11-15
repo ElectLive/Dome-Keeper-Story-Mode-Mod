@@ -144,76 +144,117 @@ def unravel():
 
 
 # ---- toll: bells, then drum and bass ------------------------------------------
+# Round 3 (the user, 2026-11-15): loved the ominous theme and the church bells
+# ringing it; wanted a long, dramatic bell pause (about 10 s) before the drop,
+# a softer snare, and more drum and bass.
+
+INTRO_BARS = 7   # 9.7 s at 174 bpm: the first cracking lasts this long in the game
+
 
 def _toll_intro(bpm):
-    """4 bars, played once while the ground cracks: a gong, then bells ring
-    the motif, a choir swells and a snare roll and riser pull into the drop."""
-    t = S.Track(bpm, 4, ["intro"])
-    t.put("intro", 0, S.gong(1.0), send=0.5)
-    t.put("intro", 0, S.bell(N("D3"), 1.0), send=0.5)
+    """Played once while the ground cracks: a gong and a low bell, then the
+    bells ring the motif slowly into the silence, a second gong, a heartbeat
+    of kicks speeding up, and a soft snare roll and riser into the drop."""
+    t = S.Track(bpm, INTRO_BARS, ["intro"])
+    end = INTRO_BARS * 4
+    t.put("intro", 0, S.gong(1.0, ring=9.0), send=0.5)
+    t.put("intro", 0, S.bell(N("D3"), 1.0, ring=8.0), send=0.55)
     t.put("intro", 0, S.boom(0.9), send=0.3)
-    for beat, name in ((4, "D4"), (6, "Eb4"), (8, "D4"), (10, "A3")):
-        t.put("intro", beat, S.bell(N(name), 0.9, ring=5.0), send=0.5)
-    t.put("intro", 8, S.bell(N("D3"), 0.8), send=0.5)
-    t.put("intro", 4, S.choir([N("D3"), N("A3"), N("D4"), N("Eb4")], 12 * t.beat, 0.8, vowel="oh", attack=2.0, release=0.3), send=0.5)
-    for k in range(16):
-        t.put("intro", 12 + k * 0.25, S.dnb_snare(0.15 + 0.05 * k), send=0.25)
-    t.put("intro", 12, S.riser(4 * t.beat, 1.0), send=0.2)
+    for beat, name in ((4, "D4"), (8, "Eb4"), (12, "D4"), (16, "A3")):
+        t.put("intro", beat, S.bell(N(name), 0.95, ring=7.0), send=0.55)
+    t.put("intro", 20, S.bell(N("D3"), 0.9, ring=8.0), send=0.55)
+    t.put("intro", 20, S.gong(0.7, ring=8.0), send=0.5)
+    t.put("intro", 2, S.choir([N("D3"), N("A3"), N("D4"), N("Eb4")], 22 * t.beat, 0.75, vowel="oh", attack=4.0, release=0.4), send=0.55)
+    for beat, v in ((20, 0.5), (22, 0.55), (24, 0.6), (25, 0.65), (26, 0.7), (26.5, 0.75), (27, 0.8), (27.5, 0.9)):
+        t.put("intro", beat, S.kick(v), send=0.15)
+    for k in range(8):
+        t.put("intro", end - 2 + k * 0.25, S.dnb_snare(0.25 + 0.08 * k), send=0.25)
+    t.put("intro", end - 6, S.riser(6 * t.beat, 1.0), send=0.2)
     return t
+
+
+def _bells_motif(t, layer, bar, octave_names, v=0.85):
+    for k, name in enumerate(octave_names):
+        t.put(layer, bar * 4 + k * 2, S.bell(N(name), v, ring=5.0), send=0.5)
 
 
 def toll():
     bpm = 174
-    chords = ["Dm", "Dm", "Dm", "Dm", "Bb", "Bb", "A", "A", "Dm", "Dm", "Eb", "Eb", "Gm", "Gm", "A", "A"]
-    t = S.Track(bpm, 16, ["1", "2"])
-    # 1: break and bass.
+    chords = ["Dm", "Dm", "Dm", "Dm", "Bb", "Bb", "A", "A", "Dm", "Dm", "Eb", "Eb", "Gm", "Gm", "A", "A",
+              "Dm", "Dm", "Bb", "Bb", "Gm", "Gm", "A", "A", "Dm", "Dm", "Eb", "Eb", "Bb", "Bb", "A", "A"]
+    t = S.Track(bpm, 32, ["1", "2"])
+    # 1: break and bass. Bars 0-15 a two-step roller, 16-31 the harder half.
     for b, ch in enumerate(chords):
-        fill = b % 4 == 3
-        for off in ((0, 2.5) if b % 2 == 0 else (0, 0.75, 2.5)):
+        hard = b >= 16
+        fill = b % 8 == 7
+        kicks = (0, 0.75, 2.5, 3.25) if hard and b % 2 else (0, 0.75, 2.5) if (hard or b % 2) else (0, 2.5)
+        for off in kicks:
             t.put("1", b * 4 + off, S.kick(1.0), send=0.05)
         t.put("1", b * 4 + 1, S.dnb_snare(1.0), send=0.2)
         if not fill:
             t.put("1", b * 4 + 3, S.dnb_snare(1.0), send=0.2)
-            t.put("1", b * 4 + (1.75 if b % 2 else 3.25), S.dnb_snare(0.3), send=0.15)
+            ghosts = (1.75, 2.25, 3.75) if hard else ((1.75,) if b % 2 else (3.25,))
+            for g in ghosts:
+                t.put("1", b * 4 + g, S.dnb_snare(0.3), send=0.15)
         else:
             for k in range(8):
                 t.put("1", b * 4 + 2 + k * 0.25, S.dnb_snare(0.35 + 0.08 * k), send=0.2)
-        for e in range(8):
-            if not (fill and e >= 4):
-                t.put("1", b * 4 + e * 0.5, S.hat(0.9 if e % 2 else 0.6, open_=(e == 7), p=0.3), send=0.05)
-        # The reese plays the motif's rhythm on the chord's root: D-Eb-D on
-        # even bars, the drop to the fifth on odd bars. Rests keep it moving.
+        for e in range(16):
+            if fill and e >= 8:
+                break
+            if e % 2 == 0:
+                t.put("1", b * 4 + e * 0.25, S.hat(0.9 if e % 4 == 2 else 0.6, p=0.3), send=0.05)
+            elif hard:
+                t.put("1", b * 4 + e * 0.25, S.hat(0.4, p=-0.3), send=0.05)
+        if hard:
+            for e in (0.5, 1.5, 2.5, 3.5):
+                t.put("1", b * 4 + e, S.hat(0.5, open_=True, p=-0.2), send=0.08)
+        # The reese on the motif. First half: D-Eb-D, then the drop to the
+        # fifth, with rests. Second half: the same notes as driving 8ths.
         r = root(ch, 2)
         if r > 42:
             r -= 12
-        if b % 2 == 0:
-            riff = [(r, 1.5), (None, 0.5), (r, 0.5), (r + 1, 1.0), (r, 0.5)]
+        if not hard:
+            riff = [(r, 1.5), (None, 0.5), (r, 0.5), (r + 1, 1.0), (r, 0.5)] if b % 2 == 0 else \
+                [(r - 5, 2.0), (None, 0.5), (r - 5, 0.5), (r - 2, 1.0)]
+            beat = b * 4
+            for m, d in riff:
+                if m is not None:
+                    t.put("1", beat, S.reese(m, d * t.beat * 0.95, 1.0), send=0.02)
+                beat += d
         else:
-            riff = [(r - 5, 2.0), (None, 0.5), (r - 5, 0.5), (r - 2, 1.0)]
-        beat = b * 4
-        for m, d in riff:
-            if m is not None:
-                t.put("1", beat, S.reese(m, d * t.beat * 0.95, 1.0), send=0.02)
-            beat += d
+            notes = [r, r, r + 1, r, r - 5, r - 5, r - 2, r]
+            for k, m in enumerate(notes):
+                length = 0.45 if k % 2 == 0 else 0.3
+                t.put("1", b * 4 + k * 0.5, S.reese(m, length * t.beat, 0.95 if k % 2 == 0 else 0.75, cutoff=800), send=0.02)
     t.put("1", 0, S.boom(1.0), send=0.3)
-    t.put("1", 15 * 4, S.riser(4 * t.beat, 0.8), send=0.2)
-    # 2: the orchestra and the bells over it.
+    t.put("1", 16 * 4, S.boom(0.8), send=0.3)
+    t.put("1", 15 * 4, S.riser(4 * t.beat, 0.7), send=0.2)
+    t.put("1", 31 * 4, S.riser(4 * t.beat, 0.8), send=0.2)
+    # 2: the bells, the horns and the choir over it.
     theme = [("D4", 2), ("Eb4", 2), ("D4", 2), ("A3", 2), ("R", 4), ("A3", 1), ("Bb3", 1), ("A3", 2),
              ("F4", 2), ("D4", 2), ("Bb3", 4), ("C#4", 2), ("E4", 2), ("A4", 4),
              ("D5", 2), ("Eb5", 2), ("D5", 2), ("A4", 2), ("G4", 2), ("Bb4", 2), ("Eb5", 4),
              ("D5", 2), ("Bb4", 2), ("G4", 4), ("A4", 3), ("Bb4", 1), ("A4", 4)]
     melody(t, "2", theme[:14], 0, vel=1.0, inst="horns")
     melody(t, "2", theme[14:], 8, vel=1.0, inst="brass")
-    for b in range(0, 16, 2):
-        vowel = "oh" if b < 8 else "ah"
-        t.put("2", b * 4, S.choir(voicing(chords[b], 3 if b < 8 else 4, spread=False), 8 * t.beat * 0.97, 0.75, vowel=vowel, attack=0.4), send=0.5)
-    for b, name, v in ((0, "D4", 0.9), (4, "Bb3", 0.6), (8, "A3", 0.9), (12, "G3", 0.6)):
-        t.put("2", b * 4, S.bell(N(name), v, ring=5.0), send=0.5)
-    for b in (14, 15):
-        t.put("2", b * 4, S.tremolo([N("A5"), N("C#6"), N("E6"), N("Bb6")], 4 * t.beat, 0.4, rate=21), send=0.35)
-    for b in (0, 8):
-        t.put("2", b * 4, S.braam(N("D2"), 1.8, 1.0), send=0.45)
-        t.put("2", b * 4, S.crash(0.9), send=0.4)
+    # Second half: the motif in long, half-time horn notes, then the brass.
+    melody(t, "2", [("D4", 4), ("Eb4", 4), ("D4", 4), ("A3", 4), ("Bb3", 4), ("A3", 4), ("G3", 4), ("A3", 4)], 16, vel=1.0, inst="horns")
+    melody(t, "2", theme[14:], 24, vel=1.0, inst="brass")
+    for b in range(0, 32, 2):
+        vowel = "oh" if b % 16 < 8 else "ah"
+        t.put("2", b * 4, S.choir(voicing(chords[b], 3 if vowel == "oh" else 4, spread=False), 8 * t.beat * 0.97, 0.7, vowel=vowel, attack=0.4), send=0.5)
+    # The bells ring the motif at the top of each half.
+    _bells_motif(t, "2", 0, ["D4", "Eb4", "D4", "A3"], 0.8)
+    _bells_motif(t, "2", 16, ["D5", "Eb5", "D5", "A4"], 0.7)
+    for b, name in ((8, "A3"), (24, "D3")):
+        t.put("2", b * 4, S.bell(N(name), 0.8, ring=6.0), send=0.5)
+    for b in (14, 15, 30, 31):
+        t.put("2", b * 4, S.tremolo([N("A5"), N("C#6"), N("E6"), N("Bb6")], 4 * t.beat, 0.35, rate=21), send=0.35)
+    for b in (0, 8, 16, 24):
+        t.put("2", b * 4, S.braam(N("D2") if chords[b] == "Dm" else root(chords[b], 2), 1.8, 1.0), send=0.45)
+    for b in (0, 16):
+        t.put("2", b * 4, S.crash(0.8), send=0.4)
     return t, _toll_intro(bpm)
 
 

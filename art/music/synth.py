@@ -320,20 +320,24 @@ def kick(vel=1.0):
 
 
 def dnb_snare(vel=1.0):
-    """A tight, cracking break snare."""
-    n = int(0.35 * SR)
+    """A thick, dark break snare: two shell tones and noise kept under 5 kHz.
+    The first version cracked at 5 kHz and hurt (the user, 2026-11-15)."""
+    n = int(0.4 * SR)
     t = np.arange(n) / SR
-    body = np.sin(2 * np.pi * np.cumsum(220 + 60 * np.exp(-t / 0.01)) / SR) * np.exp(-t / 0.06)
-    noise = bp(_rng.standard_normal(n), 1500, 11000) * np.exp(-t / 0.09)
-    x = np.tanh((0.7 * body + noise) * 1.8)
-    return pan2(x * vel * 0.32, 0.05)
+    body = np.sin(2 * np.pi * np.cumsum(185 + 45 * np.exp(-t / 0.012)) / SR) * np.exp(-t / 0.10)
+    body += 0.45 * np.sin(2 * np.pi * 330 * t) * np.exp(-t / 0.05)
+    noise = lp(bp(_rng.standard_normal(n), 250, 4500), 5000) * np.exp(-t / 0.11)
+    snap = bp(_rng.standard_normal(n), 1800, 5000) * np.exp(-t / 0.008) * 0.5
+    x = np.tanh((0.7 * body + 1.2 * noise + snap) * 1.2)
+    return pan2(x * vel * 0.21, 0.05)
 
 
 def hat(vel=1.0, open_=False, p=0.25):
+    """A soft hat: noise between 6 and 11 kHz, no fizz on top."""
     n = int((0.25 if open_ else 0.06) * SR)
     t = np.arange(n) / SR
-    x = hp(_rng.standard_normal(n), 8000) * np.exp(-t / (0.08 if open_ else 0.012))
-    return pan2(x * vel * 0.10, p)
+    x = lp(hp(_rng.standard_normal(n), 6000), 11000) * np.exp(-t / (0.07 if open_ else 0.012))
+    return pan2(x * vel * 0.095, p)
 
 
 def reese(midi, dur, vel=1.0, cutoff=520):
