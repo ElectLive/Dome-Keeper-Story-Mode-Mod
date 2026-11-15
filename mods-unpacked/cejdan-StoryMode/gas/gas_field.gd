@@ -542,7 +542,7 @@ func _update_puffs(delta: float) -> void:
 		for i in 2:
 			if _puff_rng.randf() < delta * 30.0:
 				_puff(_cell_origin(c) + Vector2(_puff_rng.randf_range(3.0, TILE - 3.0), _puff_rng.randf_range(-4.0, 6.0)),
-					_puff_rng.randf_range(1.4, 2.6), _puff_rng.randf_range(50.0, 110.0), _puff_rng.randf_range(2.0, 5.0))
+					_puff_rng.randf_range(1.2, 2.2), _puff_rng.randf_range(30.0, 75.0), _puff_rng.randf_range(2.0, 5.0))
 	# Seeping: now and then a wisp leaves a visible gas rock cell into the open cell beside it.
 	_seep_t -= delta
 	if _seep_t <= 0.0 and not rock.is_empty():
