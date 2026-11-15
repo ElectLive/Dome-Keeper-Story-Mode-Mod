@@ -93,13 +93,17 @@ static func fill_bottom(map_data, rand: RandomNumberGenerator) -> int:
 
 
 # The lava ocean (#43): added below the generated map, under B8 (biome index 7).
-# Rows, top to bottom: one rock ceiling row; OCEAN_AIR_ROWS of open air (#149);
-# OCEAN_ROWS open rows across the middle OCEAN_WIDTH_SHARE of the map's width,
-# centred under the dome (#175; the lava field fills them), with unobtainium clumps inside
-# and on the floor; OCEAN_FLOOR_ROWS of rock (just one, and soft, over the
-# chamber); and a sealed BOSS_CHAMBER inside rock walls. Vanilla's border pass
-# runs after this, so it wraps the new rows too. Meta: "story_ocean" (rows and
-# columns, ceiling row) and "story_boss_chamber" (Rect2i).
+# Rows, top to bottom: one rock ceiling row and OCEAN_AIR_ROWS of open air
+# (#149), both across the middle OCEAN_WIDTH_SHARE of the map's width, centred
+# under the dome (#175); then OCEAN_ROWS open rows in a funnel (#184), as wide
+# as the air at the top and tapering to just over the boss chamber at the
+# bottom (the lava field fills them), with unobtainium clumps inside and on its
+# floor and slopes; OCEAN_FLOOR_ROWS of rock under the funnel's narrow end
+# (just one, and soft, over the chamber); and a sealed BOSS_CHAMBER inside rock
+# walls, the map's deepest part. Cells beside the funnel are left off the map,
+# so vanilla's border pass, which runs after this, walls its sloping sides.
+# Meta: "story_ocean" (top/bottom rows, x0/x1 the funnel's top (widest) row,
+# "rows": y -> [x0, x1] per funnel row, ceiling row) and "story_boss_chamber" (Rect2i).
 static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 	var cells: Array = map_data.get_used_biome_cells()
 	var x0: int = 1 << 20
@@ -111,7 +115,10 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 		yb = maxi(yb, c.y)
 	# The ocean is narrower than the map (#175): the columns beside it end at
 	# the map's own bottom, in border wall. It always spans the boss chamber.
-	var ch_half: int = LavaData.BOSS_CHAMBER.x / 2 + LavaData.BOSS_CHAMBER_WALL + 2
+	var ch_w: int = LavaData.BOSS_CHAMBER.x
+	var ch_h: int = LavaData.BOSS_CHAMBER.y
+	var wall: int = LavaData.BOSS_CHAMBER_WALL
+	var ch_half: int = ch_w / 2 + wall + LavaData.OCEAN_FUNNEL_BOTTOM_MARGIN
 	var half: int = maxi(ch_half, int(round((x1 - x0 + 1) * LavaData.OCEAN_WIDTH_SHARE * 0.5)))
 	x0 = maxi(x0, -half)
 	x1 = mini(x1, half)
@@ -120,14 +127,31 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 	var top: int = ceiling + 1 + LavaData.OCEAN_AIR_ROWS
 	var bottom: int = top + LavaData.OCEAN_ROWS - 1
 	var floor_top: int = bottom + 1
-	var ch_w: int = LavaData.BOSS_CHAMBER.x
-	var ch_h: int = LavaData.BOSS_CHAMBER.y
-	var wall: int = LavaData.BOSS_CHAMBER_WALL
 	var ch_x0: int = -ch_w / 2
 	var ch_y0: int = floor_top + 1   # one soft floor row over the chamber
 	var deepest: int = maxi(floor_top + LavaData.OCEAN_FLOOR_ROWS - 1, ch_y0 + ch_h - 1 + wall)
+	# The funnel (#184): each row's columns, from the full top width down to
+	# ch_half either side of the chamber's middle at the bottom row. The top
+	# two rows are equally wide: a lava cell with air above and no lava below
+	# cools (#41), so a narrower second row would crust the top row's ends and
+	# keep the sealed ocean from ever going to sleep.
+	var rows: Dictionary = {}
+	var span: int = maxi(1, LavaData.OCEAN_ROWS - 2)
+	for y in range(top, bottom + 1):
+		var t: float = pow(1.0 - float(maxi(0, y - top - 1)) / span, LavaData.OCEAN_FUNNEL_CURVE)
+		var rx0: int = mini(-ch_half, int(round(lerpf(-ch_half, x0, t))))
+		var rx1: int = maxi(ch_half, int(round(lerpf(ch_half, x1, t))))
+		rows[y] = [maxi(x0, rx0), mini(x1, rx1)]
 	for y in range(ceiling, deepest + 1):
-		for x in range(x0, x1 + 1):
+		var rx0: int = x0
+		var rx1: int = x1
+		if rows.has(y):
+			rx0 = int(rows[y][0])
+			rx1 = int(rows[y][1])
+		elif y > bottom:
+			rx0 = maxi(x0, -ch_half)
+			rx1 = mini(x1, ch_half)
+		for x in range(rx0, rx1 + 1):
 			var c := Vector2i(x, y)
 			map_data.set_biomev(c, biome)
 			if y == ceiling or y > bottom:
@@ -144,24 +168,43 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 		for x in range(ch_x0, ch_x0 + ch_w):
 			map_data.set_resourcev(Vector2i(x, y), Data.TILE_EMPTY)
 			map_data.set_hardnessv(Vector2i(x, y), Data.HARDNESS_MEDIUM)
-	# Unobtainium: clumps in the ocean, some resting on its floor.
+	# Unobtainium: clumps in the ocean, some resting on its floor or slopes
+	# (the lowest funnel row of a column). The total is set by the full-width
+	# box the funnel sits in, so it is what the rectangle held (#175, #184).
 	var unob: int = int(Minerals.TABLE["unobtainium"]["tile_id"])
-	var ocean_cells: int = (x1 - x0 + 1) * LavaData.OCEAN_ROWS
-	var want: int = int(round(ocean_cells / LavaData.OCEAN_UNOB_CELLS_PER_TILE))
+	var want: int = int(round((x1 - x0 + 1) * LavaData.OCEAN_ROWS / LavaData.OCEAN_UNOB_CELLS_PER_TILE))
+	var low: Dictionary = {}   # x -> the funnel's lowest row in that column
+	var inside: Array = []     # where a clump may start (off the walls, below the top two rows)
+	for y in range(top, bottom + 1):
+		for x in range(int(rows[y][0]), int(rows[y][1]) + 1):
+			low[x] = y
+			if y >= top + 2 and x > int(rows[y][0]) and x < int(rows[y][1]):
+				inside.append(Vector2i(x, y))
+	var floor_cells: Array = []   # each column's lowest funnel cell, where it may hold unobtainium
+	for x: int in low:
+		var fc := Vector2i(x, int(low[x]))
+		if fc.y >= top + 2:
+			floor_cells.append(fc)
+	var ok := func(c: Vector2i) -> bool:
+		if not rows.has(c.y) or c.y < top + 2 or c.x < int(rows[c.y][0]) or c.x > int(rows[c.y][1]):
+			return false
+		return map_data.get_resourcev(c) == Data.TILE_EMPTY
 	var placed: int = 0
 	var guard: int = 0
-	while placed < want and guard < want * 20:
+	while placed < want and guard < want * 20 and not inside.is_empty() and not floor_cells.is_empty():
 		guard += 1
-		var c := Vector2i(rand.randi_range(x0 + 1, x1 - 1), rand.randi_range(top + 2, bottom))
+		var c: Vector2i = inside[rand.randi() % inside.size()]
 		if rand.randf() < 0.25:
-			c.y = bottom   # on the ocean floor
+			# On the floor or a slope, any column alike, so they don't all pile
+			# on the narrow floor over the chamber.
+			c = floor_cells[rand.randi() % floor_cells.size()]
 		var n: int = rand.randi_range(int(LavaData.OCEAN_UNOB_CLUMP[0]), int(LavaData.OCEAN_UNOB_CLUMP[1]))
 		for i in n:
-			if map_data.get_resourcev(c) == Data.TILE_EMPTY and c.y >= top + 2 and c.y <= bottom and c.x > x0 and c.x < x1:
+			if ok.call(c):
 				map_data.set_resourcev(c, unob)
 				placed += 1
 			c += [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, -1)][rand.randi() % 3]
-	var info: Dictionary = {"top": top, "bottom": bottom, "x0": x0, "x1": x1, "ceiling": ceiling, "unobtainium": placed}
+	var info: Dictionary = {"top": top, "bottom": bottom, "x0": x0, "x1": x1, "rows": rows, "ceiling": ceiling, "unobtainium": placed}
 	map_data.set_meta("story_ocean", info)
 	map_data.set_meta("story_boss_chamber", Rect2i(ch_x0, ch_y0, ch_w, ch_h))
 	return info

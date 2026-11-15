@@ -50,17 +50,25 @@ const POOL_FREQ_BONUS_AT_BOTTOM := 0.5 # ... and 50% more often at the bottom
 const POOL_GAP := 2                    # rock tiles kept between a pool and anything open or special
 
 # --- lava ocean (#43) -------------------------------------------------------
-# Below B8: a rock ceiling row, then OCEAN_ROWS of open cells across the map's
-# full width, brim-full of lava from the start, with unobtainium scattered
-# inside; then the ocean floor and, centred under it, a sealed boss chamber.
+# Below B8: a rock ceiling row, then OCEAN_ROWS of open cells in a funnel
+# centred under the dome, brim-full of lava from the start, with unobtainium
+# scattered inside; then the ocean floor and, under its narrow end, a sealed
+# boss chamber.
 const OCEAN_ROWS := 25                    # was 50: half the height (#175)
 # The ocean's width as a share of the map's, centred under the dome (#175: it
 # was the full width, too vast to explore and heavy to run).
 const OCEAN_WIDTH_SHARE := 0.5
+# The ocean is a funnel (#184): its top row is OCEAN_WIDTH_SHARE of the map wide,
+# and it tapers row by row to its bottom row, which spans just the boss chamber
+# and its walls plus OCEAN_FUNNEL_BOTTOM_MARGIN columns on each side. So the
+# chamber is always under the deepest lava. The curve shapes the sides: 1.0 is
+# straight; more than 1 narrows fast near the top (a bowl with a spout).
+const OCEAN_FUNNEL_BOTTOM_MARGIN := 2
+const OCEAN_FUNNEL_CURVE := 1.0
 # Open air between the ocean's rock ceiling and the lava (#149), so breaking in
 # opens onto a wide cavern, and lava from above has room to drain into.
 const OCEAN_AIR_ROWS := 4
-const OCEAN_UNOB_CELLS_PER_TILE := 15.0   # about one unobtainium tile per this many ocean cells (60 before #175 quartered the ocean: the same amount)
+const OCEAN_UNOB_CELLS_PER_TILE := 15.0   # one unobtainium tile per this many cells of the ocean's full-width box (60 before #175 quartered the ocean: the same amount; the funnel keeps that total in less lava)
 const OCEAN_UNOB_CLUMP := [1, 3]
 const OCEAN_FLOOR_ROWS := 2               # rock under the ocean (1 row over the chamber)
 const BOSS_CHAMBER := Vector2i(20, 10)    # width x height, empty and sealed

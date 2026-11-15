@@ -45,11 +45,17 @@ func run(h) -> void:
 	await h.wait(1.6)
 	h.check("every chain shows once the ocean is seen", chains.shown() == chains._all.size(), [chains.shown(), chains._all.size()])
 	# A deposit near the middle, and the keeper floating above it in the lava.
+	# Its crossing path (the chain's middle, 60 px either side) must be open
+	# lava: the funnel (#184) packs deposits close together.
 	var dep: Dictionary = {}
 	var best: float = 1e9
 	for ch in chains.chains:
 		var d: float = absf(ch["a"].x)
-		if d < best:
+		var m: Vector2 = (ch["a"] + ch["b"]) / 2.0
+		var open: bool = true
+		for dx in range(-72, 84, 12):
+			open = open and td.get_resourcev(Level.map.getTileCoord(m + Vector2(dx, 0))) == Data.TILE_EMPTY
+		if open and d < best:
 			best = d
 			dep = ch
 	var cell: Vector2i = dep["cells"][0]
