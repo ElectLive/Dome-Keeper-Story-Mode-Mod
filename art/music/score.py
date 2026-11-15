@@ -31,29 +31,39 @@ OUT = "mods-unpacked/cejdan-StoryMode/music"
 PREVIEW = "art/music/preview"
 
 # Chord roots (octave 2) and qualities.
-ROOT = {"D": 38, "Eb": 39, "F": 41, "G": 43, "A": 45, "Bb": 46, "C": 48}
+ROOT = {"D": 38, "Eb": 39, "F": 41, "G": 43, "A": 45, "Bb": 46, "C": 48, "C#": 37, "Ab": 44, "B": 47}
 CHORDS = {
     "Dm": ("D", [0, 3, 7]), "Bb": ("Bb", [0, 4, 7]), "A": ("A", [0, 4, 7]), "Gm": ("G", [0, 3, 7]),
     "Eb": ("Eb", [0, 4, 7]), "F": ("F", [0, 4, 7]), "C": ("C", [0, 4, 7]),
+    "Fm": ("F", [0, 3, 7]), "Bbm": ("Bb", [0, 3, 7]), "Ab": ("Ab", [0, 4, 7]), "Abm": ("Ab", [0, 3, 7]),
+    "Bm": ("B", [0, 3, 7]), "C#dim": ("C#", [0, 3, 6]), "Bdim": ("B", [0, 3, 6]), "A7b9": ("A", [0, 4, 7, 10, 13]),
 }
 
 
+# A chord name, optionally over a bass note: "A/C#" is A major over C#.
+def _parts(ch):
+    name, _, bass = ch.partition("/")
+    return name, (bass or None)
+
+
 def root(ch, octave=2):
-    return ROOT[CHORDS[ch][0]] + 12 * (octave - 2)
+    """The chord's lowest note: its bass if it has one, else its root."""
+    name, bass = _parts(ch)
+    return ROOT[bass or CHORDS[name][0]] + 12 * (octave - 2)
 
 
 def voicing(ch, octave=3, spread=True):
-    r = root(ch, octave)
-    iv = CHORDS[ch][1]
-    notes = [r + i for i in iv]
+    name, bass = _parts(ch)
+    r = ROOT[CHORDS[name][0]] + 12 * (octave - 2)
+    notes = [r + i for i in CHORDS[name][1]]
     if spread:
-        notes = [r - 12] + notes + [r + 12]
+        notes = [root(ch, octave) - 12] + notes + [r + 12]
     return notes
 
 
 def N(name):
     """'D5', 'Eb4', 'C#5' -> midi."""
-    names = {"C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11}
+    names = {"C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11}
     pitch, octv = name[:-1], int(name[-1])
     return 12 * (octv + 1) + names[pitch]
 
@@ -63,10 +73,14 @@ def N(name):
 OSTINATO = [0, 0, 12, 0, 7, 0, 12, 0, 0, 0, 12, 0, 7, 8, 7, 12]
 
 
-def ostinato(t, layer, chords, octave=3, vel=0.8, accent=1.35, length=0.11):
-    for b, ch in enumerate(chords):
-        r = root(ch, octave)
-        for i, iv in enumerate(OSTINATO):
+def ostinato(t, layer, chords, octave=3, vel=0.8, accent=1.35, length=0.11, pattern=None, start_bar=0, pedal=None):
+    """16ths over each bar (None in `pattern` is a rest), on each chord's
+    lowest note, or on `pedal` (a note name) for every bar."""
+    for b, ch in enumerate(chords, start_bar):
+        r = N(pedal) if pedal else root(ch, octave)
+        for i, iv in enumerate(pattern or OSTINATO):
+            if iv is None:
+                continue
             v = vel * (accent if i % 4 == 0 else 1.0) * (0.92 + 0.16 * S._rng.random())
             t.put(layer, b * 4 + i * 0.25, S.strings_stacc(r + iv, v, length=length), send=0.18)
 
@@ -75,9 +89,17 @@ def melody(t, layer, notes, start_bar=0, octave_shift=0, vel=0.9, inst="brass", 
     """notes: [(name, beats), ...] played legato from start_bar."""
     beat = start_bar * 4.0
     for name, dur in notes:
+        if name == "R":
+            beat += dur
+            continue
         m = N(name) + 12 * octave_shift
         secs = dur * t.beat
-        if inst == "brass":
+        if inst == "horns":
+            # Darker: the filter barely opens, the octave below is stronger.
+            t.put(layer, beat, S.brass([m, m - 12, m - 12], secs * 0.97, vel, attack=0.07, dark=600, bright=1500), send=send)
+        elif inst == "choir":
+            t.put(layer, beat, S.choir([m, m - 12], secs * 0.98, vel, attack=0.12, release=0.4), send=send)
+        elif inst == "brass":
             t.put(layer, beat, S.brass([m, m - 12], secs * 0.97, vel, attack=0.05), send=send)
         elif inst == "strings":
             t.put(layer, beat, S.strings_long([m, m + 12], secs * 0.98, vel, bright=5200, attack=0.07, release=0.35), send=send)
@@ -270,7 +292,11 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     preview = "--preview" in sys.argv
     os.makedirs(OUT, exist_ok=True)
+    import variants
     for name in args or list(CUES):
+        if name in variants.VARIANTS:
+            variants.render(name, preview_dir=PREVIEW)
+            continue
         track = CUES[name]()
         layers = track.render()
         layers, gain = S.master(layers)

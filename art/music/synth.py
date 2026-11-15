@@ -275,6 +275,82 @@ def boom(vel=1.0):
     return pan2(np.tanh(x * 1.4) * vel * 0.22, 0.0)
 
 
+# ---- bells, gong and a drum and bass kit (finale variants) -------------------
+
+def bell(midi, vel=1.0, ring=6.0):
+    """A big church bell: hum, prime, minor-third tierce, quint, nominal and
+    the upper partials, each ringing for its own time, and a hard strike."""
+    f = hz(midi)
+    n = int(ring * SR)
+    t = np.arange(n) / SR
+    x = np.zeros(n)
+    for ratio, g, d in ((0.5, 0.6, 1.0), (1.0, 0.8, 0.55), (1.2, 0.5, 0.4), (1.5, 0.3, 0.3), (2.0, 0.6, 0.3),
+                        (2.5, 0.25, 0.15), (3.0, 0.2, 0.12), (4.2, 0.12, 0.07), (5.4, 0.07, 0.05)):
+        beat = 1.0 + 0.5 * np.sin(2 * np.pi * _rng.uniform(0.3, 1.2) * t)  # the slow wobble of a real bell
+        x += g * np.sin(2 * np.pi * f * ratio * (1 + _rng.uniform(-0.002, 0.002)) * t) * np.exp(-t / (d * ring)) * (0.85 + 0.15 * beat)
+    strike = bp(_rng.standard_normal(n), 800, 6000) * np.exp(-t / 0.01)
+    x += strike * 0.4
+    y = np.stack([x, np.roll(x, 53)], axis=1)
+    return y * vel * 0.16
+
+
+def gong(vel=1.0, ring=7.0):
+    """A tam-tam: a dull hit that blooms into a shimmering roar."""
+    n = int(ring * SR)
+    t = np.arange(n) / SR
+    x = np.zeros(n)
+    for f in np.geomspace(90, 3200, 40) * _rng.uniform(0.95, 1.05, 40):
+        x += np.sin(2 * np.pi * f * t + _rng.uniform(0, 6.28)) * _rng.uniform(0.3, 1.0) / np.sqrt(f / 90)
+    bloom = (1 - np.exp(-t / 0.35)) * np.exp(-t / (ring * 0.35))
+    body = np.sin(2 * np.pi * 62 * t) * np.exp(-t / 1.4) * 2.0
+    hit = lp(_rng.standard_normal(n), 900) * np.exp(-t / 0.05) * 2.0
+    y = x * bloom * 0.25 + body + hit
+    out = np.stack([y, np.roll(y, 97)], axis=1)
+    return out * vel * 0.08
+
+
+def kick(vel=1.0):
+    """A punchy electronic kick: a fast pitch drop and a click."""
+    n = int(0.45 * SR)
+    t = np.arange(n) / SR
+    f = 48 + 140 * np.exp(-t / 0.025)
+    x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.18)
+    x += hp(_rng.standard_normal(n), 3000) * np.exp(-t / 0.004) * 0.5
+    return pan2(np.tanh(x * 2.0) * vel * 0.42, 0.0)
+
+
+def dnb_snare(vel=1.0):
+    """A tight, cracking break snare."""
+    n = int(0.35 * SR)
+    t = np.arange(n) / SR
+    body = np.sin(2 * np.pi * np.cumsum(220 + 60 * np.exp(-t / 0.01)) / SR) * np.exp(-t / 0.06)
+    noise = bp(_rng.standard_normal(n), 1500, 11000) * np.exp(-t / 0.09)
+    x = np.tanh((0.7 * body + noise) * 1.8)
+    return pan2(x * vel * 0.32, 0.05)
+
+
+def hat(vel=1.0, open_=False, p=0.25):
+    n = int((0.25 if open_ else 0.06) * SR)
+    t = np.arange(n) / SR
+    x = hp(_rng.standard_normal(n), 8000) * np.exp(-t / (0.08 if open_ else 0.012))
+    return pan2(x * vel * 0.10, p)
+
+
+def reese(midi, dur, vel=1.0, cutoff=520):
+    """Drum and bass reese: two detuned saws and a sub, low-passed, with a
+    slow filter wobble so a held note moves instead of droning."""
+    n = int((dur + 0.08) * SR)
+    t = np.arange(n) / SR
+    x = osc_saw(hz(midi) * 2 ** (-11 / 1200), n) + osc_saw(hz(midi) * 2 ** (11 / 1200), n)
+    lo = lp(x, cutoff * 0.6)
+    hi = lp(x, cutoff * 1.6)
+    wob = 0.5 + 0.5 * np.sin(2 * np.pi * 1.5 * t - np.pi / 2)
+    y = lo * (1 - wob) + hi * wob
+    y = np.tanh(y * 1.5) * 0.6 + osc_sine(hz(midi - 12), n) * 0.7
+    e = env(n, 0.006, 0.3, 0.85, 0.06, hold=dur)
+    return pan2(y * e * vel * 0.30, 0.0)
+
+
 # ---- reverb and mixing -----------------------------------------------------
 
 _ir_cache = {}
