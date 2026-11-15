@@ -37,7 +37,7 @@ static func play(name: String, volume_db: float = 0.0, pitch: float = 1.0) -> vo
 	var files: Array = SOUNDS[name]
 	var path: String = files[randi() % files.size()]
 	if not _cache.has(path):
-		_cache[path] = load(path) if ResourceLoader.exists(path) else null
+		_cache[path] = _one_shot(load(path)) if ResourceLoader.exists(path) else null
 	var stream = _cache[path]
 	if stream == null:
 		return
@@ -49,3 +49,23 @@ static func play(name: String, volume_db: float = 0.0, pitch: float = 1.0) -> vo
 	tree.root.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
+	# Belt and braces: a player never outlives its sound (#188).
+	var secs: float = stream.get_length() / maxf(0.05, pitch) + 0.5 if stream.get_length() > 0.0 else 10.0
+	tree.create_timer(secs).timeout.connect(func():
+		if is_instance_valid(p):
+			p.queue_free())
+
+
+# Some of the game's sounds loop (the charge, the eerie hum): played as a
+# one-shot they never finish and drone on for the rest of the battle (#188).
+# Those play from a copy with the loop turned off.
+static func _one_shot(stream):
+	if stream is AudioStreamWAV and stream.loop_mode != AudioStreamWAV.LOOP_DISABLED:
+		var s: AudioStreamWAV = stream.duplicate()
+		s.loop_mode = AudioStreamWAV.LOOP_DISABLED
+		return s
+	if stream is AudioStreamOggVorbis and stream.loop:
+		var o: AudioStreamOggVorbis = stream.duplicate()
+		o.loop = false
+		return o
+	return stream
