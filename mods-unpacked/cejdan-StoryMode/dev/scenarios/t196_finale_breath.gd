@@ -7,8 +7,9 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 # console's menu would do that): the music holds, and every toll still lands
 # on its crack.
 #
-# t196_finale_console: idle in the console's menu instead, which takes Battle
-# by itself after the breath.
+# t196_finale_console: idle in the console's menu instead, which holds the
+# bells until Battle.
+
 
 const Director = preload("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")

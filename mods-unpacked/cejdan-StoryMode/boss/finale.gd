@@ -39,7 +39,7 @@ const RUMBLE := 2.6           # seconds of cracking ground before rounds 2 and 3
 # Boss.FINALE_TOLLS. It ends, and round 1 breaks out, on the music's drop.
 
 var step: String = "breath"   # breath, rumble, round1, lull, round2, lull, round3, fall, allies, thanks, done
-var bells_by: String = ""     # what ended the breath: battle, idle, console
+var bells_by: String = ""     # what ended the breath: battle, idle
 var great = null              # Velle's great eye (last round)
 var fall_side: float = 1.0    # the side of the dome it falls to: +1 right, -1 left
 var fight_t: float = 0.0      # seconds of battle so far (the rounds, not the pauses)
@@ -63,7 +63,7 @@ var _toll_flash: float = 0.0  # the cracks' flash from the last toll, fading
 var _toll_grow: float = 0.0   # how far the cracks are open, 0..1, eased
 var _toll_roll: bool = false  # the snare roll: the cracks tear open
 var _clock_fallback: bool = false
-var _idle_ms: float = 0.0     # real ms of the breath spent out of the shop
+var _idle_ms: float = 0.0     # real ms of the breath spent walking about
 static var _alarm_loud: AudioStream = null   # the game's own alarm, while ours stands in
 var _idle_last: int = -1
 
@@ -148,7 +148,8 @@ static func activity() -> String:
 
 
 # The breath before the bells. Runs on real time, as the console's menu and
-# the shop pause the game.
+# the shop pause the game. Battle starts the bells; walking about for
+# Boss.FINALE_BREATH seconds does too; the menu and the shop hold them.
 func _breath() -> void:
 	var now: int = Time.get_ticks_msec()
 	var dt: float = 0.0 if _idle_last < 0 else float(now - _idle_last)
@@ -157,19 +158,12 @@ func _breath() -> void:
 	if doing == "battle":
 		_start_bells("battle")
 		return
-	if doing == "":
-		_idle_ms = 0.0   # in the shop: the breath starts over when it closes
+	if doing != "keeper":
+		_idle_ms = 0.0   # in a menu or the shop: the breath starts over after
 		return
 	_idle_ms += dt
-	if _idle_ms < Boss.FINALE_BREATH * 1000.0:
-		return
-	if doing == "console":
-		# Idle in the console's menu: it takes Battle, as the player would,
-		# so the bells ring over a running world.
-		var leaf = InputSystem.getLastChild()
-		leaf.popup.moveOut()
-		Level.stage.startBattleInput(leaf.keeper, leaf.station)
-	_start_bells("console" if doing == "console" else "idle")
+	if _idle_ms >= Boss.FINALE_BREATH * 1000.0:
+		_start_bells("idle")
 
 
 func _start_bells(by: String) -> void:

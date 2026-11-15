@@ -155,8 +155,8 @@ const FINALE_FURY_FLOOR := 0.45
 # from the snare roll on the cracks tear right open.
 # Before the bells, a breath of silence (#196): the bells start the moment
 # the keeper takes the dome's weapon (Battle at the console), or after this
-# many seconds out of the shop (walking about, or idle in the console's menu,
-# which then takes Battle itself). The shop holds them off.
+# many seconds walking about. The console's menu and the shop hold them off
+# (they pause the game, as in any wave).
 const FINALE_BREATH := 4.0
 # The wave alarm (the HUD's blinking beep while nobody is at the console) is
 # this much quieter during the finale, so the bells come through (#196).
