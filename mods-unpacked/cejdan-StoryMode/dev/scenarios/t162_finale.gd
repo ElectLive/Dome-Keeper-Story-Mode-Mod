@@ -69,9 +69,10 @@ func run(h) -> void:
 	h.check("the hearts are put away: the keeper is home", not boss.health.visible)
 	await h.wait(1.0)
 	await h.shot("ground_cracking_early")
-	await h.wait(1.2)
+	await h.wait(7.0)
 	await h.shot("ground_cracking_late")
-	await h.until(func(): return fin.step == "round1", 6.0)
+	# The first cracking lasts the music's bell intro (#172), about 9.7 s.
+	await h.until(func(): return fin.step == "round1", 14.0)
 	await h.burst("breaking_out", 8, 3)
 	await h.wait(1.2)
 	await h.shot("round1")

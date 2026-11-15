@@ -261,7 +261,7 @@ def toll():
 VARIANTS = {"siege": siege, "requiem": requiem, "unravel": unravel, "toll": toll}
 
 
-def _once(track):
+def once(track):
     """A track rendered without wrapping its tail round: a one-shot."""
     out = {}
     for l in track.dry:
@@ -282,12 +282,12 @@ def render(name, preview_dir):
     if intro is not None:
         # The intro rings on into the loop: its bars, then its tail laid over
         # the loop's start. Same gain as the loop.
-        once = _once(intro)["intro"]
-        once = np.tanh(S.hp(once.T, 28).T * gain / 0.93) * 0.93
-        write_ogg(os.path.join(preview_dir, "finale_%s_intro.ogg" % name), once)
+        ring = once(intro)["intro"]
+        ring = np.tanh(S.hp(ring.T, 28).T * gain / 0.93) * 0.93
+        write_ogg(os.path.join(preview_dir, "finale_%s_intro.ogg" % name), ring)
         song = np.concatenate([np.zeros((intro.length, 2)), song])
-        song[: once.shape[0]] += once
-        print("  intro %.2fs (+%.1fs tail) rms %.3f" % (intro.length / S.SR, (once.shape[0] - intro.length) / S.SR, np.sqrt((once ** 2).mean())))
+        song[: ring.shape[0]] += ring
+        print("  intro %.2fs (+%.1fs tail) rms %.3f" % (intro.length / S.SR, (ring.shape[0] - intro.length) / S.SR, np.sqrt((ring ** 2).mean())))
     # Both layers together can pass full scale; the preview gets a soft limit.
     song = np.tanh(song / 0.95) * 0.95
     write_ogg(os.path.join(preview_dir, "finale_%s_full.ogg" % name), song)

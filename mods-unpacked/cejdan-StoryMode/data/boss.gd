@@ -139,3 +139,15 @@ const FINALE_GAZE_BREAK := 0.14
 # down to FURY_FLOOR of the listed times. A slow dome is buried.
 const FINALE_FURY_PER_S := 0.004
 const FINALE_FURY_FLOOR := 0.45
+
+# The finale's bell intro (#172, music/boss_finale_intro.ogg, written by
+# art/music/variants.py toll): 7 bars at 174 bpm, played once while the ground
+# first cracks; the battle loop and the first tentacles come in together at
+# its end. Beats count from the start of the intro. On each toll the ground
+# jolts and the cracks open a step further; the kicks before the drop thud;
+# from the snare roll on the cracks tear right open.
+const FINALE_BEAT := 60.0 / 174.0
+const FINALE_INTRO_BEATS := 28
+const FINALE_TOLLS := [0.0, 4.0, 8.0, 12.0, 16.0, 20.0]
+const FINALE_HEARTBEATS := [22.0, 24.0, 25.0, 26.0, 26.5, 27.0, 27.5]
+const FINALE_ROLL_BEAT := 26.0

@@ -9,12 +9,16 @@ extends Node
 #            phase 2; 3 Velle's theme, choir and crashes on top in phase 3.
 #   chase    1 the run; 2 what is behind you, louder the closer the
 #            tentacles are.
-#   finale   both layers, full.
+#   finale   "Toll": music/boss_finale_intro.ogg once (bells while the ground
+#            cracks), then both loop layers at full, starting exactly at the
+#            intro's end so the drop lands. boss/finale.gd times the cracking
+#            to intro_time().
 #
 # The mining music is held off while any of this plays, and everything fades
 # when the sequence ends (the endings bring their own music). The OGGs are
 # read from their bytes, like the mod's PNGs, so they need no import step.
 
+const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const DIR := "res://mods-unpacked/cejdan-StoryMode/music/"
 const CUES := {"fight": 3, "chase": 2, "finale": 2}
 const SILENT := -60.0
@@ -29,6 +33,8 @@ static var _streams: Dictionary = {}   # path -> AudioStreamOggVorbis
 var cues: Dictionary = {}    # cue -> [AudioStreamPlayer, ...]
 var goals: Dictionary = {}   # cue -> [dB, ...]
 var mode: String = ""        # "", fight, chase, finale
+var intro: AudioStreamPlayer = null   # the finale's bell intro
+var _intro_pending: bool = false      # the intro plays; the loop has not started yet
 var _hold_t: float = 0.0
 
 
@@ -36,15 +42,19 @@ func _ready() -> void:
 	name = "BossMusic"
 
 
-static func stream(cue: String, layer: int) -> AudioStream:
-	var path: String = DIR + "boss_%s_%d.ogg" % [cue, layer]
+static func intro_length() -> float:
+	return Boss.FINALE_BEAT * Boss.FINALE_INTRO_BEATS
+
+
+static func stream(cue: String, layer: int, loop: bool = true) -> AudioStream:
+	var path: String = DIR + ("boss_%s_%d.ogg" % [cue, layer] if layer > 0 else "boss_%s_intro.ogg" % cue)
 	if not _streams.has(path):
 		var bytes: PackedByteArray = FileAccess.get_file_as_bytes(path)
 		var s: AudioStreamOggVorbis = AudioStreamOggVorbis.load_from_buffer(bytes) if not bytes.is_empty() else null
 		if s == null:
 			push_error("StoryMode: missing or bad music file " + path)
 		else:
-			s.loop = true
+			s.loop = loop
 			s.resource_name = path.get_file()
 		_streams[path] = s
 	return _streams[path]
@@ -57,6 +67,12 @@ func _start(cue: String) -> void:
 	if mode != "":
 		goals[mode] = _silence(mode)
 	mode = cue
+	_ensure(cue)
+	_play_cue(cue, 0.0)
+	goals[cue] = _silence(cue)
+
+
+func _ensure(cue: String) -> void:
 	if not cues.has(cue):
 		var list: Array = []
 		for i in CUES[cue]:
@@ -67,11 +83,17 @@ func _start(cue: String) -> void:
 			add_child(p)
 			list.append(p)
 		cues[cue] = list
-	for p: AudioStreamPlayer in cues[cue]:
+
+
+# Plays every layer of `cue` from `from` seconds, silent, or straight at its
+# goal volume when `loud` (the finale's drop must land, not fade in).
+func _play_cue(cue: String, from: float, loud: bool = false) -> void:
+	var g: Array = goals.get(cue, _silence(cue))
+	for i in cues[cue].size():
+		var p: AudioStreamPlayer = cues[cue][i]
 		if p.stream != null:
-			p.volume_db = SILENT
-			p.play()
-	goals[cue] = _silence(cue)
+			p.volume_db = float(g[i]) if loud else SILENT
+			p.play(maxf(0.0, from))
 
 
 func _silence(cue: String) -> Array:
@@ -94,19 +116,47 @@ func chase(closeness: float) -> void:
 
 
 func finale() -> void:
-	_start("finale")
+	if mode == "finale":
+		return
+	if mode != "":
+		goals[mode] = _silence(mode)
+	mode = "finale"
+	_ensure("finale")
 	goals["finale"] = FINALE.duplicate()
+	var s = stream("finale", 0, false)
+	if s == null:
+		_play_cue("finale", 0.0)
+		return
+	if intro == null:
+		intro = AudioStreamPlayer.new()
+		intro.bus = &"Music"
+		add_child(intro)
+	intro.stream = s
+	intro.volume_db = 0.0
+	intro.play()
+	_intro_pending = true
+
+
+# Seconds into the finale's bell intro, from the audio clock, or -1 when no
+# intro is playing (no file, or the loop has taken over).
+func intro_time() -> float:
+	if not _intro_pending or intro == null or not intro.playing:
+		return -1.0
+	return intro.get_playback_position() + AudioServer.get_time_since_last_mix()
 
 
 func stop() -> void:
 	if mode != "":
 		goals[mode] = _silence(mode)
 	mode = ""
+	_intro_pending = false
 
 
 # What is audible now, for playtests: file names, volumes and play positions.
 func playing() -> Array:
 	var out: Array = []
+	if intro != null and intro.playing and intro.volume_db > -40.0:
+		out.append({"file": intro.stream.resource_name, "db": snappedf(intro.volume_db, 0.1), "pitch": 1.0, "pos": snappedf(intro.get_playback_position(), 0.01)})
 	for cue: String in cues:
 		for p: AudioStreamPlayer in cues[cue]:
 			if p.playing and p.volume_db > -40.0 and p.stream != null:
@@ -115,6 +165,17 @@ func playing() -> Array:
 
 
 func _process(delta: float) -> void:
+	# The finale's drop: the loop starts where the intro's bars end, from the
+	# overshoot, so it lands on the beat; the intro's bells ring on over it.
+	if _intro_pending:
+		var at: float = intro_time()
+		if at < 0.0 or at >= intro_length():
+			_intro_pending = false
+			_play_cue("finale", at - intro_length() if at >= 0.0 else 0.0, true)
+	if intro != null and intro.playing and mode != "finale":
+		intro.volume_db = move_toward(intro.volume_db, SILENT, FADE_DB_PER_S * delta)
+		if intro.volume_db <= SILENT + 0.5:
+			intro.stop()
 	for cue: String in cues:
 		var g: Array = goals.get(cue, _silence(cue))
 		var all_out: bool = true

@@ -79,7 +79,7 @@ func run(h) -> void:
 	var t0: float = h.now()
 	# Take the laser once the first round breaks out (before a battle the
 	# station opens the dome's menu instead, which pauses the game).
-	await h.until(func(): return fin.step == "round1", 8.0)
+	await h.until(func(): return fin.step == "round1", 15.0)
 	st.useHit(k)
 	# The station opens its menu (Battle / Upgrades / Exit) and pauses: pick
 	# Battle, which is "left".

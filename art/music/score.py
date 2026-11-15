@@ -7,8 +7,12 @@ layers the game blends by what is happening (boss/boss_music.gd).
   chase   160 bpm, 16 bars. 1: the run (drums on every beat, driving 16ths).
           2: what is behind you (brass stabs, shrieking tremolo, choir), swelled
           by how close the tentacles are.
-  finale  140 bpm, 16 bars. 1: battle drums, ostinato, low brass. 2: the theme
-          turned heroic in the horns, choir and crashes.
+  finale  "Toll" (art/music/variants.py, the user's pick, 2026-11-15): a 7-bar
+          intro played once while the ground cracks (a gong, bells ringing the
+          motif, a heartbeat of kicks, a snare roll), then drum and bass at 174
+          bpm, 32 bars. 1: the break and the reese bass. 2: dark horns, choir
+          and bells on the theme. The first, heroic finale (finale_heroic
+          below) was "too saccharine".
 
 Velle's motif is D-Eb-D-A: a half-step up and back, then down to the dark
 fifth. It is in all three cues.
@@ -221,7 +225,7 @@ FINALE_ANSWER = [("D5", 2), ("Eb5", 1), ("D5", 1), ("A4", 2), ("D5", 2), ("C5", 
                  ("G5", 2), ("Bb5", 2), ("Bb5", 3), ("G5", 1), ("A5", 4), ("C#5", 2), ("E5", 2)]
 
 
-def finale():
+def finale_heroic():
     chords = ["Dm", "Bb", "F", "C", "Dm", "Bb", "Gm", "A", "Dm", "Bb", "F", "C", "Gm", "Eb", "A", "A"]
     t = S.Track(140, 16, ["1", "2"])
     # 1: battle.
@@ -260,6 +264,11 @@ def finale():
     return t
 
 
+def finale():
+    import variants
+    return variants.toll()
+
+
 CUES = {"fight": fight, "chase": chase, "finale": finale}
 
 
@@ -294,12 +303,22 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     import variants
     for name in args or list(CUES):
+        # Each cue draws its own dice, so rendering one never changes another.
+        S._rng = np.random.default_rng(sum(ord(c) * (i + 1) for i, c in enumerate(name)))
         if name in variants.VARIANTS:
             variants.render(name, preview_dir=PREVIEW)
             continue
         track = CUES[name]()
+        intro = None
+        if isinstance(track, tuple):
+            track, intro = track
         layers = track.render()
         layers, gain = S.master(layers)
+        if intro is not None:
+            # Played once before the loop: same gain, its tail left ringing.
+            layers_intro = variants.once(intro)["intro"]
+            write_ogg(os.path.join(OUT, "boss_%s_intro.ogg" % name), np.tanh(S.hp(layers_intro.T, 28).T * gain / 0.93) * 0.93)
+            print("  intro %.3fs (+tail), the loop starts at its end" % (intro.length / S.SR))
         full = sum(layers.values())
         info = {k: "rms %.3f peak %.3f" % (np.sqrt((v ** 2).mean()), np.abs(v).max()) for k, v in layers.items()}
         print(name, "%.1fs" % (track.length / S.SR), "gain %.2f" % gain, info, "full rms %.3f peak %.3f" % (np.sqrt((full ** 2).mean()), np.abs(full).max()))

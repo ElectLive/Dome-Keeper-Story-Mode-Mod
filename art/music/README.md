@@ -1,25 +1,30 @@
 # Boss score (#172)
 
-The boss sequence's music is written in code: `score.py` (the notes, the cues and their layers) plays instruments from `synth.py` (saw-wavetable strings and brass, a formant choir, taiko and toms, braams, a convolution reverb) and writes seamless loops to `mods-unpacked/cejdan-StoryMode/music/boss_<cue>_<layer>.ogg`. `boss/boss_music.gd` reads those OGGs from their bytes (no import step) and blends the layers with the fight.
+The boss sequence's music is written in code: `score.py` (the notes, the cues and their layers) and `variants.py` (the finale and the other finale candidates) play instruments from `synth.py` (saw-wavetable strings and brass, a formant choir, taiko and toms, braams, church bells, a tam-tam, a drum and bass kit with a reese bass, a convolution reverb) and write seamless loops to `mods-unpacked/cejdan-StoryMode/music/boss_<cue>_<layer>.ogg`. `boss/boss_music.gd` reads those OGGs from their bytes (no import step) and blends the layers with the fight.
 
 | Cue | Tempo, length | Layers |
 |---|---|---|
 | fight | 132 bpm, 16 bars | 1 the pulse (phase 1), 2 war drums and brass (phase 2), 3 Velle's theme, choir, crashes (phase 3) |
 | chase | 160 bpm, 16 bars | 1 the run, 2 what is behind you (louder as the tentacles close in) |
-| finale | 140 bpm, 16 bars | 1 battle drums and ostinato, 2 the theme in the horns with choir |
+| finale ("Toll") | intro 7 bars once, then 174 bpm, 32 bars | intro: a gong and church bells ring the motif while the ground cracks, a heartbeat of kicks, a snare roll. 1 the break and reese bass, 2 dark horns, choir and bells on the theme |
 
 Everything is in D minor. Velle's motif is D-Eb-D-A, in all three cues.
+
+The finale's intro (`boss_finale_intro.ogg`) plays once; the loop starts exactly where its 7 bars end, and `boss/finale.gd` cracks the ground on each bell toll by the music's clock, so the tentacles break out on the drop. The beat map the visuals use is in `data/boss.gd` (`FINALE_TOLLS` and friends): change it together with `_toll_intro` in `variants.py`.
+
+History, from the user's listens on 2026-11-15: the chase is loved as it is; the first finale (`finale_heroic` in `score.py`) was "too saccharine"; of four darker candidates (siege, requiem, unravel, toll) the user picked toll, then asked for a 10 s bell pause, a softer snare (the first one hurt: centred at 5 kHz), and the drums back up after that.
 
 ## Regenerate
 
 Needs Python with `numpy`, `scipy`, `soundfile` (and `matplotlib` for `--preview`). From the `Dome Keeper` folder:
 
 ```
-python art/music/score.py              # all cues
-python art/music/score.py chase        # one cue
-python art/music/score.py --preview    # also a two-loop full mix and a spectrogram per cue in art/music/preview/
+python art/music/score.py                            # all cues into the mod
+python art/music/score.py finale                     # one cue
+python art/music/score.py --preview                  # also a two-loop full mix and a spectrogram per cue in art/music/preview/
+python art/music/score.py siege requiem unravel toll # finale candidates, to art/music/preview/ only
 ```
 
-The synth is seeded, so the same command gives the same files (rendering one cue alone draws different dice than rendering all three; the committed files come from the plain all-cues run). The master step gives all layers of a cue one shared gain (so their balance holds) aiming at the game's own battle music loudness (about 0.2 RMS for the full mix), and its band balance was matched to the vanilla final-wave music.
+Each cue is seeded by its name, so rendering one cue never changes another, and the same command gives the same file. (The committed fight and chase files were rendered before per-cue seeds: rendering them again gives the same music with slightly different humanising dice.)
 
-Nobody has listened to these with ears yet: the levels, balance and loop seams were checked by measurement and spectrogram only.
+The master step gives all layers of a cue one shared gain (so their balance holds), aiming at the game's own battle music loudness (about 0.2 RMS for the full mix); band balance was matched to the vanilla final-wave music. Levels, balance and seams are checked by measurement and spectrogram; the user listens and decides.

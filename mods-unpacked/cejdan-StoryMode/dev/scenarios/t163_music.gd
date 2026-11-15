@@ -70,11 +70,14 @@ func run(h) -> void:
 	await h.until(func(): return Director.current() == "finale", 20.0)
 	h.up("ui_up")
 	await h.wait(4.0)
-	h.note("finale", m.playing())
-	h.check("the finale: both finale layers", m.playing().size() == 2 and _files(m).all(func(f): return f.begins_with("boss_finale")), m.playing())
-	# The end: it all fades.
+	h.note("finale intro", m.playing())
+	h.check("the finale opens with the bell intro alone", _files(m) == ["boss_finale_intro.ogg"], m.playing())
 	var fin = boss.finale
-	await h.until(func(): return fin.step == "round1", 6.0)
+	await h.until(func(): return fin.step == "round1", 14.0)
+	await h.wait(1.0)
+	h.note("finale", m.playing())
+	h.check("then both finale layers, full", m.cues["finale"].all(func(p): return p.playing and p.volume_db >= -0.5), m.playing())
+	# The end: it all fades.
 	for round in 2:
 		await h.wait(2.0)
 		for mon in fin.alive:
