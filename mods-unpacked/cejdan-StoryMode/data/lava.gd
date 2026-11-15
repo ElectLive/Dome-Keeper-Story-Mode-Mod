@@ -72,7 +72,7 @@ const OCEAN_FUNNEL_BUMP_ROWS := [6, 2]
 # Open air between the ocean's rock ceiling and the lava (#149), so breaking in
 # opens onto a wide cavern, and lava from above has room to drain into.
 const OCEAN_AIR_ROWS := 4
-const OCEAN_UNOB_CELLS_PER_TILE := 30.0   # one unobtainium tile per this many cells of the box the funnel sits in (map width x OCEAN_ROWS); keeps the total of the first, full-size ocean (#43: 60 per cell of a box twice as deep)
+const OCEAN_UNOB_CELLS_PER_TILE := 30.0   # one unobtainium tile per this many cells of the map's full width x OCEAN_ROWS; keeps the total of the first, full-size ocean (#43: 60 per cell of a box twice as deep)
 const OCEAN_UNOB_CLUMP := [1, 3]
 const OCEAN_FLOOR_ROWS := 2               # rock under the ocean (1 row over the chamber)
 const BOSS_CHAMBER := Vector2i(20, 10)    # width x height, empty and sealed

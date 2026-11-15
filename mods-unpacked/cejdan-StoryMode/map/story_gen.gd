@@ -94,8 +94,8 @@ static func fill_bottom(map_data, rand: RandomNumberGenerator) -> int:
 
 # The lava ocean (#43): added below the generated map, under B8 (biome index 7).
 # Rows, top to bottom: one rock ceiling row and OCEAN_AIR_ROWS of open air
-# (#149), both across the map's full width, so digging down from anywhere
-# breaks in; then OCEAN_ROWS open rows in a rough funnel (#184): full width at
+# (#149), both as wide as the map's bottom row, so digging down from anywhere
+# down there breaks in, and no ocean lies under the border; then OCEAN_ROWS open rows in a rough funnel (#184): full width at
 # the top, its two sides sloping down, each with its own curve and bumps, to
 # just over the boss chamber at the bottom (the lava field fills them), with
 # unobtainium clumps inside and on its floor and slopes; OCEAN_FLOOR_ROWS of
@@ -119,6 +119,26 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 	var ch_h: int = LavaData.BOSS_CHAMBER.y
 	var wall: int = LavaData.BOSS_CHAMBER_WALL
 	var ch_half: int = ch_w / 2 + wall + LavaData.OCEAN_FUNNEL_BOTTOM_MARGIN
+	# No wider than the map's bottom row: the unbroken run of map cells in the
+	# deepest row around the middle (#184 review), so every cell over the
+	# ocean's top row is mineable rock, never a side arm's overhang or void.
+	var map_w: int = x1 - x0 + 1   # sets the unobtainium total, below
+	var bottom_row: Dictionary = {}
+	for c: Vector2i in cells:
+		if c.y == yb and map_data.get_biomev(c) >= 0:
+			bottom_row[c.x] = true
+	if not bottom_row.is_empty():
+		var mid: int = 0
+		if not bottom_row.has(0):
+			var keys: Array = bottom_row.keys()
+			keys.sort_custom(func(a, b): return absi(a) < absi(b))
+			mid = int(keys[0])
+		x0 = mid
+		while bottom_row.has(x0 - 1):
+			x0 -= 1
+		x1 = mid
+		while bottom_row.has(x1 + 1):
+			x1 += 1
 	x0 = mini(x0, -ch_half)
 	x1 = maxi(x1, ch_half)
 	var biome: int = MapConfig.BIOMES - 1
@@ -157,10 +177,10 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 			map_data.set_resourcev(Vector2i(x, y), Data.TILE_EMPTY)
 			map_data.set_hardnessv(Vector2i(x, y), Data.HARDNESS_MEDIUM)
 	# Unobtainium: clumps in the ocean, some resting on its floor or slopes
-	# (the lowest funnel row of a column). The total is set by the full-width
-	# box the funnel sits in: what the first, full-size ocean held (#43, #175).
+	# (the lowest funnel row of a column). The total is set by the map's full
+	# width: what the first, full-size ocean held (#43, #175).
 	var unob: int = int(Minerals.TABLE["unobtainium"]["tile_id"])
-	var want: int = int(round((x1 - x0 + 1) * LavaData.OCEAN_ROWS / LavaData.OCEAN_UNOB_CELLS_PER_TILE))
+	var want: int = int(round(map_w * LavaData.OCEAN_ROWS / LavaData.OCEAN_UNOB_CELLS_PER_TILE))
 	var low: Dictionary = {}   # x -> the funnel's lowest row in that column
 	var inside: Array = []     # where a clump may start (off the walls, below the top two rows)
 	for y in range(top, bottom + 1):

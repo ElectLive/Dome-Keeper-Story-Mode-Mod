@@ -11,8 +11,9 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 # map's border. Its size, the boss chamber under it and its unobtainium are
 # checked for every seed.
 #
-# Ticket 184: the ocean is a rough funnel. Its top spans the map's full width
-# again (so the size check now wants all of it), its rows narrow overall (each
+# Ticket 184: the ocean is a rough funnel. Its top spans the map's bottom row
+# (so the size check wants most of the map's width), every cell over it is
+# mineable, its rows narrow overall (each
 # third of it narrower on average than the one above), the bottom row spans
 # the boss chamber, the chamber is the map's deepest open space, and no open
 # cell of the ocean's rows lies outside the funnel.
@@ -60,7 +61,7 @@ func run(h) -> void:
 			"unobtainium": o["unobtainium"], "chamber x": [ch.position.x, ch.end.x - 1], "ocean x": [o["x0"], o["x1"]]}
 		sizes.append(size)
 		var share: float = float(size["ocean width"]) / float(size["map width"])
-		if share < 0.97 or size["ocean rows"] != LavaData.OCEAN_ROWS or ch.position.x <= int(o["x0"]) or ch.end.x - 1 >= int(o["x1"]) or int(o["unobtainium"]) < 25:
+		if share < 0.75 or size["ocean rows"] != LavaData.OCEAN_ROWS or ch.position.x <= int(o["x0"]) or ch.end.x - 1 >= int(o["x1"]) or int(o["unobtainium"]) < 25:
 			bad_sizes.append(size)
 		var funnel_bad: Array = []
 		var rows: Dictionary = o.get("rows", {})
@@ -101,6 +102,11 @@ func run(h) -> void:
 				deepest_open = maxi(deepest_open, c.y)
 		if deepest_open != ch.end.y - 1:
 			funnel_bad.append("deepest open row %d is not the chamber's floor %d" % [deepest_open, ch.end.y - 1])
+		# Every cell right over the ocean's top row is mineable (#184 review).
+		for x in range(int(o["x0"]), int(o["x1"]) + 1):
+			if not diggable(td, Vector2i(x, ceiling - 1)):
+				funnel_bad.append("cell over the ocean at %s is not mineable" % Vector2i(x, ceiling - 1))
+				break
 		if not funnel_bad.is_empty():
 			bad_funnels.append({"seed": 6000 + s, "problems": funnel_bad.slice(0, 6)})
 		# Per column, the top of the unbroken diggable run that ends on the ceiling.
@@ -146,5 +152,5 @@ func run(h) -> void:
 	h.check("over the ocean, from anywhere, at least 70%% (%.1f%%)" % all, all >= 70.0)
 	for z in sizes.slice(0, 5):
 		h.note("ocean size", z)
-	h.check("every ocean is the map's full width, %d rows deep, spans the boss chamber and holds 25+ unobtainium" % LavaData.OCEAN_ROWS, bad_sizes.is_empty() and sizes.size() >= SEEDS - 1, bad_sizes)
+	h.check("every ocean is most of the map's width, %d rows deep, spans the boss chamber and holds 25+ unobtainium" % LavaData.OCEAN_ROWS, bad_sizes.is_empty() and sizes.size() >= SEEDS - 1, bad_sizes)
 	h.check("every ocean is a funnel: full width on top, narrowing overall, its bottom row over the chamber, the chamber the deepest open space", bad_funnels.is_empty(), bad_funnels)
