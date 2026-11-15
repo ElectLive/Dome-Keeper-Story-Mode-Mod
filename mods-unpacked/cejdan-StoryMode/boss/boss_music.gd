@@ -27,6 +27,11 @@ const FADE_DB_PER_S := 30.0
 const FIGHT := [[2.0, SILENT, SILENT], [0.0, 0.0, SILENT], [0.0, 0.0, 0.0]]
 const CHASE_FAR := -16.0
 const FINALE := [0.0, 0.0]
+# All boss music sits this far above the layer volumes. The files are mastered
+# to the game's own music loudness, but the boss fights are busier with sound
+# than a wave, so the music is lifted to carry over them (playtest 2026-11-15).
+# The Music bus is ~10 dB down and the master bus has a limiter: no clipping.
+const GAIN_DB := 3.0
 
 static var _streams: Dictionary = {}   # path -> AudioStreamOggVorbis
 
@@ -92,8 +97,13 @@ func _play_cue(cue: String, from: float, loud: bool = false) -> void:
 	for i in cues[cue].size():
 		var p: AudioStreamPlayer = cues[cue][i]
 		if p.stream != null:
-			p.volume_db = float(g[i]) if loud else SILENT
+			p.volume_db = _out_db(float(g[i])) if loud else SILENT
 			p.play(maxf(0.0, from))
+
+
+# A layer volume as played: lifted by GAIN_DB unless it is silent.
+static func _out_db(layer_db: float) -> float:
+	return layer_db if layer_db <= SILENT else layer_db + GAIN_DB
 
 
 func _silence(cue: String) -> Array:
@@ -132,7 +142,7 @@ func finale() -> void:
 		intro.bus = &"Music"
 		add_child(intro)
 	intro.stream = s
-	intro.volume_db = 0.0
+	intro.volume_db = GAIN_DB
 	intro.play()
 	_intro_pending = true
 
@@ -183,7 +193,7 @@ func _process(delta: float) -> void:
 			var p: AudioStreamPlayer = cues[cue][i]
 			if not p.playing:
 				continue
-			p.volume_db = move_toward(p.volume_db, g[i], FADE_DB_PER_S * delta)
+			p.volume_db = move_toward(p.volume_db, _out_db(g[i]), FADE_DB_PER_S * delta)
 			all_out = all_out and g[i] <= SILENT and p.volume_db <= SILENT + 0.5
 		# A cue that has faded right out stops.
 		if all_out:
