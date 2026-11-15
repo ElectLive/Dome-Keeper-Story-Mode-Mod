@@ -59,6 +59,11 @@ void fragment() {
 			d.yz -= DT * v / sub;
 		}
 		d.yz *= 1.0 - untwist;
+		// Never twisted further than a few tiles: past that the pattern only smears.
+		float tw = length(d.yz);
+		if (tw > 2.5) {
+			d.yz *= 2.5 / tw;
+		}
 		float target = min(coarse_at(UV), 1.6);
 		d.x += (target - d.x) * (d.x > target ? clear_rate : fill_rate);
 		COLOR = vec4(max(d.x, 0.0), d.y, d.z, 1.0);

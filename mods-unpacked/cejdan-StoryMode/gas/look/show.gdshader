@@ -85,7 +85,8 @@ void fragment() {
 		else if (lv < 0.22) { a = 0.0; }
 
 		// Motes carried by the flow: single bright pixels that twinkle.
-		vec2 mc = floor(q * 12.0);
+		// (They follow only part of the twist, or they would stretch into streaks.)
+		vec2 mc = floor((origin_tiles + uv * win_tiles + d.yz * 0.3 + vec2(0.0, -time * 0.12)) * 12.0);
 		float mh = hash(mc);
 		if (mh > 0.991 && d.x > 0.25) {
 			float tw = sin(time * (2.0 + 5.0 * hash(mc + 3.7)) + mh * 90.0);

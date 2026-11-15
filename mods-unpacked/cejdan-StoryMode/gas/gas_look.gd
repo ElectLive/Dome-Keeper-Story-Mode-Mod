@@ -24,7 +24,7 @@ var field
 var map
 var c0 := Vector2i.ZERO             # the window's top-left tile
 var params := {"buoyancy": 1.6, "churn": 2.6, "vorticity": 0.16, "jet": 0.05, "flux_gain": 7.0,
-	"fill_rate": 0.06, "clear_rate": 0.16, "untwist": 0.012, "glow": 0.17}
+	"fill_rate": 0.09, "clear_rate": 0.16, "untwist": 0.02, "glow": 0.17}
 var cpu_us := 0
 var cpu_frames := 0
 var rebuilds := 0

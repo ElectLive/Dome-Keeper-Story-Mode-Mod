@@ -13,6 +13,7 @@ extends Node2D
 # live in data/gas.gd.
 
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
+const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
 const SAVE_KEY := "story.gas"
 const LAVA_FIELD := "StoryLavaField"
 const TILE := 24.0
@@ -146,6 +147,7 @@ func _on_tile_destroyed(world_pos: Vector2) -> void:
 	breaches += 1
 	_cracks.erase(c)
 	InputSystem.shake(4.0, 0.4, 20.0, world_pos)
+	GasSfx.play("burst", -3.0, 0.5)
 	# The pocket was under pressure: the rest of it bursts, cell by cell.
 	for d in DIRS:
 		if rock.has(c + d) and not _cracks.has(c + d):
@@ -179,6 +181,7 @@ func _physics_process(delta: float) -> void:
 		if not freeze_flow:
 			_step()
 	_update_toxin(delta)
+	_update_puffs(delta)
 	phys_us += Time.get_ticks_usec() - t0
 	phys_frames += 1
 	queue_redraw()
@@ -441,6 +444,7 @@ func _draw() -> void:
 			draw_rect(Rect2(o + p, size), Color(COL_ROCK_SEEP, 0.3 + 0.6 * pulse))
 			draw_rect(Rect2(o + p, Vector2(1, 1)), Color(COL_ROCK_CORE, pulse))
 	_draw_gas()
+	_draw_puffs()
 
 
 # Fallback look, a flat tint by density, when there is no GasLook (headless runs).
@@ -452,6 +456,85 @@ func _draw_gas() -> void:
 			continue
 		var a: float = clampf(mass[c], 0.0, 1.5) / 1.5
 		draw_rect(Rect2(_cell_origin(c), Vector2(TILE, TILE)), Color(0.45, 0.8, 0.2, 0.15 + 0.6 * a))
+
+
+# --- puffs (#203) ---------------------------------------------------------------
+# Small green puffs drawn here, outside the fluid field: the plume over a shaft
+# mouth where gas is leaving the mine, and wisps seeping from gas rock the
+# player can see. Drawn only; never saved.
+
+const PUFF_MAX := 220
+const COL_PUFF := Color("8fd13c")
+const COL_PUFF_LIT := Color("e6ff8a")
+
+var _puffs: Array = []             # [x, y, time born, seconds to live, 0..1 seed, rise px, size]
+var _puff_rng := RandomNumberGenerator.new()
+var _seep_t := 0.0
+
+
+func _puff(pos: Vector2, life: float, rise: float, size: float) -> void:
+	if _puffs.size() >= PUFF_MAX:
+		return
+	_puffs.append([pos.x, pos.y, _time, life, _puff_rng.randf(), rise, size])
+
+
+func _update_puffs(delta: float) -> void:
+	# The plume: every top-row cell that vented in the last moment throws puffs up.
+	for c in vent_marks.keys():
+		var age: float = _time - vent_marks[c]
+		if age > 0.6:
+			vent_marks.erase(c)
+			continue
+		if not _seen(c):
+			continue
+		if age < 0.1:
+			GasSfx.play("vent", -8.0, 1.5)
+		for i in 2:
+			if _puff_rng.randf() < delta * 30.0:
+				_puff(_cell_origin(c) + Vector2(_puff_rng.randf_range(3.0, TILE - 3.0), _puff_rng.randf_range(-4.0, 6.0)),
+					_puff_rng.randf_range(1.4, 2.6), _puff_rng.randf_range(50.0, 110.0), _puff_rng.randf_range(2.0, 5.0))
+	# Seeping: now and then a wisp leaves a visible gas rock cell into the open cell beside it.
+	_seep_t -= delta
+	if _seep_t <= 0.0 and not rock.is_empty():
+		_seep_t = 0.12
+		for c in rock:
+			if _puff_rng.randf() > 0.3 or not map.tiles.has(Vector2(c)):
+				continue
+			var d := Vector2i.ZERO
+			var first: int = _puff_rng.randi() % 4
+			for k in 4:
+				var cand: Vector2i = DIRS[(first + k) % 4]
+				if map.is_tile_empty(c + cand) and _seen(c + cand):
+					d = cand
+					break
+			if d == Vector2i.ZERO:
+				continue
+			var edge: Vector2 = _cell_origin(c) + Vector2(TILE, TILE) * 0.5 + Vector2(d) * (TILE * 0.5 + 1.0)
+			edge += Vector2(absf(d.y), absf(d.x)) * _puff_rng.randf_range(-8.0, 8.0)
+			_puff(edge, _puff_rng.randf_range(0.9, 1.6), _puff_rng.randf_range(8.0, 16.0), 1.0)
+	if not _puffs.is_empty():
+		_puffs = _puffs.filter(func(q): return _time - q[2] < q[3])
+
+
+# Each puff rises fast and slows, sways, swells and fades.
+func _draw_puffs() -> void:
+	for q in _puffs:
+		var age: float = _time - q[2]
+		var t: float = age / q[3]
+		if t < 0.0 or t >= 1.0:
+			continue
+		var s: float = q[4]
+		var x: float = round(q[0] + sin(age * 2.2 + s * TAU) * (1.0 + 5.0 * t) + (s - 0.5) * 14.0 * t)
+		var y: float = round(q[1] - q[5] * (1.0 - (1.0 - t) * (1.0 - t)))
+		var col := Color(COL_PUFF_LIT.lerp(COL_PUFF, minf(1.0, t * 2.0)), 0.6 * pow(1.0 - t, 1.2) * minf(1.0, age * 12.0))
+		var r: float = floor(q[6] * (0.6 + 1.2 * t))
+		if r < 1.0:
+			draw_rect(Rect2(x, y, 1.0, 1.0), col)
+			continue
+		draw_rect(Rect2(x - r, y - 1.0, r * 2.0, 2.0), col)
+		if r > 1.0:
+			draw_rect(Rect2(x - r + 1.0, y - r + 1.0, r * 2.0 - 2.0, r * 2.0 - 2.0), col)
+			draw_rect(Rect2(x - 1.0, y - r, 2.0, r * 2.0), col)
 
 
 func total() -> float:
