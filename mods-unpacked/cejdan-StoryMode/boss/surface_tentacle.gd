@@ -1,18 +1,20 @@
 extends "res://content/monster/Monster.gd"
 
-# A tentacle on the surface, in the final battle (#162, second pass #171). It
-# is a real Monster (an Area2D in the "monster" group on the monster layer), so
-# every dome weapon aims at it, hits it and kills it the vanilla way; only its
-# looks and its behaviour are the mod's.
+# A tentacle on the surface, in the final battle (#162, #171, third pass #173).
+# It is a real Monster (an Area2D in the "monster" group on the monster layer),
+# so every dome weapon aims at it, hits it and kills it the vanilla way; only
+# its looks and its behaviour are the mod's.
 #
 # It breaks out of the ground beside the dome: the earth splits, rock is thrown
 # up, and the tentacle whips out past its full height before it settles. It
-# sways, and slams the dome after a telegraph. When it dies the eye at its tip
-# tears free (`eye_freed`) and the finale turns it into a flyer.
+# sways, and slams the dome after a telegraph.
 #
-# `great` makes it Velle's great eye on a thick stalk: far more health, a slam
-# twice as hard, and the gaze: it charges a beam at the dome for a few seconds,
-# and only enough damage in that time makes it flinch and lose the shot.
+# It comes up with a row of eyes. Every few seconds one of them tears free
+# (`eye_freed`) and the finale turns it into a flyer, the lowest first and the
+# one at the tip last, until the tentacle has none left or is dead. The eyes
+# still on a tentacle when it dies die with it.
+#
+# Velle's great eye is its own monster: boss/great_eye.gd.
 #
 # Built in code by make(); nothing here needs a scene file.
 
@@ -21,13 +23,16 @@ const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 
 const TECH := "storytentacle"
-const TECH_EYE := "storygreateye"
 
 signal eye_freed(at: Vector2)
 
 static var _uid: int = 900000
 
-var great: bool = false
+var great: bool = false          # always false here; the great eye is boss/great_eye.gd
+var eyes_total: int = 4
+var eyes_left: int = 4
+var pop_t: float = 0.0           # seconds since the last eye tore free
+var popped: int = 0
 var height: float = 96.0
 var dome_dir: float = 1.0        # +1 when the dome is to the right
 var time: float = 0.0
@@ -35,16 +40,11 @@ var emerge_t: float = 0.0        # seconds since it broke the ground
 var emerge: float = 0.0          # 0 underground .. 1 fully out (overshoots on the way)
 var slam_t: float = -1.0         # seconds into a slam, -1 when idle
 var next_slam: float = 3.0
-var gaze_t: float = -1.0         # seconds into the gaze (great eye), -1 when idle
-var gaze_hp: float = 0.0         # health when the gaze began
 var flinch: float = 0.0
-var attacks_done: int = 0
 var fury: float = 1.0            # the finale shortens every wait as the fight drags on
 var flash: float = 0.0
 var sink: float = 0.0
 var slams: int = 0
-var gazes_fired: int = 0
-var gazes_broken: int = 0
 var seed_f: float = 0.0
 var crack_seed: int = 0
 var debris: Array = []
@@ -58,32 +58,31 @@ const SLAM_TELE := 1.0
 const SLAM_STRIKE := 0.18
 const SLAM_HOLD := 0.35
 const SLAM_BACK := 0.6
-const GAZE_FIRE := 0.7
+const POP_WARN := 0.8            # seconds an eye swells before it tears free
 const EARTH: Array = [Color("2a2130"), Color("3b2f44"), Color("1c1622"), Color("4a3d52")]
 
 
-# Registers the two kinds' monster data.
-static func register(tentacle_hp: float, eye_hp: float) -> void:
-	for pair: Array in [[TECH, tentacle_hp, CONST.MONSTER_MEDIUM], [TECH_EYE, eye_hp, CONST.MONSTER_LARGE]]:
-		var id: String = pair[0]
-		Data.apply(id + ".health", pair[1])
-		Data.apply(id + ".tier", 3)
-		Data.apply(id + ".size", pair[2])
-		Data.apply(id + ".fullstunthreshold", 100000.0)
-		Data.apply(id + ".stunpriority", 0)
-		Data.apply(id + ".minstunlevel", 0.85)
+# Registers the monster data.
+static func register(tentacle_hp: float) -> void:
+	Data.apply(TECH + ".health", tentacle_hp)
+	Data.apply(TECH + ".tier", 3)
+	Data.apply(TECH + ".size", CONST.MONSTER_MEDIUM)
+	Data.apply(TECH + ".fullstunthreshold", 100000.0)
+	Data.apply(TECH + ".stunpriority", 0)
+	Data.apply(TECH + ".minstunlevel", 0.85)
 
 
 # A new tentacle at `pos` (global), not yet in the tree. `p_crack_seed` is the
 # seed the finale drew its warning cracks from, so the break matches them.
-static func make(pos: Vector2, dome_x: float, is_great: bool, p_crack_seed: int = 0):
+static func make(pos: Vector2, dome_x: float, p_crack_seed: int = 0):
 	var m: Area2D = Area2D.new()
 	m.set_script(load("res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"))
-	m.name = "StoryGreatEye" if is_great else "StoryTentacle"
-	m.great = is_great
-	m.techId = TECH_EYE if is_great else TECH
+	m.name = "StoryTentacle"
+	m.techId = TECH
 	m.teamId = "team1"
-	m.height = 124.0 if is_great else randf_range(84.0, 108.0)
+	m.height = randf_range(88.0, 108.0)
+	m.eyes_total = Boss.FINALE_TENTACLE_EYES
+	m.eyes_left = m.eyes_total
 	m.dome_dir = 1.0 if dome_x > pos.x else -1.0
 	m.seed_f = randf() * TAU
 	m.crack_seed = p_crack_seed
@@ -108,7 +107,7 @@ static func make(pos: Vector2, dome_x: float, is_great: bool, p_crack_seed: int 
 	var box := CollisionShape2D.new()
 	box.name = "HitboxDefault"
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(34.0 if is_great else 22.0, m.height)
+	shape.size = Vector2(22.0, m.height)
 	box.shape = shape
 	box.position = Vector2(0, -m.height * 0.5)
 	m.add_child(box)
@@ -191,17 +190,17 @@ func init():
 	_cracks = crack_lines(crack_seed, great)
 	_burst_flash = 1.0
 	# Rock thrown up by the break, and a column of dust.
-	var n: int = 60 if great else 38
+	var n: int = 38
 	for i in n:
-		var up: float = randf_range(140.0, 400.0) * (1.25 if great else 1.0)
+		var up: float = randf_range(140.0, 400.0)
 		debris.append({"p": Vector2(randf_range(-12, 12), -2.0), "v": Vector2(randf_range(-170, 170), -up), "s": float(2 + randi() % 5),
 			"col": EARTH[randi() % EARTH.size()], "life": randf_range(2.5, 5.0), "rest": false})
 	for i in 14:
 		debris.append({"p": Vector2(randf_range(-16, 16), -2.0), "v": Vector2(randf_range(-40, 40), randf_range(-90, -30)), "s": float(3 + randi() % 3),
 			"col": Color(0.42, 0.36, 0.47, 0.5), "life": randf_range(0.6, 1.3), "rest": false, "dust": true})
-	Sfx.play("grow", -3.0, 0.7 if great else randf_range(0.9, 1.2))
-	Sfx.play("boom", -4.0 if great else -8.0, 0.8 if great else randf_range(1.0, 1.3))
-	InputSystem.shake(30.0 if great else 16.0, 0.8 if great else 0.5, 20.0, global_position)
+	Sfx.play("grow", -3.0, randf_range(0.9, 1.2))
+	Sfx.play("boom", -8.0, randf_range(1.0, 1.3))
+	InputSystem.shake(16.0, 0.5, 20.0, global_position)
 
 
 static func _back_out(x: float) -> float:
@@ -296,54 +295,47 @@ func subProcess(delta: float) -> void:
 		if slam_t >= SLAM_TELE + SLAM_STRIKE + SLAM_HOLD + SLAM_BACK:
 			slam_t = -1.0
 			next_slam = Boss.FINALE_SLAM_EVERY * randf_range(0.8, 1.25) * fury
-	elif gaze_t >= 0.0:
-		_update_gaze(delta)
 	else:
 		next_slam -= delta
 		if next_slam <= 0.0:
-			attacks_done += 1
 			_did_hit = false
-			if great and attacks_done % 2 == 0:
-				gaze_t = 0.0
-				gaze_hp = currentHealth
-				Sfx.play("charge", -2.0, 0.6)
-			else:
-				slam_t = 0.0
+			slam_t = 0.0
+	if emerge_t >= EMERGE_TIME and eyes_left > 0:
+		pop_t += delta
+		if pop_t >= Boss.FINALE_EYE_POP_EVERY:
+			pop_t = 0.0
+			_pop_eye()
 	if _hitbox != null:
 		var t: Vector2 = tip()
 		_hitbox.position = Vector2(t.x * 0.5, t.y * 0.5)
 	queue_redraw()
 
 
-# How much of the damage that breaks the gaze has been dealt (0..1).
-func gaze_broken_share() -> float:
-	return clampf((gaze_hp - currentHealth) / (maxHealth * Boss.FINALE_GAZE_BREAK), 0.0, 1.0)
+# The body's points, root to tip (this node's space).
+func _points() -> PackedVector2Array:
+	var bend: float = _slam_bend()
+	return Pix.tentacle_points(Vector2.ZERO, tip(), time, 7.0 * (1.0 - absf(bend) * 0.6), seed_f, 1.0, -dome_dir * 16.0 * (1.0 - maxf(bend, 0.0)) + dome_dir * 34.0 * maxf(bend, 0.0))
 
 
-func _update_gaze(delta: float) -> void:
-	gaze_t += delta
-	if gaze_t < Boss.FINALE_GAZE_CHARGE:
-		if gaze_broken_share() >= 1.0:
-			# Hurt enough: it flinches and the shot is lost.
-			gaze_t = -1.0
-			gazes_broken += 1
-			flinch = 1.0
-			flash = 0.3
-			next_slam = Boss.FINALE_SLAM_EVERY * 0.9 * fury
-			Sfx.play("hurt", 0.0, 0.7)
-			InputSystem.shake(18.0, 0.4, 22.0, global_position)
-		return
-	if not _did_hit:
-		_did_hit = true
-		gazes_fired += 1
-		var dome = Level.getDome(teamId)
-		if dome != null and multiplayer.is_server():
-			dome.requestMeleeDamage(int(Boss.FINALE_GAZE_DAMAGE), to_global(_dome_top()), self)
-		InputSystem.shake(34.0, 0.7, 26.0)
-		Sfx.play("beam", 2.0, 0.6)
-	if gaze_t >= Boss.FINALE_GAZE_CHARGE + GAZE_FIRE:
-		gaze_t = -1.0
-		next_slam = Boss.FINALE_SLAM_EVERY * randf_range(0.8, 1.1) * fury
+# Where eye `k` sits (0 the lowest, eyes_total - 1 the one at the tip).
+func eye_slot(k: int, pts: PackedVector2Array = PackedVector2Array()) -> Vector2:
+	if pts.is_empty():
+		pts = _points()
+	var u: float = lerpf(0.4, 1.0, float(k) / float(maxi(1, eyes_total - 1)))
+	return pts[clampi(int(round(u * (pts.size() - 1))), 0, pts.size() - 1)]
+
+
+# The next eye tears free: the lowest one still there.
+func _pop_eye() -> void:
+	var k: int = eyes_total - eyes_left
+	eyes_left -= 1
+	popped += 1
+	flash = 0.08
+	Sfx.play("pop", -5.0, randf_range(1.3, 1.6))
+	for i in 6:
+		debris.append({"p": eye_slot(k), "v": Vector2(randf_range(-60, 60), randf_range(-90, -20)), "s": 2.0,
+			"col": Color(Pix.IRIS_DEEP, 0.9), "life": randf_range(0.3, 0.6), "rest": false, "dust": true})
+	eye_freed.emit(to_global(eye_slot(k)))
 
 
 func _hit_dome() -> void:
@@ -351,10 +343,9 @@ func _hit_dome() -> void:
 	if dome == null or not multiplayer.is_server():
 		return
 	slams += 1
-	var dmg: int = int(Boss.FINALE_SLAM_DAMAGE * (2.0 if great else 1.0))
-	dome.requestMeleeDamage(dmg, to_global(tip()), self)
-	InputSystem.shake(26.0 if great else 16.0, 0.4, 20.0, global_position)
-	Sfx.play("whip", -2.0, 0.7 if great else 1.0)
+	dome.requestMeleeDamage(int(Boss.FINALE_SLAM_DAMAGE), to_global(tip()), self)
+	InputSystem.shake(16.0, 0.4, 20.0, global_position)
+	Sfx.play("whip", -2.0, 1.0)
 
 
 func handleDamage():
@@ -362,18 +353,11 @@ func handleDamage():
 
 
 func animateDeath():
-	Sfx.play("die" if great else "pop", -2.0, 0.8 if great else randf_range(0.8, 1.1))
-	InputSystem.shake(24.0 if great else 12.0, 0.6, 18.0, global_position)
+	Sfx.play("pop", -2.0, randf_range(0.8, 1.1))
+	InputSystem.shake(12.0, 0.6, 18.0, global_position)
 	slam_t = -1.0
-	gaze_t = -1.0
+	# The eyes it still had die with it.
 	var tw := create_tween()
-	if great:
-		# The great eye slumps to the ground and lies there, for the surface
-		# monsters to finish.
-		tw.tween_property(self, "sink", 0.8, 1.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		return
-	# Its eye tears free.
-	eye_freed.emit(to_global(tip()))
 	tw.tween_property(self, "sink", 1.0, 1.1).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func(): remainingFreeBlockers = 0)
 
@@ -419,73 +403,39 @@ func _draw() -> void:
 
 
 func _draw_body() -> void:
-	var t: Vector2 = tip()
-	var bend: float = _slam_bend()
 	var col: Color = Pix.FLESH_MID
 	if flash > 0.0:
 		col = Color.WHITE
 	elif dead:
 		col = Color("231a30")
-	var pts: PackedVector2Array = Pix.tentacle_points(Vector2.ZERO, t, time, 7.0 * (1.0 - absf(bend) * 0.6), seed_f, 1.0, -dome_dir * 16.0 * (1.0 - maxf(bend, 0.0)) + dome_dir * 34.0 * maxf(bend, 0.0))
-	var w0: float = 13.0 if great else 9.0
-	var tipp: Vector2 = Pix.tentacle(self, pts, w0, 6.0 if great else 3.5, col)
+	var pts: PackedVector2Array = _points()
+	var tipp: Vector2 = Pix.tentacle(self, pts, 9.0, 3.5, col)
 	var look: Vector2 = Vector2(_dome_gap(), -30.0)
-	var n: int = pts.size()
-	if not dead:
-		for j in range(6, n - 6, 9):
-			Pix.eye(self, pts[j], Pix.eye_frame_toward(pts[j], look, time, j * 0.3 + seed_f), 0.5)
-	if great:
-		_draw_great(tipp, look)
-	elif dead:
-		# A torn stump: the eye has gone.
-		Pix.disc(self, tipp, 5.0, Pix.EDGE)
-		Pix.disc(self, tipp, 3.0, Pix.IRIS_DEEP)
-	else:
-		Pix.disc(self, tipp, 9.0, Pix.EDGE)
-		Pix.eye(self, tipp, Pix.eye_frame_toward(tipp, look, time, seed_f), 1.0, Color.WHITE if flash <= 0.0 else Color(3, 3, 3))
+	var gone: int = eyes_total - eyes_left
+	for k in eyes_total:
+		var c: Vector2 = eye_slot(k, pts)
+		var at_tip: bool = k == eyes_total - 1
+		if k < gone:
+			# A torn socket: this eye has gone.
+			Pix.disc(self, c, 5.0 if at_tip else 4.0, Pix.EDGE)
+			Pix.disc(self, c, 3.0 if at_tip else 2.0, Pix.IRIS_DEEP)
+			continue
+		var r: float = 9.0 if at_tip else 8.0
+		var mod: Color = Color.WHITE if flash <= 0.0 else Color(3, 3, 3)
+		if dead:
+			mod = Color(0.4, 0.35, 0.45)
+		elif k == gone and pop_t > Boss.FINALE_EYE_POP_EVERY - POP_WARN:
+			# About to tear free: it swells and strains.
+			var f: float = (pop_t - (Boss.FINALE_EYE_POP_EVERY - POP_WARN)) / POP_WARN
+			r += 3.0 * f
+			c += Vector2(sin(time * 60.0), cos(time * 47.0)) * f * 1.5
+			if fposmod(time * 12.0, 1.0) < 0.5:
+				mod = Color(2.2, 2.2, 2.2)
+			Pix.disc(self, c, r + 2.0, Color(Pix.VIOLET_LIGHT, 0.5 * f))
+		Pix.disc(self, c, r, Pix.EDGE)
+		Pix.eye(self, c, Pix.eye_frame_toward(c, look, time, seed_f + k * 0.37), 1.0, mod)
 	# The slam's warning: the tip glows red while it rears back.
 	if slam_t >= 0.0 and slam_t < SLAM_TELE:
-		var f: float = slam_t / SLAM_TELE
-		var blink: float = 0.4 + 0.6 * absf(sin(slam_t * (10.0 + 16.0 * f)))
-		draw_arc(tipp, 13.0 + 4.0 * (1.0 - f), 0.0, TAU, 20, Color(Pix.WARN, blink), 2.0)
-	if great and gaze_t >= 0.0:
-		_draw_gaze(tipp)
-
-
-func _draw_gaze(c: Vector2) -> void:
-	var target: Vector2 = _dome_top()
-	if gaze_t < Boss.FINALE_GAZE_CHARGE:
-		var f: float = gaze_t / Boss.FINALE_GAZE_CHARGE
-		# Light gathers into the eye.
-		for i in 3:
-			var r: float = 46.0 - fposmod(time * 40.0 + i * 15.0, 46.0)
-			draw_arc(c, 24.0 + r, 0.0, TAU, 28, Color(Pix.IRIS, 0.5 * (1.0 - r / 46.0) + 0.1), 1.0)
-		var blink: float = 0.4 + 0.6 * absf(sin(gaze_t * (6.0 + 22.0 * f)))
-		draw_line(c, target, Color(Pix.WARN, 0.10 + 0.25 * f), 8.0 * f + 2.0)
-		draw_line(c, target, Color(Pix.WARN, blink), 1.0)
-		# How close the dome's fire is to breaking it: a ring that burns away.
-		var left: float = 1.0 - gaze_broken_share()
-		draw_arc(c, 30.0, -PI * 0.5, -PI * 0.5 + TAU * left, 40, Color(Pix.SCLERA, 0.9), 3.0)
-		draw_arc(c, 30.0, -PI * 0.5 + TAU * left, -PI * 0.5 + TAU, 40, Color(Pix.EDGE, 0.6), 3.0)
-	else:
-		var f2: float = 1.0 - (gaze_t - Boss.FINALE_GAZE_CHARGE) / GAZE_FIRE
-		draw_line(c, target, Color(Pix.IRIS_DEEP, 0.8), 20.0 * f2 + 4.0)
-		draw_line(c, target, Color(Pix.IRIS, 1.0), 13.0 * f2 + 2.0)
-		draw_line(c, target, Color.WHITE, 5.0 * f2 + 1.0)
-		Pix.disc(self, target, 14.0 * f2 + 4.0, Color(1, 1, 1, 0.8 * f2))
-
-
-func _draw_great(c: Vector2, look: Vector2) -> void:
-	Pix.ellipse(self, c, 22, 18, Pix.EDGE)
-	Pix.ellipse(self, c, 20, 16, Pix.FLESH_LIGHT if not dead else Color("2c2238"))
-	if dead:
-		draw_rect(Rect2((c + Vector2(-15, 0)).round(), Vector2(30, 2)), Pix.EDGE)
-		return
-	var squint: float = 1.0 - 0.7 * flinch
-	Pix.ellipse(self, c, 17, 13 * squint, Pix.SCLERA if flash <= 0.0 else Color.WHITE)
-	var ic: Vector2 = c + (look - c).limit_length(80.0) / 80.0 * Vector2(6, 3)
-	var charging: bool = gaze_t >= 0.0
-	Pix.ellipse(self, ic, 9, 9 * squint, Pix.IRIS_DEEP if not charging else Pix.WARN)
-	Pix.ellipse(self, ic, 7, 7 * squint, Pix.IRIS if not charging or fposmod(time * 10.0, 1.0) < 0.5 else Color.WHITE)
-	draw_rect(Rect2((ic + Vector2(-1, -7 * squint)).round(), Vector2(3, 14 * squint)), Pix.PUPIL)
-	draw_rect(Rect2((ic + Vector2(-4, -5 * squint)).round(), Vector2(2, 2)), Color.WHITE)
+		var f2: float = slam_t / SLAM_TELE
+		var blink: float = 0.4 + 0.6 * absf(sin(slam_t * (10.0 + 16.0 * f2)))
+		draw_arc(tipp, 13.0 + 4.0 * (1.0 - f2), 0.0, TAU, 20, Color(Pix.WARN, blink), 2.0)

@@ -1,15 +1,21 @@
 extends Node2D
 
-# The final battle on the surface (#162, second pass #171). The keeper made it
-# home; the ground splits beside the dome and the tentacles break out. Three
-# rounds of tentacles (boss/surface_tentacle.gd, real targets for the dome's
-# weapon), the last with Velle's great eye. Every tentacle that dies sets its
-# eye free as a flyer that shoots the dome (boss/eye_flyer.gd); a round ends
-# when the flyers are dead too. The longer the battle runs the faster they all
-# strike (fury). After the final blow the surface monsters come in
-# from both sides, tear the remains apart and thank the keeper in their own
-# language (runes unless translators are installed). Then `finished` fires and
-# the boss director plays the saved ending.
+# The final battle on the surface (#162, #171, third pass #173). The keeper
+# made it home; the ground splits beside the dome and the tentacles break out.
+# Three rounds of tentacles (boss/surface_tentacle.gd, real targets for the
+# dome's weapon). Each tentacle comes up with a row of eyes, and every few
+# seconds one tears free as a flyer that shoots the dome (boss/eye_flyer.gd),
+# so the dome fights the ground and the sky at once; a round ends when the
+# flyers are dead too. The longer the battle runs the faster they all strike
+# (fury).
+#
+# In the last round Velle's great eye (boss/great_eye.gd) rises behind the
+# dome and hangs straight above it. Beaten, it closes, and stays up until
+# everything else is dead. Then it sways and falls to one side of the dome
+# (step "fall"). The surface monsters come in from that side only (the flyers
+# among them from that side or from above), tear the remains apart and thank
+# the keeper in their own language (runes unless translators are installed).
+# Then `finished` fires and the boss director plays the saved ending.
 
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const BossText = preload("res://mods-unpacked/cejdan-StoryMode/data/boss_text.gd")
@@ -17,17 +23,20 @@ const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const TENTACLE := "res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"
 const FLYER := "res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd"
+const GREAT := "res://mods-unpacked/cejdan-StoryMode/boss/great_eye.gd"
 
 signal finished
 signal step_changed(step: String)
 
 # Where round tentacles come up, in px left (-) or right (+) of the dome.
 const SPOTS: Array = [[-150.0, 160.0], [-215.0, -125.0, 135.0], [-200.0, -110.0, 120.0]]
-const EYE_SPOT := 215.0
+const FALL_REST := 1.1        # seconds the fallen eye lies there before the monsters come
 const GROUND_Y := 2.0
 const RUMBLE := 2.6           # seconds of cracking ground before a round breaks out
 
-var step: String = "rumble"   # rumble, round1, lull, round2, lull, round3, allies, thanks, done
+var step: String = "rumble"   # rumble, round1, lull, round2, lull, round3, fall, allies, thanks, done
+var great = null              # Velle's great eye (last round)
+var fall_side: float = 1.0    # the side of the dome it falls to: +1 right, -1 left
 var fight_t: float = 0.0      # seconds of battle so far (the rounds, not the pauses)
 var fury: float = 1.0
 var flyers_made: int = 0
@@ -49,8 +58,10 @@ func setup() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_rng.randomize()
 	unit_hp = Boss.FINALE_TENTACLE_HP
-	load(TENTACLE).register(Boss.FINALE_TENTACLE_HP, Boss.FINALE_EYE_HP)
+	load(TENTACLE).register(Boss.FINALE_TENTACLE_HP)
+	load(GREAT).register(Boss.FINALE_EYE_HP)
 	load(FLYER).register(Boss.FINALE_FLYER_HP)
+	fall_side = 1.0 if _rng.randf() < 0.5 else -1.0
 	# The dome goes to battle stations, as for a wave.
 	Data.apply("team1.monsters.wavepresent", true)
 	Data.apply("team1.monsters.wavebattle", true)
@@ -79,18 +90,18 @@ func _spawn_round(i: int) -> void:
 	round_i = i
 	var d = _dome()
 	for off: float in SPOTS[i]:
-		_spawn(_ground(off), d.global_position.x, false)
+		_spawn(_ground(off), d.global_position.x)
 	if i == SPOTS.size() - 1:
-		eye_at = _ground(EYE_SPOT)
-		_spawn(eye_at, d.global_position.x, true)
+		great = load(GREAT).make()
+		great.fury = fury
+		add_child(great)
+		alive.append(great)
+		_slow(0.3, 0.35)
 
 
-# The spots of round `i`, the great eye's last: px left (-) or right (+) of the dome.
+# The spots of round `i`: px left (-) or right (+) of the dome.
 func spots(i: int) -> Array:
-	var offs: Array = SPOTS[i].duplicate()
-	if i == SPOTS.size() - 1:
-		offs.append(EYE_SPOT)
-	return offs
+	return SPOTS[i].duplicate()
 
 
 func _crack_seed(off: float) -> int:
@@ -99,19 +110,17 @@ func _crack_seed(off: float) -> int:
 	return _crack_seeds[off]
 
 
-func _spawn(pos: Vector2, dome_x: float, great: bool) -> void:
-	var m = load(TENTACLE).make(pos, dome_x, great, _crack_seed(pos.x - dome_x))
+func _spawn(pos: Vector2, dome_x: float) -> void:
+	var m = load(TENTACLE).make(pos, dome_x, _crack_seed(pos.x - dome_x))
 	m.fury = fury
-	m.eye_freed.connect(_eye_freed.bind(m))
+	m.eye_freed.connect(_eye_freed)
 	add_child(m)
 	alive.append(m)
-	if great:
-		_slow(0.3, 0.35)
 
 
-# A dead tentacle's eye tears free and takes to the sky over the dome.
-func _eye_freed(at: Vector2, from) -> void:
-	if step == "allies" or step == "thanks" or step == "done" or GameWorld.lost:
+# An eye tears free of a living tentacle and takes to the sky over the dome.
+func _eye_freed(at: Vector2) -> void:
+	if not step.begins_with("round") or GameWorld.lost:
 		return
 	var d = _dome()
 	# Its place: on the side it came from, higher with each one already up there.
@@ -190,13 +199,23 @@ func _physics_process(delta: float) -> void:
 				if round_i < SPOTS.size() - 1:
 					_set_step("lull")
 				else:
+					# Everything else is dead: the closed eye comes down.
 					Data.apply("team1.monsters.wavepresent", false)
 					Data.apply("team1.monsters.wavebattle", false)
-					_call_allies()
-					_set_step("allies")
+					if is_instance_valid(great):
+						great.fall(fall_side)
+					_set_step("fall")
+		"fall":
+			if not is_instance_valid(great):
+				_call_allies()
+				_set_step("allies")
+			elif great.fallen and great.fall_t >= great.FALL_SWAY + great.FALL_DROP + FALL_REST:
+				eye_at = great.global_position
+				_call_allies()
+				_set_step("allies")
 		"allies":
 			_move_allies(delta)
-			if t >= 6.5:
+			if t >= 7.5:
 				_set_step("thanks")
 		"thanks":
 			_move_allies(delta)
@@ -222,6 +241,9 @@ const ALLY_KINDS: Array = [
 
 
 func _call_allies() -> void:
+	var d = _dome()
+	var n_walk: int = 0
+	var n_fly: int = 0
 	for i in ALLY_KINDS.size():
 		var k: Array = ALLY_KINDS[i]
 		if not ResourceLoader.exists(k[0]):
@@ -238,17 +260,32 @@ func _call_allies() -> void:
 		if m is Area2D:
 			m.collision_layer = 0
 			m.monitorable = false
-		var side: float = -1.0 if i % 2 == 0 else 1.0
-		var stand: Vector2 = eye_at + Vector2(side * (26.0 + 16.0 * (i / 2)), float(k[3]))
-		m.global_position = Vector2(eye_at.x + side * (420.0 + 40.0 * i), stand.y)
+		# They all come from the side the eye fell to, so nobody crosses the
+		# dome. Walkers stop on the ground on either side of the eye (the
+		# first ones walk past it); flyers hang over it, half of them coming
+		# down from above.
+		var flies: bool = float(k[3]) < 0.0
+		var ground_y: float = d.global_position.y + GROUND_Y
+		var stand: Vector2
+		var from: Vector2
+		if flies:
+			stand = Vector2(eye_at.x + fall_side * (10.0 - 34.0 * n_fly), ground_y + float(k[3]))
+			from = Vector2(stand.x + fall_side * 40.0, stand.y - 330.0) if n_fly % 2 == 0 else Vector2(eye_at.x + fall_side * 470.0, stand.y - 40.0)
+			n_fly += 1
+		else:
+			var slot: float = [-36.0, 38.0, -54.0, 56.0][n_walk % 4]
+			stand = Vector2(eye_at.x + fall_side * slot, ground_y)
+			from = Vector2(eye_at.x + fall_side * (230.0 + 40.0 * n_walk), ground_y)
+			n_walk += 1
+		m.global_position = from
 		add_child(m)
 		var spr = m.get_node_or_null("Sprite2D")
 		if spr != null:
 			Style.init(spr)
-			spr.flip_h = side < 0.0
+			spr.flip_h = fall_side < 0.0
 			if spr.sprite_frames != null and spr.sprite_frames.has_animation(k[1]):
 				spr.play(k[1])
-		allies.append({"node": m, "stand": stand, "speed": float(k[4]), "walk": k[1], "attack": k[2], "there": false, "side": side})
+		allies.append({"node": m, "stand": stand, "from": from, "speed": float(k[4]) * (1.25 if not flies else 1.6), "walk": k[1], "attack": k[2], "there": false, "side": fall_side, "flies": flies})
 	Sfx.play("eerie", -4.0, 1.0)
 
 
@@ -262,6 +299,9 @@ func _move_allies(delta: float) -> void:
 			if m.global_position.distance_to(a["stand"]) < 1.0:
 				a["there"] = true
 				var spr = m.get_node_or_null("Sprite2D")
+				if spr != null:
+					# Face the eye.
+					spr.flip_h = m.global_position.x < eye_at.x
 				if spr != null and spr.sprite_frames != null and spr.sprite_frames.has_animation(a["attack"]):
 					spr.play(a["attack"])
 		elif step == "allies" and fposmod(t + a["speed"] * 0.01, 0.5) < delta:
@@ -297,7 +337,7 @@ func _draw() -> void:
 		for i in offs.size():
 			var off: float = offs[i]
 			var p: Vector2 = to_local(_ground(off))
-			var big: bool = round_i + 1 == SPOTS.size() - 1 and i == offs.size() - 1
+			var big: bool = false
 			var glow: float = grow * (0.55 + 0.45 * sin(t * (10.0 + 14.0 * grow) + i))
 			Tentacle.draw_light(self, p, _crack_seed(off), grow, glow * grow, big)
 			Tentacle.draw_cracks(self, p, Tentacle.crack_lines(_crack_seed(off), big), grow, glow)
