@@ -307,6 +307,8 @@ func _start_finale() -> void:
 	finale.name = "Finale"
 	layer.add_child(finale)
 	finale.setup()
+	# The keeper is home: the hearts were for the mine.
+	health.visible = false
 	finale.finished.connect(_finale_done)
 
 

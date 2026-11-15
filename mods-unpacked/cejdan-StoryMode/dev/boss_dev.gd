@@ -16,10 +16,13 @@ const GEAR: Array = [
 
 
 # Gives the keeper GEAR for free. Returns the ids that were added.
-static func give_gear(extra: Array = []) -> Array:
+# `laser_level` 0..3 stops the laser's strength there (playtests of weaker domes).
+static func give_gear(extra: Array = [], laser_level: int = 3) -> Array:
 	var keeper = Keepers.first()
 	var given: Array = []
 	for raw: String in GEAR + extra:
+		if raw.begins_with("laserstrength") and int(raw.substr(13)) > laser_level:
+			continue
 		var id: String = raw
 		if not GameWorld.upgrades.has(id):
 			for prefix: String in [keeper.teamId + ".", keeper.playerId + "."]:
