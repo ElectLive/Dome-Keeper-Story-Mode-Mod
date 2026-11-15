@@ -46,6 +46,7 @@ Dev-only code in `mods-unpacked/cejdan-StoryMode/dev/` (left out of release buil
   - story: `await h.read_beat(label)` waits for a story beat, shoots each page and closes it (returns its id); `h.beat_box()` is the open box
   - setup: `h.disable_waves()`, `await h.reveal_all()`, `await h.dig_room(a, b)`, `await h.teleport_tile(coord)`, `h.set_inv(type, n)`, `await h.deliver(type, n)`, `await h.buy(upgrade_id)`, or any direct `Data` / `Level` / `GameWorld` call
 - **Dev boot without a scenario:** `-- --story` boots straight into a Story Mode run, `-- --mode=relichunt` a vanilla run, `-- --loadout` the loadout screen; `--seed=`, `--gadget=`, `--difficulty=`, `--load=<slot>` as above (`dev/dev_boot.gd`); `-- --story --horror-defeated` plays the saved ending; `-- --story --boss` drops the keeper into Velle's chamber for the boss fight (`--boss=chase` starts at the chase, `--boss=finale` at the surface battle; the first two drill a winding shaft from the chamber up to the dome, the way home in the chase). All three start with the gear of a keeper who got that far: max drill and jetpack, Laser IV, a stronger dome, Heat Shielding IV and the Suit Blaster (`dev/boss_dev.gd`).
+- **Finding hazards by hand:** add `--gas` to a `-- --story` launch and F10 puts the keeper in a tunnel beside the next gas pocket (drill into the green cracks); `--lava` and F9 do the same for magma pockets.
 - Scenarios are named `tNN_<what>.gd` after the ticket they verify; keep them, they are the regression suite.
 
 ## Agent skills
