@@ -6,11 +6,14 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 # great eye while it charges its gaze. It plays the whole battle and reports
 # who won, how long it took and how much dome was left.
 #
-#   --laser=<0..4>   the laser's strength upgrades (default 3, Laser III)
-#   --expect=win|lose|any   what the run must end in (default any)
+#   --laser=<0..4>   the laser's strength upgrades (default 4, Laser IV)
+#   --expect=win|fall|lose|any   what the run must end in (default any):
+#                    fall = the dome falls; lose = it falls before round 3
 #
-# t171_finale_laser3 and t171_finale_base are this scenario with the two
-# results the fight is tuned for: Laser III wins, a base laser cannot.
+# t171_finale_laser4, t171_finale_laser3 and t171_finale_base are this
+# scenario with the results the fight is tuned for: Laser IV wins, Laser III
+# falls (playtest 2026-11-15: the user wants it that hard), a base laser falls
+# early.
 
 const Director = preload("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
@@ -26,7 +29,7 @@ func boot() -> Dictionary:
 
 
 func laser_level() -> int:
-	return int(Story.user_arg("laser", "3"))
+	return int(Story.user_arg("laser", "4"))
 
 
 func expect() -> String:
@@ -66,8 +69,8 @@ func run(h) -> void:
 	var k = h.keeper()
 	boss._ensure_layer()
 	var level: int = laser_level()
-	var gear: Array = Dev.give_gear([], mini(level, 3))
-	if level >= 4:
+	var gear: Array = Dev.give_gear([], level)
+	if level >= 4 and not gear.has("laserstrength4") and not GameWorld.boughtUpgrades.has("laserstrength4"):
 		GameWorld.serverAddUpgrade("laserstrength4", "team1")
 	await h.frames(5)
 	h.note("gear", {"laser level": level, "laser dps": Data.of("team1.laser.dps"), "dome health": Data.of("team1.dome.maxhealth"), "given": gear})
@@ -153,6 +156,8 @@ func run(h) -> void:
 		"win":
 			h.check("Laser level %d wins the final battle" % level, won, report)
 			h.check("with a real margin: at least a fifth of the dome left", won and float(Data.of("team1.dome.health")) >= hp_max * 0.2, report)
+		"fall":
+			h.check("Laser level %d cannot win the final battle: the dome falls" % level, lost and not won, report)
 		"lose":
 			h.check("Laser level %d cannot win the final battle: the dome falls" % level, lost and not won, report)
 			h.check("and it is not close: it never reaches the last round", not round_at.has("round3"), report)

@@ -112,16 +112,23 @@ const CHASE_HEAD_START := 2.5        # seconds before the tentacles set off
 const CHASE_RECOIL := 1.3            # seconds a tip hangs back after it lands a hit
 
 # --- the surface finale (#162, second pass #171) ------------------------------
-# Tuned for a dome with about Laser III (110 damage a second); a base laser
-# (15) cannot win. Health is fixed, not scaled to the run: by now every run
+# Tuned for a dome with Laser IV (210 damage a second); Laser III (110) falls
+# short, and a base laser (15) is buried early. Health is fixed, not scaled to the run: by now every run
 # has had the same chance to gear up.
 const FINALE_TENTACLE_HP := 420.0
 const FINALE_EYE_HP := 1500.0          # Velle's great eye, in the last round
 const FINALE_FLYER_HP := 120.0         # an eye that tore free of a tentacle
 # A tentacle comes up with this many eyes; one tears free and becomes a flyer
-# every FINALE_EYE_POP_EVERY seconds, until it has none left or is dead (#173).
+# every FINALE_EYE_POP_EVERY seconds, and the ones still on it all tear free
+# at once when it dies (#173; playtest 2026-11-15: every eye must be fought).
 const FINALE_TENTACLE_EYES := 4
-const FINALE_EYE_POP_EVERY := 5.0
+const FINALE_EYE_POP_EVERY := 2.0
+# Where a flyer takes its place in the sky: this far from the dome (px), and
+# this high (radians above the horizon), the angles taken in turn. High and
+# spread, so the dome's weapon has a long way to swing between them, and the
+# screen has ~580 px of sky above the dome.
+const FINALE_FLYER_RADIUS := [260.0, 340.0]
+const FINALE_FLYER_ANGLES := [0.8, 1.05, 1.3]
 # The great eye hangs this many px above the dome's foot. Its stalk is drawn
 # on this layer (absolute z), behind the dome.
 const FINALE_EYE_HEIGHT := 132.0
