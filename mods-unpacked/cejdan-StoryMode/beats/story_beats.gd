@@ -191,6 +191,10 @@ func _can_show() -> bool:
 	# beat goes through play_now().
 	if GameWorld.won or GameWorld.lost:
 		return false
+	# Nothing opens during the boss sequence either (#174): a text box there
+	# kills the flow. Whatever was waiting shows afterwards, if the run goes on.
+	if Story.boss_active():
+		return false
 	var mode = Level.mode
 	if mode != null and mode.has_method("is_ending") and mode.is_ending():
 		return false

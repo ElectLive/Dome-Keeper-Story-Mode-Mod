@@ -111,6 +111,10 @@ func _on_monster_died(m) -> void:
 # lines go above the dome (or to the top of the screen when the dome is off
 # screen); last words go to `at`. `life` overrides how long it stays up.
 func say(kind: String, at = null, forced: String = "", life: float = -1.0) -> String:
+	# No pleas during the boss sequence (#174); a line the boss itself asks
+	# for (`forced`: the thanks after the finale) still shows.
+	if forced == "" and Story.boss_active():
+		return ""
 	var st: String = stage()
 	var pool: Array = PleaData.pool(st, kind)
 	var line: String = forced

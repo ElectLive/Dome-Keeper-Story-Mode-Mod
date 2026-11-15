@@ -15,7 +15,9 @@ extends Node
 #
 # Through all of it the keeper has hearts (boss/keeper_health.gd), the suit's
 # overheat recall is jammed (overheating costs a heart instead) and the
-# monster waves stop: the monsters are watching.
+# monster waves stop: the monsters are watching. Nobody talks either (#174):
+# story beats wait and the monsters' pleas are off (Story.boss_active()), so
+# no text breaks the flow. The monsters' thanks after the finale still show.
 #
 # Other code reaches it through the static helpers, which do nothing outside
 # the boss sequence:
@@ -276,6 +278,11 @@ func _explosion(global_pos: Vector2, kind: String, radius_px: float) -> void:
 func _velle_defeated() -> void:
 	if current() != "fight":
 		return
+	# Hearts for the run home, by difficulty (#174).
+	var got: int = health.give(Boss.hearts_after_velle())
+	if got > 0:
+		Sfx.play("heart", -2.0, 1.0)
+	ModLoaderLog.info("Boss: Velle is dead; %d hearts back (%s)" % [got, Boss.TIER_NAMES[Boss.tier()]], Story.LOG)
 	_set_state("chase")
 	_start_chase(velle.eye_pos())
 

@@ -47,3 +47,9 @@ static func scenario_boot() -> Dictionary:
 static func has_user_arg(name: String) -> bool:
 	var v: String = user_arg(name, "")
 	return v != "" and v != "false"
+
+
+# True through the boss sequence (the chamber fight, the chase and the surface
+# finale; boss/boss_director.gd keeps the state). Text holds off meanwhile.
+static func boss_active() -> bool:
+	return str(Data.ofOr("team1.story.boss", "")) in ["fight", "chase", "finale"]
