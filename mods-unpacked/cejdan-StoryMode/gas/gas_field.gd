@@ -31,6 +31,8 @@ var _cracks: Dictionary = {}       # gas rock about to burst -> seconds left
 var vented := 0.0                  # gas that left through the surface this run
 var faded := 0.0                   # gas that thinned away this run
 var vent_marks: Dictionary = {}    # top-row cell -> the time gas last left through it
+var flux: Dictionary = {}          # cell -> [Vector2 gas moved through it lately, the time it last moved] (for the look)
+var look = null                    # the GasLook child that draws the gas (#203)
 var revision := 0                  # goes up whenever any cell's gas changes (for the look)
 # Dev only: hold the gas still.
 var freeze_flow := false
@@ -58,6 +60,11 @@ func setup(p_map) -> void:
 		_place_pockets()
 	map.tile_destroyed.connect(_on_tile_destroyed)
 	add_to_group("saveable")
+	if DisplayServer.get_name() != "headless":
+		look = load("res://mods-unpacked/cejdan-StoryMode/gas/gas_look.gd").new()
+		look.name = "GasLook"
+		add_child(look)
+		look.setup(self)
 
 
 # --- pockets -------------------------------------------------------------------
@@ -244,6 +251,7 @@ func _step() -> void:
 			if flow > 0.0:
 				dm[c] = dm.get(c, 0.0) - flow
 				dm[up] = dm.get(up, 0.0) + flow
+				_flux(c, up, flow)
 				rem -= flow
 		if rem <= 0.0:
 			continue
@@ -259,6 +267,7 @@ func _step() -> void:
 			if flow > GasData.MIN_FLOW:
 				dm[c] = dm.get(c, 0.0) - flow
 				dm[sc] = dm.get(sc, 0.0) + flow
+				_flux(c, sc, flow)
 				rem -= flow
 		# Down: only gas squeezed past a full cell.
 		if rem > 1.0:
@@ -268,6 +277,7 @@ func _step() -> void:
 				if flow > GasData.MIN_FLOW:
 					dm[c] = dm.get(c, 0.0) - flow
 					dm[down] = dm.get(down, 0.0) + flow
+					_flux(c, down, flow)
 
 	var woke: Dictionary = {}
 	for c in dm:
@@ -289,6 +299,34 @@ func _step() -> void:
 	_awake = {}
 	for c in woke:
 		_wake(c)
+
+
+# Notes gas moving from `c` to `n`, for the look: a running sum that halves
+# about every FLUX_HALF_LIFE seconds.
+const FLUX_HALF_LIFE := 0.12
+
+
+func _flux(c: Vector2i, n: Vector2i, flow: float) -> void:
+	var dir := Vector2(n - c) * flow
+	for k in [c, n]:
+		var e = flux.get(k)
+		if e == null:
+			flux[k] = [dir, _time]
+		else:
+			e[0] = e[0] * pow(0.5, (_time - e[1]) / FLUX_HALF_LIFE) + dir
+			e[1] = _time
+
+
+# The flux through a cell right now (zero once it is stale).
+func flux_at(c: Vector2i) -> Vector2:
+	var e = flux.get(c)
+	if e == null:
+		return Vector2.ZERO
+	var age: float = _time - e[1]
+	if age > 1.0:
+		flux.erase(c)
+		return Vector2.ZERO
+	return e[0] * pow(0.5, age / FLUX_HALF_LIFE)
 
 
 func _set_mass(c: Vector2i, o: float, m: float, woke: Dictionary) -> void:
@@ -405,8 +443,10 @@ func _draw() -> void:
 	_draw_gas()
 
 
-# Placeholder look (#200): a flat tint by density. The real look is #203.
+# Fallback look, a flat tint by density, when there is no GasLook (headless runs).
 func _draw_gas() -> void:
+	if look != null:
+		return
 	for c in mass:
 		if not _seen(c):
 			continue
