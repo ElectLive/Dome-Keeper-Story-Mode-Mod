@@ -78,13 +78,23 @@ const OCEAN_FLOOR_ROWS := 2               # rock under the ocean (1 row over the
 const BOSS_CHAMBER := Vector2i(20, 10)    # width x height, empty and sealed
 const BOSS_CHAMBER_WALL := 2
 
-# --- passive heat (#46) ----------------------------------------------------
-# The suit heats slowly from depth alone, out of lava, in B4 and deeper (a
-# per-tile biome check). The rate grows linearly from 0 at the top row of B4 to
-# PASSIVE_HEAT_RATE_AT_BOTTOM at the lava ocean's ceiling (the map's last row
-# until the ocean exists). Heat Shielding's passive multiplier scales it.
+# --- passive heat (#46, #187) ---------------------------------------------
+# The suit heats from depth alone, out of lava, from B4 down (a per-tile biome
+# check; the lava ocean counts as B8). Each biome is one heat level deeper than
+# the one above it, and each tier of Heat Shielding moves the scale down by one
+# biome:
+#     level = biome index - PASSIVE_HEAT_START_BIOME - Heat Shielding tier
+# Below level 0 the depth is cool (no heat; the bar drains as in the upper
+# mine). From level 0 the bar only rises, at PASSIVE_HEAT_BY_LEVEL[level]
+# per second (the last entry for anything deeper):
+#     0 fine (about 5 min to overheat), 1 rough (about 1 min),
+#     2 practically lava (about 10 s), 3+ worse.
+# So with no shielding B4 is fine, B5 rough, B6 deadly; with tier I B4 is cool,
+# B5 fine, B6 rough, B7 deadly; and so on. In lava the suit heats at whichever
+# is faster, the lava or the depth.
 const PASSIVE_HEAT_START_BIOME := 3
-const PASSIVE_HEAT_RATE_AT_BOTTOM := 2.2
+const PASSIVE_HEAT_LAST_BIOME := 7       # B8; the lava ocean below it counts as B8
+const PASSIVE_HEAT_BY_LEVEL := [0.33, 1.7, 10.0, 25.0]
 
 # --- water hardens lava (#47) ---------------------------------------------
 # A water drop that touches lava (a cell with at least BURN_MASS) is used up and
@@ -94,12 +104,11 @@ const STEAM_SECONDS := 0.7
 
 # --- heat resistance (#44) -------------------------------------------------
 # Heat Shielding I-IV, sold in the Story Mode shop. Index = tier (0 = none).
-# The max tier still burns in lava (just slower) but blocks passive heat.
+# The max tier still burns in lava (just slower). Passive heat: see above.
 # Tier IV's lava multiplier was tuned by #43's dive (ceiling to boss chamber,
 # base speed, ~24 s in lava): 0.06 gives 30 s of lava, so tier IV arrives under
 # 100% heat and tier III (9 s) doesn't.
 const HEAT_SHIELD_LAVA_MULT := [1.0, 0.6, 0.35, 0.2, 0.06]
-const HEAT_SHIELD_PASSIVE_MULT := [1.0, 0.6, 0.3, 0.1, 0.0]
 const HEAT_SHIELD_PRICES := [200, 1000, 4000, 25000]
 # The keeper's tier lives in Data under <team>.suit.heatshield (set by the upgrades).
 const HEAT_SHIELD_KEY := "suit.heatshield"
@@ -113,5 +122,17 @@ static func lava_heat_mult(teamId: String = "team1") -> float:
 	return float(HEAT_SHIELD_LAVA_MULT[shield_tier(teamId)])
 
 
-static func passive_heat_mult(teamId: String = "team1") -> float:
-	return float(HEAT_SHIELD_PASSIVE_MULT[shield_tier(teamId)])
+# The heat level of biome index `biome` for this team's suit (see above);
+# below 0 is cool.
+static func passive_level(biome: int, teamId: String = "team1") -> int:
+	return mini(biome, PASSIVE_HEAT_LAST_BIOME) - PASSIVE_HEAT_START_BIOME - shield_tier(teamId)
+
+
+# Passive heat per second in biome index `biome` for this team's suit.
+static func passive_rate(biome: int, teamId: String = "team1") -> float:
+	if biome < PASSIVE_HEAT_START_BIOME:
+		return 0.0
+	var level: int = passive_level(biome, teamId)
+	if level < 0:
+		return 0.0
+	return float(PASSIVE_HEAT_BY_LEVEL[mini(level, PASSIVE_HEAT_BY_LEVEL.size() - 1)])

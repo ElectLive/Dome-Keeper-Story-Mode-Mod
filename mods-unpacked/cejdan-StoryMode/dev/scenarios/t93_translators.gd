@@ -90,7 +90,7 @@ func run(h) -> void:
 	# played, so diving to the chambers (and the deep heat) plays nothing else.
 	Data.apply("team1.story.beatsplayed", "biome_b2,biome_b3,biome_b4,biome_b5,biome_b6,biome_b7,biome_b8,lava_ocean,first_gem,gate_broken,lava_death_1,lava_death_2,lava_death_3,lava_death_4")
 	# Depth heat would recall the keeper (and drop the translator) in B6: buy
-	# Heat Shielding IV, which shuts it out.
+	# Heat Shielding IV, which shuts it out down to B7 (#187).
 	h.set_inv("money", 10000000)
 	for n in range(1, 5):
 		await h.buy("storyheatshield%d" % n)
