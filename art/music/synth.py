@@ -316,7 +316,7 @@ def kick(vel=1.0):
     f = 48 + 140 * np.exp(-t / 0.025)
     x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.18)
     x += hp(_rng.standard_normal(n), 3000) * np.exp(-t / 0.004) * 0.5
-    return pan2(np.tanh(x * 2.0) * vel * 0.42, 0.0)
+    return pan2(np.tanh(x * 2.0) * vel * 0.50, 0.0)
 
 
 def dnb_snare(vel=1.0):
@@ -329,7 +329,7 @@ def dnb_snare(vel=1.0):
     noise = lp(bp(_rng.standard_normal(n), 250, 4500), 5000) * np.exp(-t / 0.11)
     snap = bp(_rng.standard_normal(n), 1800, 5000) * np.exp(-t / 0.008) * 0.5
     x = np.tanh((0.7 * body + 1.2 * noise + snap) * 1.2)
-    return pan2(x * vel * 0.21, 0.05)
+    return pan2(x * vel * 0.31, 0.05)
 
 
 def hat(vel=1.0, open_=False, p=0.25):
@@ -337,7 +337,7 @@ def hat(vel=1.0, open_=False, p=0.25):
     n = int((0.25 if open_ else 0.06) * SR)
     t = np.arange(n) / SR
     x = lp(hp(_rng.standard_normal(n), 6000), 11000) * np.exp(-t / (0.07 if open_ else 0.012))
-    return pan2(x * vel * 0.095, p)
+    return pan2(x * vel * 0.11, p)
 
 
 def reese(midi, dur, vel=1.0, cutoff=520):
