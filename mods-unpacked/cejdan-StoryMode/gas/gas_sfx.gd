@@ -40,13 +40,16 @@ static func play(name: String, volume_db: float = 0.0, min_gap: float = 0.0) -> 
 
 # Noise through a band-pass (a one-pole high-pass, then a one-pole low-pass),
 # shaped by an envelope. `hp` and `lp` are the filters' coefficients (0..1).
+# The result is scaled so its loudest sample is `peak` of full scale: the
+# filters take very different amounts of level out (a low rumble came out at
+# 6% before this).
 static func _make(name: String) -> AudioStreamWAV:
 	var secs := 1.7
 	var hp := 0.82
 	var lp := 0.55
 	var attack := 0.015
 	var decay := 2.6
-	var gain := 0.5
+	var peak := 0.8
 	var flutter := 0.25
 	if name == "vent":
 		secs = 2.2
@@ -54,7 +57,7 @@ static func _make(name: String) -> AudioStreamWAV:
 		lp = 0.22
 		attack = 0.25
 		decay = 1.6
-		gain = 0.4
+		peak = 0.5
 		flutter = 0.4
 	elif name == "choke":
 		secs = 0.5
@@ -62,7 +65,7 @@ static func _make(name: String) -> AudioStreamWAV:
 		lp = 0.12
 		attack = 0.02
 		decay = 7.0
-		gain = 0.55
+		peak = 0.6
 		flutter = 0.0
 	elif name == "ignite":
 		secs = 1.1
@@ -70,11 +73,12 @@ static func _make(name: String) -> AudioStreamWAV:
 		lp = 0.05
 		attack = 0.012
 		decay = 4.5
-		gain = 1.6
+		peak = 0.9
 		flutter = 0.5
 	var n := int(secs * RATE)
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
+	var samples := PackedFloat32Array()
+	samples.resize(n)
+	var loudest := 0.0001
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(name)
 	var low := 0.0
@@ -88,8 +92,14 @@ static func _make(name: String) -> AudioStreamWAV:
 		low += lp * (high - low)
 		var env: float = minf(1.0, t / attack) * exp(-t * decay) * minf(1.0, (secs - t) * 20.0)
 		env *= 1.0 - flutter * (0.5 + 0.5 * sin(t * 53.0 + 2.0 * sin(t * 17.0)))
-		var v: int = int(clampf(low * env * gain * 3.0, -1.0, 1.0) * 32000.0)
-		bytes.encode_s16(i * 2, v)
+		var v: float = low * env
+		samples[i] = v
+		loudest = maxf(loudest, absf(v))
+	var bytes := PackedByteArray()
+	bytes.resize(n * 2)
+	var scale: float = peak / loudest * 32767.0
+	for i in n:
+		bytes.encode_s16(i * 2, int(samples[i] * scale))
 	var w := AudioStreamWAV.new()
 	w.format = AudioStreamWAV.FORMAT_16_BITS
 	w.mix_rate = RATE
