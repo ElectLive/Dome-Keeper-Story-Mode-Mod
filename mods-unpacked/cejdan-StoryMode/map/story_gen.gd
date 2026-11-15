@@ -94,16 +94,18 @@ static func fill_bottom(map_data, rand: RandomNumberGenerator) -> int:
 
 # The lava ocean (#43): added below the generated map, under B8 (biome index 7).
 # Rows, top to bottom: one rock ceiling row and OCEAN_AIR_ROWS of open air
-# (#149), both across the middle OCEAN_WIDTH_SHARE of the map's width, centred
-# under the dome (#175); then OCEAN_ROWS open rows in a funnel (#184), as wide
-# as the air at the top and tapering to just over the boss chamber at the
-# bottom (the lava field fills them), with unobtainium clumps inside and on its
-# floor and slopes; OCEAN_FLOOR_ROWS of rock under the funnel's narrow end
-# (just one, and soft, over the chamber); and a sealed BOSS_CHAMBER inside rock
-# walls, the map's deepest part. Cells beside the funnel are left off the map,
-# so vanilla's border pass, which runs after this, walls its sloping sides.
-# Meta: "story_ocean" (top/bottom rows, x0/x1 the funnel's top (widest) row,
-# "rows": y -> [x0, x1] per funnel row, ceiling row) and "story_boss_chamber" (Rect2i).
+# (#149), both across the map's full width, so digging down from anywhere
+# breaks in; then OCEAN_ROWS open rows in a rough funnel (#184): full width at
+# the top, its two sides sloping down, each with its own curve and bumps, to
+# just over the boss chamber at the bottom (the lava field fills them), with
+# unobtainium clumps inside and on its floor and slopes; OCEAN_FLOOR_ROWS of
+# rock under the funnel's narrow end (just one, and soft, over the chamber);
+# and a sealed BOSS_CHAMBER inside rock walls, the map's deepest part. Cells
+# beside the funnel are left off the map, so vanilla's border pass, which runs
+# after this, walls its sides. The shape has its own seeded generator, so it
+# leaves `rand` as it was. Meta: "story_ocean" (top/bottom rows, x0/x1 the
+# full width, "rows": y -> [x0, x1] per funnel row, ceiling row) and
+# "story_boss_chamber" (Rect2i).
 static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 	var cells: Array = map_data.get_used_biome_cells()
 	var x0: int = 1 << 20
@@ -113,15 +115,12 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 		x0 = mini(x0, c.x)
 		x1 = maxi(x1, c.x)
 		yb = maxi(yb, c.y)
-	# The ocean is narrower than the map (#175): the columns beside it end at
-	# the map's own bottom, in border wall. It always spans the boss chamber.
 	var ch_w: int = LavaData.BOSS_CHAMBER.x
 	var ch_h: int = LavaData.BOSS_CHAMBER.y
 	var wall: int = LavaData.BOSS_CHAMBER_WALL
 	var ch_half: int = ch_w / 2 + wall + LavaData.OCEAN_FUNNEL_BOTTOM_MARGIN
-	var half: int = maxi(ch_half, int(round((x1 - x0 + 1) * LavaData.OCEAN_WIDTH_SHARE * 0.5)))
-	x0 = maxi(x0, -half)
-	x1 = mini(x1, half)
+	x0 = mini(x0, -ch_half)
+	x1 = maxi(x1, ch_half)
 	var biome: int = MapConfig.BIOMES - 1
 	var ceiling: int = yb + 1
 	var top: int = ceiling + 1 + LavaData.OCEAN_AIR_ROWS
@@ -130,18 +129,7 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 	var ch_x0: int = -ch_w / 2
 	var ch_y0: int = floor_top + 1   # one soft floor row over the chamber
 	var deepest: int = maxi(floor_top + LavaData.OCEAN_FLOOR_ROWS - 1, ch_y0 + ch_h - 1 + wall)
-	# The funnel (#184): each row's columns, from the full top width down to
-	# ch_half either side of the chamber's middle at the bottom row. The top
-	# two rows are equally wide: a lava cell with air above and no lava below
-	# cools (#41), so a narrower second row would crust the top row's ends and
-	# keep the sealed ocean from ever going to sleep.
-	var rows: Dictionary = {}
-	var span: int = maxi(1, LavaData.OCEAN_ROWS - 2)
-	for y in range(top, bottom + 1):
-		var t: float = pow(1.0 - float(maxi(0, y - top - 1)) / span, LavaData.OCEAN_FUNNEL_CURVE)
-		var rx0: int = mini(-ch_half, int(round(lerpf(-ch_half, x0, t))))
-		var rx1: int = maxi(ch_half, int(round(lerpf(ch_half, x1, t))))
-		rows[y] = [maxi(x0, rx0), mini(x1, rx1)]
+	var rows: Dictionary = _funnel_rows(top, bottom, x0, x1, ch_half, _sub_rand(rand, "funnel"))
 	for y in range(ceiling, deepest + 1):
 		var rx0: int = x0
 		var rx1: int = x1
@@ -170,7 +158,7 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 			map_data.set_hardnessv(Vector2i(x, y), Data.HARDNESS_MEDIUM)
 	# Unobtainium: clumps in the ocean, some resting on its floor or slopes
 	# (the lowest funnel row of a column). The total is set by the full-width
-	# box the funnel sits in, so it is what the rectangle held (#175, #184).
+	# box the funnel sits in: what the first, full-size ocean held (#43, #175).
 	var unob: int = int(Minerals.TABLE["unobtainium"]["tile_id"])
 	var want: int = int(round((x1 - x0 + 1) * LavaData.OCEAN_ROWS / LavaData.OCEAN_UNOB_CELLS_PER_TILE))
 	var low: Dictionary = {}   # x -> the funnel's lowest row in that column
@@ -208,6 +196,49 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 	map_data.set_meta("story_ocean", info)
 	map_data.set_meta("story_boss_chamber", Rect2i(ch_x0, ch_y0, ch_w, ch_h))
 	return info
+
+
+# The funnel's columns per row (#184): y -> [x0, x1]. The top two rows span
+# x0..x1 (a lava cell with air above and no lava below cools (#41), so a
+# narrower second row would crust the top row's ends and keep the sealed ocean
+# awake); the bottom row spans ch_half either side of the chamber's middle.
+# Between them each side follows its own curve, plus smooth seeded bumps that
+# fade out at both ends; a row never goes narrower than the bottom row.
+static func _funnel_rows(top: int, bottom: int, x0: int, x1: int, ch_half: int, r: RandomNumberGenerator) -> Dictionary:
+	var n: int = bottom - top + 1
+	var span: float = maxf(1.0, float(n - 2))
+	var sides: Array = []
+	for side in 2:
+		var curve: float = r.randf_range(float(LavaData.OCEAN_FUNNEL_CURVE[0]), float(LavaData.OCEAN_FUNNEL_CURVE[1]))
+		var layers: Array = []
+		for l in LavaData.OCEAN_FUNNEL_BUMP.size():
+			var pts: Array = []
+			for i in n / int(LavaData.OCEAN_FUNNEL_BUMP_ROWS[l]) + 2:
+				pts.append(r.randf_range(-1.0, 1.0))
+			layers.append(pts)
+		sides.append({"curve": curve, "layers": layers})
+	var rows: Dictionary = {}
+	for k in n:
+		var t: float = clampf(float(k - 1) / span, 0.0, 1.0)   # 0 for the top two rows, 1 at the bottom
+		var edge: Array = []
+		for side in 2:
+			var sd: Dictionary = sides[side]
+			var reach: float = float(x0 if side == 0 else x1)
+			var lo: float = float(-ch_half if side == 0 else ch_half)
+			var e: float = lerpf(lo, reach, pow(1.0 - t, float(sd["curve"])))
+			# Smooth bumps (cosine between control points), strongest mid-way.
+			var bump: float = 0.0
+			for l in LavaData.OCEAN_FUNNEL_BUMP.size():
+				var pts: Array = sd["layers"][l]
+				var f: float = float(k) / int(LavaData.OCEAN_FUNNEL_BUMP_ROWS[l])
+				var i: int = int(f)
+				var u: float = (1.0 - cos((f - i) * PI)) * 0.5
+				bump += lerpf(float(pts[i]), float(pts[i + 1]), u) * float(LavaData.OCEAN_FUNNEL_BUMP[l])
+			bump *= sqrt(sin(t * PI))
+			e += bump if side == 1 else -bump
+			edge.append(int(round(e)))
+		rows[top + k] = [clampi(int(edge[0]), x0, -ch_half), clampi(int(edge[1]), ch_half, x1)]
+	return rows
 
 
 # Open lava pools (#42): enclosed caverns in B5 and deeper, carved here as

@@ -55,20 +55,24 @@ const POOL_GAP := 2                    # rock tiles kept between a pool and anyt
 # scattered inside; then the ocean floor and, under its narrow end, a sealed
 # boss chamber.
 const OCEAN_ROWS := 25                    # was 50: half the height (#175)
-# The ocean's width as a share of the map's, centred under the dome (#175: it
-# was the full width, too vast to explore and heavy to run).
-const OCEAN_WIDTH_SHARE := 0.5
-# The ocean is a funnel (#184): its top row is OCEAN_WIDTH_SHARE of the map wide,
-# and it tapers row by row to its bottom row, which spans just the boss chamber
-# and its walls plus OCEAN_FUNNEL_BOTTOM_MARGIN columns on each side. So the
-# chamber is always under the deepest lava. The curve shapes the sides: 1.0 is
-# straight; more than 1 narrows fast near the top (a bowl with a spout).
+# The ocean is a rough funnel (#184): its top spans the map's full width, so
+# digging down from anywhere breaks into it, and it slopes down to its bottom
+# row, which spans just the boss chamber and its walls plus
+# OCEAN_FUNNEL_BOTTOM_MARGIN columns on each side. So the chamber is always
+# under the deepest lava. Each side has its own seeded shape: a curve with an
+# exponent picked from OCEAN_FUNNEL_CURVE (1 is straight, below 1 bulges out,
+# above 1 caves in), plus layers of bumps in or out: layer i reaches up to
+# OCEAN_FUNNEL_BUMP[i] tiles, smoothed between points OCEAN_FUNNEL_BUMP_ROWS[i]
+# rows apart (big swells, then small roughness). The bumps fade out at the top
+# and bottom rows.
 const OCEAN_FUNNEL_BOTTOM_MARGIN := 2
-const OCEAN_FUNNEL_CURVE := 1.0
+const OCEAN_FUNNEL_CURVE := [0.7, 1.6]
+const OCEAN_FUNNEL_BUMP := [8.0, 2.5]
+const OCEAN_FUNNEL_BUMP_ROWS := [6, 2]
 # Open air between the ocean's rock ceiling and the lava (#149), so breaking in
 # opens onto a wide cavern, and lava from above has room to drain into.
 const OCEAN_AIR_ROWS := 4
-const OCEAN_UNOB_CELLS_PER_TILE := 15.0   # one unobtainium tile per this many cells of the ocean's full-width box (60 before #175 quartered the ocean: the same amount; the funnel keeps that total in less lava)
+const OCEAN_UNOB_CELLS_PER_TILE := 30.0   # one unobtainium tile per this many cells of the box the funnel sits in (map width x OCEAN_ROWS); keeps the total of the first, full-size ocean (#43: 60 per cell of a box twice as deep)
 const OCEAN_UNOB_CLUMP := [1, 3]
 const OCEAN_FLOOR_ROWS := 2               # rock under the ocean (1 row over the chamber)
 const BOSS_CHAMBER := Vector2i(20, 10)    # width x height, empty and sealed
