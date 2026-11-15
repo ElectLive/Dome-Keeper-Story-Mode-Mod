@@ -54,6 +54,7 @@ func run(h) -> void:
 	h.snap_camera()
 	await h.shot("before")
 	h.check("nothing breached yet", field.breaches == 0 and field.toxin == 0.0, field.stats())
+	var base: float = field.total() + field.vented + field.faded
 
 	# Drill into the pocket with the keeper's own drill.
 	var key: String = "ui_left" if cells[0].x < cells[1].x else "ui_right"
@@ -83,7 +84,7 @@ func run(h) -> void:
 	await h.until(func(): return field.stats()["awake"] == 0, 60.0)
 	var st: Dictionary = field.stats()
 	h.note("the end", st)
-	h.check("all of the pocket's gas is accounted for", absf(float(st["total"]) + float(st["vented"]) + float(st["faded"]) - 3.0 * pocket.size()) < 0.05, st)
+	h.check("all of the gas is accounted for (the pocket's, and any cavern the shaft cut)", absf(float(st["total"]) + float(st["vented"]) + float(st["faded"]) - base - 3.0 * pocket.size()) < 0.05, st)
 	await h.teleport_tile(cells[1])
 	await h.wait(1.0)
 	await h.shot("after")

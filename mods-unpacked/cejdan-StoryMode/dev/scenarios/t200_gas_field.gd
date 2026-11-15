@@ -65,7 +65,10 @@ func run(h) -> void:
 	h.check("no gas rock above B2", shallow == 0, shallow)
 	h.check("no gas rock on magma", on_magma == 0, on_magma)
 	h.check("gas rock down to B8", by_biome.has(7), by_biome)
-	h.check("no gas before any breach", field.mass.is_empty() and field.stats()["awake"] == 0, field.stats())
+	var in_caverns := 0
+	for cv in field.caverns:
+		in_caverns += cv.size()
+	h.check("no gas before any breach, outside the sealed caverns", field.mass.size() == in_caverns and field.stats()["awake"] == 0, field.stats())
 	var kt: Vector2i = h.keeper_tile()
 	var sky := {}
 	for y in range(-2, 3):
@@ -81,6 +84,7 @@ func run(h) -> void:
 	lava.mass.clear()
 	lava.shown.clear()
 	field.rock.clear()
+	field.mass.clear()
 	var found := false
 	for oy in range(20, 110):
 		for ox in range(-40, 30):

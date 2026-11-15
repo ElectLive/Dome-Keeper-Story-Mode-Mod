@@ -92,9 +92,11 @@ void fragment() {
 		// Thin bright filaments along the billows' ridges.
 		float ridge = 1.0 - abs(2.0 * fbm(q * 1.7 + (warp - 0.5) * 1.6 + 40.0) - 1.0);
 		float wisp = smoothstep(0.82, 0.97, ridge);
-		float v = d.x * (0.42 + 0.95 * p + 0.45 * wisp);
+		// Density eases off as it thickens, so a sealed cavern still shows its marbling.
+		float dens = d.x * 1.45 / (1.0 + 0.45 * d.x);
+		float v = dens * (0.34 + 0.85 * p + 0.42 * wisp);
 
-		float lv = v * 4.0 + (bayer(px) - 0.5) * 0.8;
+		float lv = v * 3.9 + (bayer(px) - 0.5) * 0.8;
 		vec3 col = C0;
 		float a = 0.34;
 		if (lv > 3.9) { col = C4; a = 0.94; }

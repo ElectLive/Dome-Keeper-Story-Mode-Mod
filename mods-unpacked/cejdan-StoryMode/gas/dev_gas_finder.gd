@@ -105,6 +105,10 @@ func jump() -> void:
 	var pocket: Array = all[_index]
 	map.tileCoordsToReveal.append_array(map.tileData.get_used_cells(MapData.LAYER_BIOME))
 	map.floodRevealTiles()
+	# The reveal runs over several frames; finish it now, or the first jump's
+	# tunnel is dug before its tiles exist.
+	if map.has_method("finish_flood"):
+		map.finish_flood()
 	var cells: Array = tunnel_beside(map, pocket)
 	if cells.is_empty():
 		_say("Pocket %d/%d has no room beside it" % [_index + 1, all.size()])
