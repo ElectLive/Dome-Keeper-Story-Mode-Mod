@@ -131,6 +131,9 @@ void fragment() {
 
 			// Gas under pressure in the grid pushes outward; everything eases back to rest.
 			data.z += jet * max(0.0, coarse_at(UV) - 1.0);
+			float hot = texture(tiles, UV).a;
+			data.z += 0.12 * hot;
+			data.y -= 0.6 * hot;
 			data.z = mix(data.z, 1.0, 0.01);
 			data.xy *= 0.995;
 			data = clamp(data, vec4(-10.0, -10.0, 0.5, -10.0), vec4(10.0, 10.0, 3.0, 10.0));

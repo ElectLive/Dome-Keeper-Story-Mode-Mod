@@ -191,6 +191,7 @@ func _physics_process(delta: float) -> void:
 		_acc -= GasData.TICK
 		if not freeze_flow:
 			_step()
+	_update_fire(delta)
 	_update_toxin(delta)
 	_update_puffs(delta)
 	phys_us += Time.get_ticks_usec() - t0
@@ -354,6 +355,139 @@ func _set_mass(c: Vector2i, o: float, m: float, woke: Dictionary) -> void:
 		woke[c] = true
 
 
+# --- fire (#204) ------------------------------------------------------------------
+# Lava lights gas. A burning cell uses its gas up, lights the gas cells around
+# it (all eight) a moment later, and glows on for a moment once empty. The
+# keeper's suit heats in it (through the lava field's heat, scaled by Heat
+# Shielding); burning gas is not breathed. Nothing else changes: no rock
+# breaks, the lava stays as it is.
+
+const DIRS8 := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN, Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)]
+
+var fire: Dictionary = {}          # burning cell -> [seconds burning, seconds to the next spread, seconds since it ran out of gas]
+var burned := 0.0                  # gas burnt this run
+var ignitions := 0                 # times lava lit gas this run
+var in_fire := false               # the keeper is in a burning cell right now
+var _ignite_t := 0.0
+var _roar_t := 0.0
+
+
+func ignite(c: Vector2i) -> void:
+	if fire.has(c):
+		return
+	var thick: float = clampf(mass.get(c, 0.0), 0.0, 1.0)
+	fire[c] = [0.0, lerpf(GasData.FIRE_SPREAD_SECONDS[0], GasData.FIRE_SPREAD_SECONDS[1], thick), 0.0]
+	revision += 1
+
+
+# 0..1: how hot a cell burns right now (for the look).
+func fire_at(c: Vector2i) -> float:
+	var e = fire.get(c)
+	if e == null:
+		return 0.0
+	if e[2] > 0.0:
+		return clampf(1.0 - e[2] / GasData.FIRE_EMBER_SECONDS, 0.0, 1.0)
+	return minf(1.0, 0.35 + e[0] * 8.0)
+
+
+func _update_fire(delta: float) -> void:
+	# Gas beside lava catches (looked for a few times a second, from whichever
+	# of the two there is less of).
+	_ignite_t -= delta
+	if _ignite_t <= 0.0 and _lava != null and not mass.is_empty() and not _lava.mass.is_empty():
+		_ignite_t = 0.12
+		var lit := 0
+		if mass.size() <= _lava.mass.size():
+			for c in mass:
+				if mass[c] < GasData.IGNITE_MASS or fire.has(c):
+					continue
+				for d in DIRS:
+					if _lava.mass.get(c + d, 0.0) >= GasData.LAVA_IGNITES_MASS:
+						ignite(c)
+						lit += 1
+						break
+		else:
+			for lc in _lava.mass:
+				if _lava.mass[lc] < GasData.LAVA_IGNITES_MASS:
+					continue
+				for d in DIRS:
+					var n: Vector2i = lc + d
+					if mass.get(n, 0.0) >= GasData.IGNITE_MASS and not fire.has(n):
+						ignite(n)
+						lit += 1
+		if lit > 0:
+			ignitions += 1
+	in_fire = false
+	if fire.is_empty():
+		return
+	revision += 1
+	var burning := 0
+	for c in fire.keys():
+		var e: Array = fire[c]
+		e[0] += delta
+		var m: float = mass.get(c, 0.0)
+		if m > 0.0:
+			var use: float = minf(m, GasData.FIRE_BURN_PER_SECOND * delta)
+			burned += use
+			m -= use
+			if m > GasData.MIN_MASS:
+				mass[c] = m
+			else:
+				burned += m
+				m = 0.0
+				mass.erase(c)
+			_wake(c)
+		if m > 0.0:
+			burning += 1
+			e[2] = 0.0
+			if _on_screen_cell(c) and _puff_rng.randf() < delta * 5.0:
+				_ember(c)
+		else:
+			e[2] += delta
+			if e[2] >= GasData.FIRE_EMBER_SECONDS:
+				fire.erase(c)
+				continue
+		# It keeps lighting whatever gas is, or arrives, around it.
+		e[1] -= delta
+		if e[1] <= 0.0:
+			e[1] = GasData.FIRE_SPREAD_SECONDS[1]
+			for d in DIRS8:
+				var n: Vector2i = c + d
+				if not fire.has(n) and mass.get(n, 0.0) >= GasData.IGNITE_MASS and _is_open(n):
+					ignite(n)
+	# A roar that grows with the fire, and a shake.
+	_roar_t -= delta
+	if burning > 0 and _roar_t <= 0.0:
+		_roar_t = 0.35
+		GasSfx.play("ignite", clampf(-10.0 + burning * 0.6, -10.0, 2.0))
+		InputSystem.shake(minf(2.0 + burning * 0.25, 9.0), 0.3, 22.0)
+	# The keeper in the fire: suit heat, as lava gives it.
+	var keeper = Keepers.first()
+	if keeper == null or not is_instance_valid(keeper) or keeper.killed or keeper.disabled or _lava == null:
+		return
+	var r: Rect2 = keeper_rect(keeper)
+	var a: Vector2i = map.getTileCoord(r.position)
+	var b: Vector2i = map.getTileCoord(r.end)
+	for y in range(a.y, b.y + 1):
+		for x in range(a.x, b.x + 1):
+			if fire.has(Vector2i(x, y)):
+				in_fire = true
+	if in_fire:
+		var LavaData = _lava.LavaData
+		_lava.heat = minf(LavaData.HEAT_MAX, _lava.heat + GasData.FIRE_HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId) * delta)
+
+
+func _on_screen_cell(c: Vector2i) -> bool:
+	return look != null and c.x >= look.c0.x and c.y >= look.c0.y and c.x < look.c0.x + look.WIN.x and c.y < look.c0.y + look.WIN.y and _seen(c)
+
+
+func _ember(c: Vector2i) -> void:
+	if _puffs.size() >= PUFF_MAX:
+		return
+	var p: Vector2 = _cell_origin(c) + Vector2(_puff_rng.randf_range(2.0, TILE - 2.0), _puff_rng.randf_range(2.0, TILE - 2.0))
+	_puffs.append([p.x, p.y, _time, _puff_rng.randf_range(0.5, 1.1), _puff_rng.randf(), _puff_rng.randf_range(14.0, 40.0), 1.0, 1])
+
+
 # --- toxin (#202) ----------------------------------------------------------------
 
 func _update_toxin(delta: float) -> void:
@@ -367,7 +501,7 @@ func _update_toxin(delta: float) -> void:
 		return
 	if keeper.disabled:
 		return
-	breathing = gas_in(keeper_rect(keeper))
+	breathing = gas_in(keeper_rect(keeper), true)
 	var rate: float = GasData.toxin_share(breathing)
 	if rate > 0.0:
 		toxin = minf(GasData.TOXIN_MAX, toxin + GasData.TOXIN_PER_SECOND * rate * delta)
@@ -397,12 +531,14 @@ func keeper_rect(keeper) -> Rect2:
 
 
 # The densest gas in the cells a rect (world space) touches.
-func gas_in(world_rect: Rect2) -> float:
+func gas_in(world_rect: Rect2, not_burning: bool = false) -> float:
 	var a: Vector2i = map.getTileCoord(world_rect.position)
 	var b: Vector2i = map.getTileCoord(world_rect.end)
 	var best := 0.0
 	for y in range(a.y, b.y + 1):
 		for x in range(a.x, b.x + 1):
+			if not_burning and fire.has(Vector2i(x, y)):
+				continue
 			best = maxf(best, mass.get(Vector2i(x, y), 0.0))
 	return best
 
@@ -426,7 +562,7 @@ func serialize() -> Dictionary:
 	for c in rock:
 		rocks.append([c.x, c.y])
 	Data.apply(SAVE_KEY, JSON.stringify(_save_extra({"seed": Level.levelSeed, "mass": cells, "sources": src, "rock": rocks,
-		"breaches": breaches, "vented": vented, "faded": faded})))
+		"breaches": breaches, "vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions})))
 	return {"meta.priority": 9001, "meta.kind": "storygas"}
 
 
@@ -454,6 +590,8 @@ func _restore(blob: String) -> bool:
 	breaches = int(d.get("breaches", 0))
 	vented = float(d.get("vented", 0.0))
 	faded = float(d.get("faded", 0.0))
+	burned = float(d.get("burned", 0.0))
+	ignitions = int(d.get("ignitions", 0))
 	_restore_extra(d)
 	wake_all()
 	ModLoaderLog.info("Gas restored from save: %d cells, %d gas rock" % [mass.size(), rock.size()], "cejdan-StoryMode")
@@ -577,6 +715,8 @@ func _draw_puffs() -> void:
 		var x: float = round(q[0] + sin(age * 2.2 + s * TAU) * (1.0 + 5.0 * t) + (s - 0.5) * 14.0 * t)
 		var y: float = round(q[1] - q[5] * (1.0 - (1.0 - t) * (1.0 - t)))
 		var col := Color(COL_PUFF_LIT.lerp(COL_PUFF, minf(1.0, t * 2.0)), 0.6 * pow(1.0 - t, 1.2) * minf(1.0, age * 12.0))
+		if q.size() > 7:
+			col = Color(Color("fff2b0").lerp(Color("ff7a1c"), minf(1.0, t * 1.6)), 1.0 - t * t)
 		var r: float = floor(q[6] * (0.6 + 1.2 * t))
 		if r < 1.0:
 			draw_rect(Rect2(x, y, 1.0, 1.0), col)
@@ -598,4 +738,4 @@ func total() -> float:
 
 func stats() -> Dictionary:
 	return {"cells": mass.size(), "total": total(), "rock": rock.size(), "sources": sources.size(), "breaches": breaches,
-		"vented": vented, "faded": faded, "awake": _awake.size(), "toxin": toxin, "gassed": gassed}
+		"vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions, "fire": fire.size(), "awake": _awake.size(), "toxin": toxin, "gassed": gassed}
