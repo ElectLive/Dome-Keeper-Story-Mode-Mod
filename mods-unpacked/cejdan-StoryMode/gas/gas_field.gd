@@ -17,6 +17,7 @@ const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
 const SAVE_KEY := "story.gas"
 const LAVA_FIELD := "StoryLavaField"
 const TILE := 24.0
+const KEEPER_BOX := Vector2(10, 16)
 const WAKE_EPS := 0.00005
 const DIRS := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 
@@ -28,6 +29,10 @@ var mass: Dictionary = {}          # Vector2i -> float, cells holding gas
 var rock: Dictionary = {}          # Vector2i -> true, gas rock still solid
 var sources: Dictionary = {}       # Vector2i -> float, gas a breached cell still holds
 var breaches := 0
+var toxin := 0.0                   # the keeper's toxin bar, 0..TOXIN_MAX (#202)
+var breathing := 0.0               # the densest gas the keeper is in right now
+var gassed := 0                    # times the bar filled this run
+var fx = null                      # the ToxinFx child: bar, vignette, muffled sound
 var _cracks: Dictionary = {}       # gas rock about to burst -> seconds left
 var vented := 0.0                  # gas that left through the surface this run
 var faded := 0.0                   # gas that thinned away this run
@@ -37,6 +42,8 @@ var look = null                    # the GasLook child that draws the gas (#203)
 var revision := 0                  # goes up whenever any cell's gas changes (for the look)
 # Dev only: hold the gas still.
 var freeze_flow := false
+# Dev only: hold the toxin bar where it is.
+var freeze_toxin := false
 var phys_us := 0
 var phys_frames := 0
 
@@ -66,6 +73,10 @@ func setup(p_map) -> void:
 		look.name = "GasLook"
 		add_child(look)
 		look.setup(self)
+		fx = load("res://mods-unpacked/cejdan-StoryMode/gas/toxin_fx.gd").new()
+		fx.name = "ToxinFx"
+		add_child(fx)
+		fx.setup(self)
 
 
 # --- pockets -------------------------------------------------------------------
@@ -345,8 +356,44 @@ func _set_mass(c: Vector2i, o: float, m: float, woke: Dictionary) -> void:
 
 # --- toxin (#202) ----------------------------------------------------------------
 
-func _update_toxin(_delta: float) -> void:
-	pass
+func _update_toxin(delta: float) -> void:
+	var keeper = Keepers.first()
+	if keeper == null or not is_instance_valid(keeper) or keeper.killed or freeze_toxin:
+		return
+	breathing = 0.0
+	if keeper.isInsideDome:
+		# The dome's air clears the suit at once.
+		toxin = 0.0
+		return
+	if keeper.disabled:
+		return
+	breathing = gas_in(keeper_rect(keeper))
+	var rate: float = GasData.toxin_share(breathing)
+	if rate > 0.0:
+		toxin = minf(GasData.TOXIN_MAX, toxin + GasData.TOXIN_PER_SECOND * rate * delta)
+	else:
+		toxin = maxf(0.0, toxin - GasData.CLEAR_PER_SECOND * delta)
+	if toxin < GasData.TOXIN_MAX:
+		return
+	gassed += 1
+	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
+	if BossDirector.jams_recall():
+		# Velle jams the suit's recall through the boss sequence (#160): a full
+		# bar costs a heart there, not a trip home.
+		toxin = GasData.TOXIN_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
+		BossDirector.overheated()
+	else:
+		# The same recall as an overheat in lava: cargo dropped, half the money,
+		# and it counts toward the same deaths (until gas deaths get their own lines).
+		toxin = 0.0
+		if _lava != null:
+			_lava._recall(keeper)
+		ModLoaderLog.info("Gassed: recall %d" % gassed, "cejdan-StoryMode")
+
+
+# The keeper's body for gas contact: the same box the lava uses.
+func keeper_rect(keeper) -> Rect2:
+	return Rect2(keeper.global_position - KEEPER_BOX * 0.5, KEEPER_BOX)
 
 
 # The densest gas in the cells a rect (world space) touches.
@@ -384,6 +431,8 @@ func serialize() -> Dictionary:
 
 
 func _save_extra(d: Dictionary) -> Dictionary:
+	d["toxin"] = toxin
+	d["gassed"] = gassed
 	return d
 
 
@@ -411,8 +460,9 @@ func _restore(blob: String) -> bool:
 	return true
 
 
-func _restore_extra(_d: Dictionary) -> void:
-	pass
+func _restore_extra(d: Dictionary) -> void:
+	toxin = float(d.get("toxin", 0.0))
+	gassed = int(d.get("gassed", 0))
 
 
 # --- drawing -------------------------------------------------------------------
@@ -548,4 +598,4 @@ func total() -> float:
 
 func stats() -> Dictionary:
 	return {"cells": mass.size(), "total": total(), "rock": rock.size(), "sources": sources.size(), "breaches": breaches,
-		"vented": vented, "faded": faded, "awake": _awake.size()}
+		"vented": vented, "faded": faded, "awake": _awake.size(), "toxin": toxin, "gassed": gassed}
