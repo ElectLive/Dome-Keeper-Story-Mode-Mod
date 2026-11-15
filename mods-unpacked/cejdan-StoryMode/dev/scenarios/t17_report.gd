@@ -1,7 +1,8 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 # Ticket 17: 50-seed report of the Story Mode map: biome count, mineral mix and
-# deposit size per biome against data/map_config.gd, and B4's rare gems.
+# deposit size per biome against data/map_config.gd, the bronze by the dome and
+# the lone deep diamonds (#186).
 # Also writes revealed-map pictures of three seeds.
 
 const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd")
@@ -33,7 +34,8 @@ func run(h) -> void:
 	for b in B:
 		count.append({})
 		biome_tiles.append(0)
-	var rare: Dictionary = {"emerald": 0, "ruby": 0, "diamond": 0}
+	var start_bronze: Array = []   # per seed: bronze tiles in rows 2-4 near the dome
+	var big_diamonds: int = 0      # diamond deposits of more than one tile
 	var biome_counts: Dictionary = {}
 	var total_tiles: int = 0
 	var widths: int = 0
@@ -82,8 +84,13 @@ func run(h) -> void:
 					tiles[m] = [0, 0]
 				tiles[m][0] += 1
 				tiles[m][1] += group.size()
-				if biome == 3 and rare.has(m):
-					rare[m] += 1
+				if m == "diamond" and group.size() > 1:
+					big_diamonds += 1
+		var sb: int = 0
+		for c: Vector2i in td.get_resource_cells_by_id(int(Minerals.TABLE["bronze"]["tile_id"])):
+			if c.y >= MapConfig.START_BRONZE_ROWS[0] and c.y <= MapConfig.START_BRONZE_ROWS[1] and absi(c.x) <= MapConfig.START_BRONZE_REACH:
+				sb += 1
+		start_bronze.append(sb)
 		if s + 1 in PICTURE_SEEDS:
 			h.map_png("story_map_seed%d" % (1000 + s), colors(), 6, td)
 		td.queue_free()
@@ -130,16 +137,19 @@ func run(h) -> void:
 	for m: String in tiles:
 		var avg: float = tiles[m][1] / float(tiles[m][0])
 		var r: Array = MapConfig.SIZES[m]
-		var hi: float = float(MapConfig.DIAMOND_DEEP_SIZE[1]) if m == "diamond" else float(r[1])
+		var hi: float = float(r[1])
 		# Two deposits of one mineral that touch count as one here, so allow a little over.
 		h.check("%s average deposit size in range" % m, avg >= float(r[0]) - 0.01 and avg <= hi + 0.6, {"avg": snappedf(avg, 0.01), "range": r, "deposits": tiles[m][0]})
 
-	var e: float = rare["emerald"] / float(n)
-	var r2: float = rare["ruby"] / float(n)
-	var d: float = rare["diamond"] / float(n)
-	h.check("B4 emerald deposits average about 2 (1-3)", absf(e - 2.0) <= 0.5, e)
-	h.check("B4 ruby deposits average about 1.5 (1-2)", absf(r2 - 1.5) <= 0.4, r2)
-	h.check("B4 diamond deposits average about 0.5 (0-1)", absf(d - 0.5) <= 0.25, d)
+	h.check("every diamond is a lone tile", big_diamonds == 0, big_diamonds)
+	var no_early: Dictionary = {}
+	for b in B:
+		for m: String in count[b]:
+			if not MapConfig.MIX[b].has(m):
+				no_early["B%d %s" % [b + 1, m]] = count[b][m]
+	h.check("no mineral outside its biomes' mix (no iron past the gate, no early gems)", no_early.is_empty(), no_early)
+	start_bronze.sort()
+	h.check("every map has 4+ bronze tiles in rows 2-4 by the dome", start_bronze.size() > 0 and start_bronze[0] >= 4, {"fewest": start_bronze[0] if start_bronze.size() else -1, "most": start_bronze[-1] if start_bronze.size() else -1, "median": start_bronze[start_bronze.size() / 2] if start_bronze.size() else -1})
 
 	# The running game's own map, for an in-game look.
 	h.map_png("this_run_map", colors())

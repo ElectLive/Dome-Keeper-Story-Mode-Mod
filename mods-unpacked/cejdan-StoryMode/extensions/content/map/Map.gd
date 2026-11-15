@@ -196,6 +196,11 @@ func destroyTile(teamId: String, keeperTechId: String, tile: Tile):
 		return
 	if not is_inside_tree() or not is_server():
 		return
+	# A fixed count (diamond, #186): no dice, no difficulty bonus.
+	if Minerals.TABLE[type].has("drops"):
+		for _i in int(Minerals.TABLE[type]["drops"]):
+			spawnDrop(tile, teamId)
+		return
 	# Same drop count rule vanilla uses for iron, with its own running delta.
 	var goalRichness: float = richness * Data.ofOr("resourcemodifiers.richness." + type, 1.0)
 	var drops: int = int(floor(goalRichness - 1 + (randi() % 3)))

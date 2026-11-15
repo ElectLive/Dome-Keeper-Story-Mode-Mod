@@ -20,6 +20,7 @@ const DIRS8: Array = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(
 static func after_resources(_gen, map_data, rand: RandomNumberGenerator) -> void:
 	fill_bottom(map_data, _sub_rand(rand, "bottom"))
 	place_minerals(map_data, rand)
+	place_start_bronze(map_data, _sub_rand(rand, "startbronze"))
 	remove_gadget_chambers(map_data)
 	place_gate(map_data, MapConfig.GATE_BELOW_BIOME, MapConfig.GATE_THICKNESS)
 	place_metal(map_data, rand)
@@ -540,6 +541,37 @@ static func place_minerals(map_data, rand: RandomNumberGenerator) -> Array:
 			var tiles: Array = _grow(map_data, centre, int(Minerals.TABLE[mineral]["tile_id"]), size, rand)
 			deposits.append({"mineral": mineral, "biome": b, "centre": centre, "tiles": tiles.size()})
 	return deposits
+
+
+# Bronze by the dome (#186): MapConfig.START_BRONZE_DEPOSITS small deposits
+# in plain B1 rock of rows START_BRONZE_ROWS, near column 0, spaced apart.
+# Meta "story_start_bronze": [[x, y, tiles], ...].
+static func place_start_bronze(map_data, rand: RandomNumberGenerator) -> Array:
+	var bronze: int = int(Minerals.TABLE["bronze"]["tile_id"])
+	var cands: Array = []
+	for y in range(int(MapConfig.START_BRONZE_ROWS[0]), int(MapConfig.START_BRONZE_ROWS[1]) + 1):
+		for x in range(-MapConfig.START_BRONZE_REACH, MapConfig.START_BRONZE_REACH + 1):
+			var c := Vector2i(x, y)
+			if absi(x) >= 2 and map_data.get_biomev(c) == 0 and map_data.get_resourcev(c) == Data.TILE_DIRT_START and not _near_special(map_data, c):
+				cands.append(c)
+	_shuffle(cands, rand)
+	var placed: Array = []
+	for c: Vector2i in cands:
+		if placed.size() >= MapConfig.START_BRONZE_DEPOSITS:
+			break
+		if map_data.get_resourcev(c) != Data.TILE_DIRT_START:
+			continue
+		var far: bool = true
+		for p: Array in placed:
+			if absi(c.x - int(p[0])) < MapConfig.START_BRONZE_SPACING:
+				far = false
+		if not far:
+			continue
+		var size: int = rand.randi_range(int(MapConfig.START_BRONZE_SIZE[0]), int(MapConfig.START_BRONZE_SIZE[1]))
+		var tiles: Array = _grow(map_data, c, bronze, size, rand)
+		placed.append([c.x, c.y, tiles.size()])
+	map_data.set_meta("story_start_bronze", placed)
+	return placed
 
 
 # The minerals of a biome's deposits: the rare extras first, then the mix
