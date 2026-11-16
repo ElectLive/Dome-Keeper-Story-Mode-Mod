@@ -21,4 +21,6 @@ func run(h) -> void:
 	h.check("lost run's end screen on the host", panel and GameWorld.lost and not GameWorld.won)
 	await h.wait(2.5)
 	await h.shot("host_lost")
+	await h.wait(4.0)
+	h.check("one end screen, no ending cards", Level.mode.end_screens == 1 and Level.mode.get_node("StoryEndings").cards_shown == 0, [Level.mode.end_screens, Level.mode.get_node("StoryEndings").cards_shown])
 	await host_wait_clients_left(h, 90.0)

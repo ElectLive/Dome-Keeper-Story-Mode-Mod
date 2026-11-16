@@ -62,6 +62,8 @@ func play_fallen() -> void:
 
 
 var _card_input = null
+# Card sets shown on this instance (a playtest checks there is one per ending).
+var cards_shown: int = 0
 
 
 # Online (#229): the host's cards show on every client too, each running at
@@ -81,6 +83,7 @@ func close_cards() -> void:
 func _cards(cards: Array, mood: String) -> void:
 	if StoryBeats._online() and multiplayer.is_server():
 		Network.rpc_if_state(_net_cards.bind(cards, mood), Network.ConnectionState.LEVEL_STAGE_SYNC)
+	cards_shown += 1
 	var box = load(Story.MOD_DIR + "endings/CardBox.gd").new()
 	box.cards = cards
 	box.mood = mood

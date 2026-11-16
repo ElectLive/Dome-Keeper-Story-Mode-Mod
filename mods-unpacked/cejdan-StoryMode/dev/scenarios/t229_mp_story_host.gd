@@ -139,4 +139,6 @@ func run(h) -> void:
 	h.check("end screen on the host", panel and GameWorld.won)
 	await h.wait(2.5)
 	await h.shot("host_end_screen")
+	await h.wait(4.0)
+	h.check("exactly one set of ending cards and one end screen here", Level.mode.get_node("StoryEndings").cards_shown == 1 and Level.mode.end_screens == 1, [Level.mode.get_node("StoryEndings").cards_shown, Level.mode.end_screens])
 	await host_wait_clients_left(h, 120.0)

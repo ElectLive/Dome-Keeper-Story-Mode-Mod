@@ -117,3 +117,5 @@ func run(h) -> void:
 	h.check("titled for the doom ending", ep != null and ep.titleLabel.text == Endings.DOOM_TITLE, ep.titleLabel.text if ep != null else null)
 	h.check("the cards are gone", not h.get_tree().get_nodes_in_group("story-beat-box").any(func(n): return n.name.begins_with("StoryEndingCards") and not n._closing))
 	await h.shot("client_end_screen")
+	await h.wait(4.0)
+	h.check("exactly one set of ending cards and one end screen here", Level.mode.get_node("StoryEndings").cards_shown == 1 and Level.mode.end_screens == 1, [Level.mode.get_node("StoryEndings").cards_shown, Level.mode.end_screens])
