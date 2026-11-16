@@ -124,7 +124,7 @@ func _ready_to_run() -> bool:
 
 
 func _chamber() -> Rect2i:
-	var ch = Level.map.tileData.get_meta("story_boss_chamber", null)
+	var ch = Level.map.tileData.get_meta("story_boss_chamber") if Level.map.tileData.has_meta("story_boss_chamber") else null
 	return ch if ch is Rect2i else Rect2i()
 
 
