@@ -6,7 +6,7 @@ All three slices are built, each a stacked PR (nothing merged, #230 open):
 |---|---|---|---|
 | 1, Velle's chamber fight | `ticket/230-mp-boss-fight` | #239 | `ticket/227-mp-lava` |
 | 2, the chase | `ticket/230-mp-boss-chase` | #240 | `ticket/230-mp-boss-fight` |
-| 3, the finale | `ticket/230-mp-boss-finale` | see #230 | `ticket/230-mp-boss-chase` |
+| 3, the finale | `ticket/230-mp-boss-finale` | #241 | `ticket/230-mp-boss-chase` |
 
 ## Design
 
