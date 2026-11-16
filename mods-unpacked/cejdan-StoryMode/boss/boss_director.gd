@@ -26,8 +26,11 @@ extends Node
 # _net_events) and reports its own keeper's overheat (_net_overheated). The
 # host also repeats the state and the hearts to clients (_net_boss): a Data
 # change made while a client's full Data sync is on its way is overwritten by
-# that sync and never sent again. The chase and the finale are still the
-# host's alone.
+# that sync and never sent again. In the chase the tentacles hunt one keeper
+# out in the mine at a time and a touch on any keeper costs a heart; a client
+# draws a puppet chase from the host's trail and tips (_net_chase). The chase
+# is over when every keeper is home (in the dome, at the dome) and at least
+# one of them has been out in it. The finale is still the host's alone.
 #
 # Other code reaches it through the static helpers, which do nothing outside
 # the boss sequence:
@@ -42,6 +45,7 @@ const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_bea
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 const KeeperHealth = preload("res://mods-unpacked/cejdan-StoryMode/boss/keeper_health.gd")
+const Chase = preload("res://mods-unpacked/cejdan-StoryMode/boss/chase.gd")
 
 const GROUP := "story-boss"
 const STATE := "team1.story.boss"
@@ -70,6 +74,7 @@ var _held: Dictionary = {}    # this instance's keepers the chamber has sealed i
 var _net_t: float = 0.0
 var _net_repeat: float = 0.0
 var _client_state: String = ""
+var _chase_asked: float = -10.0
 
 
 static func instance():
@@ -186,7 +191,6 @@ func _physics_process(delta: float) -> void:
 		_resume()
 		if OS.has_feature("editor") and Story.user_arg("scenario") == "" and Story.has_user_arg("boss"):
 			_dev_boss(Story.user_arg("boss"))
-	var keeper = Keepers.first()
 	_net_host(delta)
 	match current():
 		"":
@@ -209,17 +213,8 @@ func _physics_process(delta: float) -> void:
 				music.fight(velle.phase)
 		"chase":
 			if chase != null and is_instance_valid(chase):
-				music.chase(1.0 - chase.gap / 260.0)
-			# Home counts only once the keeper has been out of the dome: the dev
-			# command starts the chase the moment the keeper is teleported away,
-			# while the dome still counts the keeper as inside (#176).
-			# The flag alone is not enough either: it can flip on a moment
-			# after a teleport out, so the keeper must also be at the dome.
-			var dome = Level.getDome("team1")
-			var at_dome: bool = dome != null and keeper.global_position.distance_to(dome.global_position) < 240.0
-			if not keeper.isInsideDome:
-				_chase_left_dome = true
-			elif _chase_left_dome and at_dome:
+				music.chase(1.0 - chase.my_gap() / 260.0)
+			if _all_home():
 				_chase_done()
 		"finale":
 			# Silence while the finale draws its breath; the bells after.
@@ -366,10 +361,35 @@ func _start_chase(origin: Vector2) -> void:
 	InputSystem.shake(18.0, 1.0, 18.0)
 
 
+# Is the team home? Home counts only once a keeper has been out of the dome:
+# the dev command starts the chase the moment the keeper is teleported away,
+# while the dome still counts the keeper as inside (#176). The flag alone is
+# not enough either: it can flip on a moment after a teleport out, so each
+# keeper must also be at the dome. With a team (#230) every keeper must be
+# home; one who never left the dome is home already.
+func _all_home() -> bool:
+	var dome = Level.getDome("team1")
+	if dome == null:
+		return false
+	var home: bool = true
+	for k in Keepers.getAll():
+		if k == null or not is_instance_valid(k):
+			continue
+		if not Chase.in_dome(k):
+			_chase_left_dome = true
+			home = false
+		elif k.global_position.distance_to(dome.global_position) >= 240.0:
+			home = false
+	return home and _chase_left_dome
+
+
 # The keeper made it into the dome.
 func _chase_done() -> void:
 	if chase != null and is_instance_valid(chase):
 		chase.running = false
+		# Where the tentacles stopped, for the clients' copies.
+		if StoryNet.online():
+			_to_clients(_net_chase.bind(chase.net_state()))
 	_set_state("finale")
 	_start_finale()
 
@@ -458,15 +478,19 @@ func _net_host(delta: float) -> void:
 		_net_repeat = NET_REPEAT
 		_client_state = st     # on the host: the state last sent
 		_to_clients(_net_boss.bind(st, int(Data.ofOr(KeeperHealth.KEY, Boss.HEARTS))))
+	_net_t -= delta
+	var tick: bool = _net_t <= 0.0
+	if tick:
+		_net_t = 1.0 / NET_HZ
+	if st == "chase" and tick and chase != null and is_instance_valid(chase):
+		_to_clients(_net_chase.bind(chase.net_state()))
 	if not has_velle:
 		return
 	velle.collect_events = true
 	var ev: Array = velle.take_events()
 	if not ev.is_empty():
 		_to_clients(_net_events.bind(ev))
-	_net_t -= delta
-	if st == "fight" and _net_t <= 0.0:
-		_net_t = 1.0 / NET_HZ
+	if st == "fight" and tick:
 		_to_clients(_net_velle.bind(velle.net_state()))
 
 
@@ -520,6 +544,30 @@ func _net_hurt(player_id: String, push: Vector2) -> void:
 		health.net_hit(player_id, push)
 
 
+# The host's chase (boss/chase.gd net_state()); reliable, as the trail comes in parts.
+@rpc("authority", "call_remote", "reliable")
+func _net_chase(data: Array) -> void:
+	if chase == null or not is_instance_valid(chase) or not chase.puppet:
+		return
+	if not chase.net_apply(data):
+		_ask_chase()
+
+
+# A client: the whole trail again, please (a new copy, or it missed a part).
+func _ask_chase() -> void:
+	var now: float = Time.get_ticks_msec() / 1000.0
+	if now - _chase_asked < 1.0:
+		return
+	_chase_asked = now
+	rpc_id(1, "_net_chase_resend")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_chase_resend() -> void:
+	if multiplayer.is_server() and chase != null and is_instance_valid(chase):
+		chase.resend()
+
+
 # Client -> host: my keeper overheated in the boss sequence.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_overheated(player_id: String) -> void:
@@ -559,6 +607,9 @@ func _client_process(delta: float) -> void:
 			# The fight starts over (the host loaded a save).
 			velle.queue_free()
 			velle = null
+		if st == "" and chase != null and is_instance_valid(chase):
+			chase.queue_free()
+			chase = null
 	match st:
 		"fight":
 			if not _ensure_layer():
@@ -576,9 +627,23 @@ func _client_process(delta: float) -> void:
 			music.fight(velle.phase)
 		"chase":
 			_held.clear()
-			# The chase itself is not on clients yet: its music, at a middle distance.
-			music.chase(0.5)
+			if not _ensure_layer():
+				return
+			if chase == null or not is_instance_valid(chase):
+				chase = load(Story.MOD_DIR + "boss/chase.gd").new()
+				chase.name = "Chase"
+				chase.puppet = true
+				layer.add_child(chase)
+				chase.setup(health, arena.get_center())
+				_reveal_chamber()
+				_chase_asked = -10.0
+				_ask_chase()
+				Sfx.play("roar", -2.0, 1.2)
+				InputSystem.shake(18.0, 1.0, 18.0)
+			music.chase(1.0 - chase.my_gap() / 260.0)
 		"finale":
+			if chase != null and is_instance_valid(chase):
+				chase.running = false
 			music.hush()
 		_:
 			_held.clear()
