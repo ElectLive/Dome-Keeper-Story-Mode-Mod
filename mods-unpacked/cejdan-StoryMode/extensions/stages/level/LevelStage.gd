@@ -12,12 +12,50 @@ const GadgetShop = preload("res://mods-unpacked/cejdan-StoryMode/gamemode/gadget
 var story_shop: Dictionary = {}
 
 
-# Opens the gadget choice for the next New Gadget entry.
+# Opens the gadget choice for the next New Gadget entry. The host runs the
+# shop (offers live in Data, which only the host may change), so a client asks
+# the host to open it (#236); the client only shows the popup and sends its
+# picks, rerolls and Cancel, as with vanilla's gadget choice.
 func openStoryGadgetChoice(teamId: String, playerId: String) -> void:
+	if not multiplayer.is_server():
+		requestStoryGadgetChoice.rpc_id(1, teamId, playerId)
+		return
+	_open_story_gadget_choice(teamId, playerId)
+
+
+@rpc("reliable", "any_peer")
+func requestStoryGadgetChoice(teamId: String, playerId: String) -> void:
+	if not (multiplayer.is_server() and Story.is_story()):
+		return
+	var keeper: Keeper = Keepers.getKeeper(playerId)
+	if keeper == null or keeper.peerId != multiplayer.get_remote_sender_id() or keeper.teamId != teamId:
+		return
+	# The shop panel checks the price before asking; the host checks it again.
+	var cost = GameWorld.upgrades.get(GadgetShop.next_entry(teamId), {}).get("cost", {})
+	if cost is Dictionary and not GameWorld.canAfford(cost, teamId):
+		return
+	_open_story_gadget_choice(teamId, playerId)
+
+
+func _open_story_gadget_choice(teamId: String, playerId: String) -> void:
 	if GadgetShop.next_entry(teamId) == "" or GadgetShop.candidates(teamId, playerId).is_empty():
 		return
+	# One shop choice per player at a time: a second, queued one would open
+	# after the first closed and be taken for a found (free) gadget.
+	if story_shop.has(playerId):
+		return
 	story_shop[playerId] = true
+	var keeper: Keeper = Keepers.getKeeper(playerId)
+	if keeper and keeper.peerId != 1:
+		# Sent before vanilla's popup call, on the same ordered channel.
+		markStoryShopChoice.rpc_id(keeper.peerId, playerId)
 	queueChoice(CONST.GADGET, teamId, playerId)
+
+
+# Client: the gadget choice the host opens next for this player is the shop's.
+@rpc("reliable")
+func markStoryShopChoice(playerId: String) -> void:
+	story_shop[playerId] = true
 
 
 func startGadgetChoiceInput(teamId: String, playerId: String, offerType: String):
@@ -41,6 +79,9 @@ func startGadgetChoiceInput(teamId: String, playerId: String, offerType: String)
 	showingChoicePopup = true
 	i.connect("onStop", unpause)
 	i.connect("onStop", Network.rpc_server.bind(continueOfferQueue.bind(playerId)))
+	if not multiplayer.is_server():
+		# The host clears its mark in continueOfferQueue; a client clears its own.
+		i.connect("onStop", func(): story_shop.erase(playerId))
 	i.connect("gadgetSelected", onGadgetSelected)
 	i.integrate(self)
 	pause()
@@ -73,7 +114,8 @@ func generateOffers(teamId: String, playerId: String) -> void:
 
 @rpc("reliable", "any_peer")
 func remoteSetOffers(playerId: String, offerType: String, offerIds: Array[String], rerollPossible: bool, rerollCost: int, freeRerolls: int) -> void:
-	if not _from_shop(playerId):
+	# Not _from_shop: a client has the shop mark but not the host's offer type.
+	if not (Story.is_story() and offerType == CONST.GADGET and story_shop.has(playerId)):
 		super(playerId, offerType, offerIds, rerollPossible, rerollCost, freeRerolls)
 		return
 	# As vanilla, minus the "shred to cobalt" choice: the shop was opened on purpose.

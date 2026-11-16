@@ -26,10 +26,24 @@ func run(h) -> void:
 		await h.read_beat("welcome", 10.0, false)
 	Data.apply("team1.inventory.money", 100000)
 	Data.apply("team1.inventory.water", 5)
+	var is_gadget := func(k): return GameWorld.upgrades.get(k, {}).get("type", "") == "gadget"
+	var gadgets0: Array = GameWorld.boughtUpgrades.filter(is_gadget)
 	share("go", true)
-	var entry: String = GadgetShop.entries("team1")[0]
-	await h.until(func(): return GameWorld.boughtUpgrades.has(entry), 40.0)
+	# The client buys Heat Shielding I, then uses the gadget shop: open, Cancel,
+	# reopen, one reroll, a pick (New Gadget I) and a second pick (New Gadget II).
+	var entries: Array = GadgetShop.entries("team1")
+	var cost := func(id: String) -> int: return int(GameWorld.upgrades.get(id, {}).get("cost", {}).get("money", -1))
+	var spent: int = cost.call("team1.storyheatshield1") + cost.call(entries[0]) + cost.call(entries[1])
+	var both: bool = await h.until(func(): return GameWorld.boughtUpgrades.has(entries[0]) and GameWorld.boughtUpgrades.has(entries[1]), 90.0)
 	await h.wait(3.0)
-	var gadgets: Array = GameWorld.boughtUpgrades.filter(func(k): return GameWorld.upgrades.get(k, {}).get("type", "") == "gadget")
-	h.note("host view after client tries", {"money": Data.ofOr("team1.inventory.money", -1), "entry bought": GameWorld.boughtUpgrades.has(entry), "gadgets": gadgets, "heatshield1": GameWorld.boughtUpgrades.has("team1.storyheatshield1")})
+	var gadgets: Array = GameWorld.boughtUpgrades.filter(func(k): return is_gadget.call(k) and not gadgets0.has(k))
+	var money: int = int(Data.ofOr("team1.inventory.money", -1))
+	var water: int = int(Data.ofOr("team1.inventory.water", -1))
+	h.note("host view after client tries", {"money": money, "water": water, "entries bought": both, "new gadgets": gadgets, "heatshield1": GameWorld.boughtUpgrades.has("team1.storyheatshield1")})
+	h.check("host: New Gadget I and II are bought, III is not", both and not GameWorld.boughtUpgrades.has(entries[2]))
+	h.check("host: the client paid Heat Shielding I + New Gadget I + II, nothing else", 100000 - money == spent, {"spent": 100000 - money, "expected": spent})
+	h.check("host: the reroll cost 1 water", water == 4, water)
+	h.check("host: exactly two gadgets were added", gadgets.size() == 2, gadgets)
+	h.check("host: the shop choice is closed and the offers are cleared", Level.stage.story_shop.is_empty() and str(Data.ofOr("team1.story.gadgetoffers", "")) == "" and str(Level.stage.currentOfferTypeByPlayerId.get("player2", "")) == "", {"shop": Level.stage.story_shop, "offers": Data.ofOr("team1.story.gadgetoffers", ""), "type": Level.stage.currentOfferTypeByPlayerId})
+	await h.shot("host_after_client_shop")
 	await host_wait_clients_left(h)
