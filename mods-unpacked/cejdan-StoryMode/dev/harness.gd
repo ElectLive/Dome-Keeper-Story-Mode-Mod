@@ -55,9 +55,20 @@ func _process(_delta: float) -> void:
 
 
 func _run() -> void:
-	# Story beats and miners' logs (#94) pause the game, so scenarios that don't
-	# test them start with every one marked played. boot() returns
-	# `beats: true` to keep them.
+	mute_beats()
+	note("scenario begin", {"seed": Level.levelSeed, "mode": Level.loadout.modeId if Level.loadout else ""})
+	await scenario.run(self)
+	finish()
+
+
+# Story beats and miners' logs (#94) pause the game, so scenarios that don't
+# test them start with every one marked played. boot() returns `beats: true`
+# to keep them. Beat state is the host's (Data syncs it to clients), so a
+# client instance (#223) leaves it alone; a host scenario that boots in the
+# loadout calls this once its run has started.
+func mute_beats() -> void:
+	if not multiplayer.is_server():
+		return
 	if not scenario.boot().get("beats", false) and Story.is_story():
 		var ids: PackedStringArray = []
 		for b: Dictionary in load(Story.MOD_DIR + "data/beats.gd").BEATS + load(Story.MOD_DIR + "data/logs.gd").LOGS:
@@ -66,15 +77,10 @@ func _run() -> void:
 		Data.apply("team1.story.beatsplayed", ",".join(ids))
 		note("story beats muted (boot has no beats: true)")
 	elif not scenario.boot().get("welcome", false) and Story.is_story():
-		# The keeper's welcome log (#123) opens at the start of every new run;
-		# only scenarios that test it (boot `welcome: true`) see it.
 		var played: Array = Array(str(Data.ofOr("team1.story.beatsplayed", "")).split(",", false))
 		if not played.has("keeper_welcome"):
 			played.append("keeper_welcome")
 			Data.apply("team1.story.beatsplayed", ",".join(PackedStringArray(played)))
-	note("scenario begin", {"seed": Level.levelSeed, "mode": Level.loadout.modeId if Level.loadout else ""})
-	await scenario.run(self)
-	finish()
 
 
 func finish() -> void:
