@@ -45,7 +45,12 @@ const RISE_SHARE := 0.7                # share of the balancing flow moved up ea
 const SIDE_DIVISOR := 2.4              # sideways along a ceiling: this share of the difference a step
 const DRIFT_DIVISOR := 16.0            # sideways while still rising (a loose cloud widens slowly)
 const MIN_FLOW := 0.002
-const MIN_PACKET := 0.012              # least gas that moves sideways into an empty cell (more than MIN_MASS, or it is dropped)
+# Gas resting under rock clings to it (#212): each cell with rock above keeps
+# this much gas that does not flow sideways, so low ceilings and bends trap
+# part of a pocket (toxic: over TOXIC_MASS) and only the rest moves on.
+# Burning it, or opening the rock above it, frees it.
+const CLING_MASS := 0.5
+const MIN_PACKET := 0.012             # least gas that moves sideways into an empty cell (more than MIN_MASS, or it is dropped)
 const MIN_MASS := 0.004
 const SOURCE_RATE := 0.5               # gas a breached gas rock cell lets out a step ...
 const SOURCE_PRESSURE := 3.0           # ... until its own cell holds this much (the jet)
