@@ -17,6 +17,9 @@ func _process(_delta: float) -> void:
 		return
 	if not Level.stage is LevelStage:
 		return
+	# A client builds its field from the host's map facts (#225).
+	if not load("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd").map_meta_ready(map):
+		return
 	var field := GasField.new()
 	field.name = FIELD_NAME
 	map.add_child(field)

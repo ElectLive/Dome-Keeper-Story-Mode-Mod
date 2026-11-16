@@ -110,9 +110,12 @@ func _is_chamber_crust() -> bool:
 		return false
 	var td = Level.map.tileData
 	if td.get_instance_id() != _crust_map_id:
-		_crust_map_id = td.get_instance_id()
 		var ch = td.get_meta("story_boss_chamber", null)
 		_crust_rect = ch if ch is Rect2i else Rect2i()
+		# A client gets the chamber from the host a moment after its map (#225):
+		# cache only a found chamber.
+		if ch is Rect2i:
+			_crust_map_id = td.get_instance_id()
 	if _crust_rect.size == Vector2i.ZERO or int(coord.y) != _crust_rect.position.y - 1:
 		return false
 	return int(coord.x) >= _crust_rect.position.x and int(coord.x) < _crust_rect.end.x
