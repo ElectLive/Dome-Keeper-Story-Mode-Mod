@@ -108,7 +108,13 @@ func vent() -> void:
 
 
 func _on_upgrade_bought(id: String, _team: String, _player: String) -> void:
-	if id.get_slice(".", id.get_slice_count(".") - 1) == VENT_ID:
+	if id.get_slice(".", id.get_slice_count(".") - 1) != VENT_ID:
+		return
+	if field.net_client:
+		# The dome's gas is the host's (#228): it clears it and sends the new amount.
+		GasSfx.play("vent", 0.0, 0.8)
+		load("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd").gas_vent()
+	else:
 		vent()
 
 

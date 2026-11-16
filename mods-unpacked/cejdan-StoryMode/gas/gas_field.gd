@@ -14,6 +14,7 @@ extends Node2D
 
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
+const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 const SAVE_KEY := "story.gas"
 const LAVA_FIELD := "StoryLavaField"
 const TILE := 24.0
@@ -61,6 +62,23 @@ var _chamber: Rect2i = Rect2i()
 var _ocean: Dictionary = {}
 var _lava = null
 
+# Online multiplayer (#228), as the lava field does it (#227): the host alone
+# moves the gas (flow, sources, bursts, ignition, fire, venting) and after
+# every step sends clients the cells that changed (absolute mass, and the flux
+# through them for the look), fire lit and gone out, cells that vented and the
+# dome's gas. A client draws what it is sent, gliding from one packet to the
+# next as the host glides between steps. The toxin bar stays with each
+# player's own instance (their keeper); a gassing's penalty and beat are the
+# host's (through the lava field's recall).
+var net_client := false            # this instance draws the host's gas
+var net_packets := 0               # client: packets applied (playtests)
+var _net_dirty: Dictionary = {}    # host: cells whose gas or flux changed since the last send
+var _net_all := true               # host: send everything next (after a fill or load)
+var _net_fire_on: Dictionary = {}  # host: cells lit since the last send
+var _net_fire_off: Dictionary = {} # host: fires gone since the last send
+var _net_vents: Dictionary = {}    # host: top-row cells that vented since the last send
+var _net_dome := -1.0              # host: the dome gas clients last got
+
 
 func setup(p_map) -> void:
 	map = p_map
@@ -75,7 +93,11 @@ func setup(p_map) -> void:
 	dome.name = "DomeGas"
 	add_child(dome)
 	dome.setup(self)
-	if not _restore(str(Data.ofOr(SAVE_KEY, ""))):
+	net_client = StoryNet.is_client()
+	if net_client:
+		# Pockets, caverns and what has leaked so far all come from the host.
+		StoryNet.gas_full_request()
+	elif not _restore(str(Data.ofOr(SAVE_KEY, ""))):
 		_place_pockets()
 		_fill_caverns()
 	map.tile_destroyed.connect(_on_tile_destroyed)
@@ -179,6 +201,7 @@ func fill(cells: Array, density: float) -> void:
 
 func wake_all() -> void:
 	_wake_all = true
+	_net_all = true
 	revision += 1
 
 
@@ -195,11 +218,13 @@ func _on_tile_destroyed(world_pos: Vector2) -> void:
 	if not rock.has(c):
 		return
 	rock.erase(c)
+	InputSystem.shake(4.0, 0.4, 20.0, world_pos)
+	GasSfx.play("burst", -3.0, 0.5)
+	if net_client:
+		return                         # the gas it lets out, and the rest bursting, are the host's
 	sources[c] = sources.get(c, 0.0) + GasData.VOLUME_PER_ROCK_CELL
 	breaches += 1
 	_cracks.erase(c)
-	InputSystem.shake(4.0, 0.4, 20.0, world_pos)
-	GasSfx.play("burst", -3.0, 0.5)
 	# The pocket was under pressure: the rest of it bursts, cell by cell.
 	for d in DIRS:
 		if rock.has(c + d) and not _cracks.has(c + d):
@@ -235,12 +260,14 @@ func _physics_process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	_time += delta
 	_acc += delta
-	_burst(delta)
-	while _acc >= GasData.TICK:
-		_acc -= GasData.TICK
-		if not freeze_flow:
-			prev_mass = mass.duplicate()
-			_step()
+	if not net_client:
+		_burst(delta)
+		while _acc >= GasData.TICK:
+			_acc -= GasData.TICK
+			if not freeze_flow:
+				prev_mass = mass.duplicate()
+				_step()
+			_net_send()
 	_update_fire(delta)
 	_update_toxin(delta)
 	_update_puffs(delta)
@@ -259,6 +286,7 @@ func _burst(delta: float) -> void:
 			continue
 		var tile = map.getTile(Vector2(c))
 		if tile != null and is_instance_valid(tile):
+			StoryNet.tile_break(map, c)
 			map.destroyTile("team1", "", tile)   # fires tile_destroyed -> breach
 		else:
 			rock.erase(c)
@@ -296,6 +324,7 @@ func _step() -> void:
 		if out > 0.0:
 			mass[c] = mass.get(c, 0.0) + out
 			sources[c] -= out
+			_net_dirty[c] = true
 			_wake(c)
 			revision += 1
 		if sources[c] <= 0.001:
@@ -324,6 +353,7 @@ func _step() -> void:
 			dm[c] = dm.get(c, 0.0) - out
 			vented += out
 			vent_marks[c] = _time
+			_net_vents[c] = true
 			if dome != null and under_dome(c):
 				dome.add(out)
 			rem -= out
@@ -481,6 +511,7 @@ const FLUX_HALF_LIFE := 0.3              # (0.12 before #211's slower clock)
 func _flux(c: Vector2i, n: Vector2i, flow: float) -> void:
 	var dir := Vector2(n - c) * flow
 	for k in [c, n]:
+		_net_dirty[k] = true
 		var e = flux.get(k)
 		if e == null:
 			flux[k] = [dir, _time]
@@ -502,6 +533,8 @@ func flux_at(c: Vector2i) -> Vector2:
 
 
 func _set_mass(c: Vector2i, o: float, m: float, woke: Dictionary) -> void:
+	if m != o:
+		_net_dirty[c] = true
 	if m > GasData.MIN_MASS:
 		mass[c] = m
 	else:
@@ -534,6 +567,8 @@ func ignite(c: Vector2i) -> void:
 		return
 	var thick: float = clampf(mass.get(c, 0.0), 0.0, 1.0)
 	fire[c] = [0.0, lerpf(GasData.FIRE_SPREAD_SECONDS[0], GasData.FIRE_SPREAD_SECONDS[1], thick), 0.0]
+	_net_fire_off.erase(c)
+	_net_fire_on[c] = true
 	revision += 1
 
 
@@ -551,7 +586,7 @@ func _update_fire(delta: float) -> void:
 	# Gas beside lava catches (looked for a few times a second, from whichever
 	# of the two there is less of).
 	_ignite_t -= delta
-	if _ignite_t <= 0.0 and _lava != null and not mass.is_empty() and not _lava.mass.is_empty():
+	if not net_client and _ignite_t <= 0.0 and _lava != null and not mass.is_empty() and not _lava.mass.is_empty():
 		_ignite_t = 0.12
 		var lit := 0
 		if mass.size() <= _lava.mass.size():
@@ -583,7 +618,8 @@ func _update_fire(delta: float) -> void:
 		var e: Array = fire[c]
 		e[0] += delta
 		var m: float = mass.get(c, 0.0)
-		if m > 0.0:
+		if m > 0.0 and not net_client:
+			_net_dirty[c] = true
 			var use: float = minf(m, GasData.FIRE_BURN_PER_SECOND * delta)
 			burned += use
 			m -= use
@@ -601,9 +637,15 @@ func _update_fire(delta: float) -> void:
 				_ember(c)
 		else:
 			e[2] += delta
+			if net_client:
+				continue                   # the host says when it is out
 			if e[2] >= GasData.FIRE_EMBER_SECONDS:
 				fire.erase(c)
+				if not _net_fire_on.erase(c):
+					_net_fire_off[c] = true
 				continue
+		if net_client:
+			continue                       # the host spreads it
 		# It keeps lighting whatever gas is, or arrives, around it.
 		e[1] -= delta
 		if e[1] <= 0.0:
@@ -735,6 +777,8 @@ func serialize() -> Dictionary:
 	var cells: Array = []
 	for c in mass:
 		cells.append([c.x, c.y, snappedf(mass[c], 0.0001)])
+	if net_client:
+		return {"meta.priority": 9001, "meta.kind": "storygas"}   # the run's gas is the host's to save
 	var src: Array = []
 	for c in sources:
 		src.append([c.x, c.y, snappedf(sources[c], 0.0001)])
@@ -789,6 +833,118 @@ func _restore_extra(d: Dictionary) -> void:
 	if dome != null:
 		dome.amount = float(d.get("dome", 0.0))
 		dome.vents = int(d.get("dome_vents", 0))
+
+
+# --- online multiplayer (#228) -----------------------------------------------------
+# A packet: [u32 n, n x (i16 x, i16 y, f32 mass, f32 flux x, f32 flux y)]
+# [u16 n, n x cell] fires lit, [u16 n, n x cell] fires out, [u16 n, n x cell]
+# cells that vented, [f32] the dome's gas, and in a full one [u32 n, n x cell]
+# the gas rock still solid.
+
+static func _put_cells(buf: StreamPeerBuffer, cells: Array, wide: bool = false) -> void:
+	if wide:
+		buf.put_u32(cells.size())
+	else:
+		buf.put_u16(cells.size())
+	for c: Vector2i in cells:
+		buf.put_16(c.x)
+		buf.put_16(c.y)
+
+
+static func _get_cells(buf: StreamPeerBuffer, wide: bool = false) -> Array:
+	var out: Array = []
+	for i in (buf.get_u32() if wide else buf.get_u16()):
+		out.append(Vector2i(buf.get_16(), buf.get_16()))
+	return out
+
+
+func _net_pack(cells: Array, fire_on: Array, fire_off: Array, vents: Array, full: bool) -> PackedByteArray:
+	var buf := StreamPeerBuffer.new()
+	buf.put_u32(cells.size())
+	for c: Vector2i in cells:
+		var f: Vector2 = flux_at(c)
+		buf.put_16(c.x)
+		buf.put_16(c.y)
+		buf.put_float(mass.get(c, 0.0))
+		buf.put_float(f.x)
+		buf.put_float(f.y)
+	_put_cells(buf, fire_on)
+	_put_cells(buf, fire_off)
+	_put_cells(buf, vents)
+	buf.put_float(dome.amount if dome != null else 0.0)
+	if full:
+		_put_cells(buf, rock.keys(), true)
+	return buf.data_array
+
+
+# Host, after every step: what changed since the last send.
+func _net_send() -> void:
+	var amount: float = dome.amount if dome != null else 0.0
+	if not StoryNet.online() or Network.clients.is_empty():
+		_net_dirty.clear()
+		_net_fire_on.clear()
+		_net_fire_off.clear()
+		_net_vents.clear()
+		_net_all = false
+		_net_dome = amount
+		return
+	if _net_all:
+		StoryNet.gas_cells(net_full(), true)
+	elif not _net_dirty.is_empty() or not _net_fire_on.is_empty() or not _net_fire_off.is_empty() or not _net_vents.is_empty() or amount != _net_dome:
+		StoryNet.gas_cells(_net_pack(_net_dirty.keys(), _net_fire_on.keys(), _net_fire_off.keys(), _net_vents.keys(), false), false)
+	_net_all = false
+	_net_dome = amount
+	_net_dirty.clear()
+	_net_fire_on.clear()
+	_net_fire_off.clear()
+	_net_vents.clear()
+
+
+# Host: all the gas, for a client whose field was just built (or after a fill).
+func net_full() -> PackedByteArray:
+	return _net_pack(mass.keys(), fire.keys(), [], [], true)
+
+
+# Client: a packet from the host. `full` replaces everything.
+func net_apply(data: PackedByteArray, full: bool) -> void:
+	var buf := StreamPeerBuffer.new()
+	buf.data_array = data
+	# The look glides from the gas before this packet to the gas after it.
+	prev_mass = mass.duplicate()
+	_acc = 0.0
+	if full:
+		mass.clear()
+		flux.clear()
+		fire.clear()
+	for i in buf.get_u32():
+		var c := Vector2i(buf.get_16(), buf.get_16())
+		var m: float = buf.get_float()
+		var f := Vector2(buf.get_float(), buf.get_float())
+		if m > GasData.MIN_MASS:
+			mass[c] = m
+		else:
+			mass.erase(c)
+		if f != Vector2.ZERO:
+			flux[c] = [f, _time]
+		else:
+			flux.erase(c)
+	for c in _get_cells(buf):
+		# Lit a moment ago; in a full packet, already burning.
+		fire[c] = [1.0 if full else 0.0, 0.0, 0.0]
+	for c in _get_cells(buf):
+		fire.erase(c)
+	for c in _get_cells(buf):
+		vent_marks[c] = _time
+	var amount: float = buf.get_float()
+	if dome != null:
+		dome.amount = amount
+	if full:
+		rock.clear()
+		for c in _get_cells(buf, true):
+			rock[c] = true
+		prev_mass = mass.duplicate()
+	net_packets += 1
+	revision += 1
 
 
 # --- drawing -------------------------------------------------------------------

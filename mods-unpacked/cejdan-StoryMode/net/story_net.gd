@@ -204,3 +204,76 @@ static func chamber_reached() -> void:
 func _chamber_reached() -> void:
 	if Story.is_story():
 		load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
+
+
+# --- gas (#228) ----------------------------------------------------------------
+# As the lava: the host's GasField streams, a client's draws.
+
+static func _gas():
+	if Level.map == null or not is_instance_valid(Level.map):
+		return null
+	return Level.map.get_node_or_null("StoryGasField")
+
+
+# Host -> every client: gas that changed (or all of it, `full`).
+static func gas_cells(data: PackedByteArray, full: bool) -> void:
+	if _inst != null:
+		_inst.rpc("_gas_cells", data, full)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _gas_cells(data: PackedByteArray, full: bool) -> void:
+	var f = _gas()
+	if f != null and f.net_client:
+		f.net_apply(data, full)
+
+
+# Client -> host: send me all the gas.
+static func gas_full_request() -> void:
+	if _inst != null:
+		_inst.rpc_id(1, "_gas_full_request")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _gas_full_request() -> void:
+	var f = _gas()
+	if f != null and not f.net_client:
+		rpc_id(multiplayer.get_remote_sender_id(), "_gas_cells", f.net_full(), true)
+
+
+# Client -> host: I bought Vent the Dome (vanilla tells only the buyer's
+# instance that an upgrade was bought; the dome's gas is the host's).
+static func gas_vent() -> void:
+	if _inst != null:
+		_inst.rpc_id(1, "_gas_vent")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _gas_vent() -> void:
+	var f = _gas()
+	if f != null and not f.net_client and f.dome != null:
+		f.dome.vent()
+
+
+# --- tiles the host breaks itself (#228) ---------------------------------------
+# Vanilla sends clients a tile's hits (Tile.hit), not Map.destroyTile, which is
+# how gas rock bursts and magma melts. Host -> every client: break this tile
+# too. A client only breaks tiles it has made, and one deep in rock may be
+# unrevealed there, so it is revealed everywhere first, as vanilla does.
+static func tile_break(map, c: Vector2i) -> void:
+	if _inst == null or not online() or is_client():
+		return
+	map.networkRevealTile(Vector2(c), 0.0)
+	_inst.rpc("_tile_break", c)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _tile_break(c: Vector2i) -> void:
+	var map = Level.map
+	if map == null or not is_instance_valid(map) or not map.isMapReady():
+		return
+	if not map.tiles.has(Vector2(c)):
+		map.revealTile(Vector2(c))
+	var tile = map.tiles.get(Vector2(c))
+	if tile != null and is_instance_valid(tile):
+		map.destroyTile("team1", "", tile)
