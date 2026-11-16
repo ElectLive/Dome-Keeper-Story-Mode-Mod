@@ -61,7 +61,26 @@ func play_fallen() -> void:
 	_step("end_screen")
 
 
+var _card_input = null
+
+
+# Online (#229): the host's cards show on every client too, each running at
+# its own player's pace; the host's own cards decide when the ending moves on.
+@rpc("authority", "call_remote", "reliable")
+func _net_cards(cards: Array, mood: String) -> void:
+	_cards(cards, mood)
+
+
+# Closes cards still on screen (a client, when the host's end screen comes).
+func close_cards() -> void:
+	if _card_input != null and is_instance_valid(_card_input) and not _card_input.desintegrating:
+		_card_input.desintegrate()
+	_card_input = null
+
+
 func _cards(cards: Array, mood: String) -> void:
+	if StoryBeats._online() and multiplayer.is_server():
+		Network.rpc_if_state(_net_cards.bind(cards, mood), Network.ConnectionState.LEVEL_STAGE_SYNC)
 	var box = load(Story.MOD_DIR + "endings/CardBox.gd").new()
 	box.cards = cards
 	box.mood = mood
@@ -72,6 +91,7 @@ func _cards(cards: Array, mood: String) -> void:
 	i.globalInput = true
 	Level.stage.showPopup(box, null, "", LevelStage.PopupCanvas.GLOBAL)
 	i.integrate(Level.stage)
+	_card_input = i
 	var done: Array = [false]
 	box.finished.connect(func(): done[0] = true)
 	i.onStop.connect(func(): done[0] = true)

@@ -33,6 +33,10 @@ func init() -> void:
 	add_child(load(Story.MOD_DIR + "boss/boss_director.gd").new())
 	Data.listen(self, "team1.dome.health")
 	GameWorld.upgradeBought.connect(_on_upgrade_bought)
+	# Online (#229): vanilla tells the host of a client's purchase only through
+	# upgradeAdded, so Retire Rich or the Suit Blaster bought by a client count.
+	if StoryBeats._online() and multiplayer.is_server():
+		GameWorld.upgradeAdded.connect(_on_upgrade_bought.bind(""))
 	ModLoaderLog.info("Story Mode run started (seed %d)" % Level.levelSeed, Story.LOG)
 
 
@@ -196,8 +200,43 @@ func is_ending() -> bool:
 	return _ending or _lost
 
 
+# Online (#229): the host runs the endings and tells the clients each step.
+# Clients in the level get `call`; offline there are none.
+func _to_clients(call: Callable) -> void:
+	if StoryBeats._online() and multiplayer.is_server():
+		Network.rpc_if_state(call, Network.ConnectionState.LEVEL_STAGE_SYNC)
+
+
+# Frames left until a client's input processors are cleared for an ending
+# (the ending's boxes integrate after that); see beats/story_beats.gd.
+var _settle: int = 0
+
+
+func settling() -> bool:
+	return _settle > 0
+
+
+func _process(_delta: float) -> void:
+	if _settle > 0:
+		_settle -= 1
+
+
+# Host to clients: an ending starts; this player's controls go too.
+@rpc("authority", "call_remote", "reliable")
+func _net_ending_start(lost: bool) -> void:
+	if _ending or _lost:
+		return
+	if lost:
+		_lost = true
+	else:
+		_ending = true
+	_settle = 4
+	_stop_play()
+
+
 # Takes the keeper's controls and ends the waves, for an ending.
 func _stop_play() -> void:
+	_to_clients(_net_ending_start.bind(_lost))
 	Level.stage.stopKeeperInput()
 	for mm in get_tree().get_nodes_in_group("monster-manager"):
 		mm.disabled = true
@@ -210,7 +249,10 @@ func _stop_play() -> void:
 
 
 # Vanilla Relic Hunt's win, with the end screen retitled for the ending played.
+# Online, every player's instance runs it (the host's call).
+@rpc("authority", "call_remote", "reliable")
 func _end_won(title: String, subtitle: String) -> void:
+	_to_clients(_end_won.bind(title, subtitle))
 	GameWorld.handleGameWon()
 	Audio.stopBattleMusic()
 	await get_tree().create_timer(2.5).timeout
@@ -219,8 +261,16 @@ func _end_won(title: String, subtitle: String) -> void:
 	var popup = load("res://content/gamemode/relichunt/RunFinishedPopup.tscn").instantiate()
 	popup.init(multiplayer.is_server())
 	load(Story.MOD_DIR + "endings/ending_director.gd").retitle(popup, title, subtitle)
+	_close_cards()
 	Level.stage.showEndingPanel(popup)
 	SaveGame.delete_autosave()
+
+
+# A client still reading the ending's cards when the host's end screen comes.
+func _close_cards() -> void:
+	var endings = get_node_or_null("StoryEndings")
+	if endings != null and not multiplayer.is_server():
+		endings.close_cards()
 
 
 # Dev command (editor only): `-- --story --horror-defeated` plays the saved
@@ -270,6 +320,13 @@ func keeper_lost() -> void:
 	if endings != null:
 		await get_tree().create_timer(1.5).timeout
 		await endings.play_fallen()
+	await _end_fallen()
+
+
+# The lost ending's end screen. Online, every player's instance runs it.
+@rpc("authority", "call_remote", "reliable")
+func _end_fallen() -> void:
+	_to_clients(_end_fallen)
 	Level.moveHudOut()
 	GameWorld.lost = true
 	await get_tree().create_timer(1.2).timeout
@@ -282,6 +339,7 @@ func keeper_lost() -> void:
 	popup.init(multiplayer.is_server())
 	var BossText = load(Story.MOD_DIR + "data/boss_text.gd")
 	load(Story.MOD_DIR + "endings/ending_director.gd").retitle(popup, BossText.FALLEN_TITLE, BossText.FALLEN_SUBTITLE)
+	_close_cards()
 	Level.stage.showEndingPanel(popup)
 	SaveGame.delete_autosave()
 
