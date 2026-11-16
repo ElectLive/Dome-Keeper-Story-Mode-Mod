@@ -30,7 +30,10 @@ extends Node
 # out in the mine at a time and a touch on any keeper costs a heart; a client
 # draws a puppet chase from the host's trail and tips (_net_chase). The chase
 # is over when every keeper is home (in the dome, at the dome) and at least
-# one of them has been out in it. The finale is still the host's alone.
+# one of them has been out in it. In the finale any keeper taking the dome's
+# weapon starts the bells (_net_battle); a client draws a puppet finale with
+# copies of the host's monsters (_net_finale, boss/finale.gd), and a won
+# finale plays the saved ending on every instance.
 #
 # Other code reaches it through the static helpers, which do nothing outside
 # the boss sequence:
@@ -75,6 +78,7 @@ var _net_t: float = 0.0
 var _net_repeat: float = 0.0
 var _client_state: String = ""
 var _chase_asked: float = -10.0
+var _battle_told: float = -10.0
 
 
 static func instance():
@@ -420,6 +424,14 @@ func dome_lost() -> void:
 		music.stop()
 
 
+# A client: the host won the finale; the saved ending plays here too.
+func _client_won() -> void:
+	music.stop()
+	await get_tree().create_timer(1.0, false).timeout
+	if Level.mode != null and Level.mode.has_method("horror_defeated_here"):
+		Level.mode.horror_defeated_here()
+
+
 func _finish_won() -> void:
 	music.stop()
 	await get_tree().create_timer(1.0, false).timeout
@@ -484,6 +496,8 @@ func _net_host(delta: float) -> void:
 		_net_t = 1.0 / NET_HZ
 	if st == "chase" and tick and chase != null and is_instance_valid(chase):
 		_to_clients(_net_chase.bind(chase.net_state()))
+	if st == "finale" and tick and finale != null and is_instance_valid(finale):
+		_to_clients(_net_finale.bind(finale.net_state(), finale.net_monsters()))
 	if not has_velle:
 		return
 	velle.collect_events = true
@@ -568,6 +582,23 @@ func _net_chase_resend() -> void:
 		chase.resend()
 
 
+# The host's finale: its step and its monsters (boss/finale.gd). Unreliable:
+# every message carries all of it.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _net_finale(state: Array, monsters: Array) -> void:
+	if finale == null or not is_instance_valid(finale) or not finale.puppet:
+		return
+	finale.net_apply(state)
+	finale.apply_monsters(monsters)
+
+
+# Client -> host: my keeper took the dome's weapon; the breath is over.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_battle() -> void:
+	if multiplayer.is_server() and current() == "finale" and finale != null and is_instance_valid(finale) and finale.step == "breath":
+		finale._start_bells("battle")
+
+
 # Client -> host: my keeper overheated in the boss sequence.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_overheated(player_id: String) -> void:
@@ -603,6 +634,8 @@ func _client_process(delta: float) -> void:
 			# The host ran out of hearts: the lost ending here too.
 			if Level.mode != null and Level.mode.has_method("keeper_lost"):
 				Level.mode.keeper_lost()
+		if st == "won":
+			_client_won()
 		if st == "" and _puppet() != null:
 			# The fight starts over (the host loaded a save).
 			velle.queue_free()
@@ -644,7 +677,24 @@ func _client_process(delta: float) -> void:
 		"finale":
 			if chase != null and is_instance_valid(chase):
 				chase.running = false
-			music.hush()
+			if not _ensure_layer():
+				return
+			if finale == null or not is_instance_valid(finale):
+				finale = load(Story.MOD_DIR + "boss/finale.gd").new()
+				finale.name = "Finale"
+				finale.puppet = true
+				layer.add_child(finale)
+				finale.setup()
+				health.visible = false
+			if finale.step == "breath":
+				music.hush()
+				# This keeper took the dome's weapon: tell the host.
+				var now: float = Time.get_ticks_msec() / 1000.0
+				if finale.activity() == "battle" and now - _battle_told > 0.5:
+					_battle_told = now
+					rpc_id(1, "_net_battle")
+			else:
+				music.finale()
 		_:
 			_held.clear()
 
