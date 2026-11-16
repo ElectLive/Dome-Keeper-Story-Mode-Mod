@@ -55,9 +55,9 @@ func run(h) -> void:
 	_gas(1.2)
 	await h.wait(1.0)
 	var t1: float = field.toxin
-	h.check("thick gas fills the bar at about %d a second" % int(GasData.TOXIN_PER_SECOND), t1 > 40.0 and t1 < 60.0, t1)
+	h.check("thick gas fills the bar at about %d a second" % int(GasData.TOXIN_PER_SECOND), t1 > 0.8 * GasData.TOXIN_PER_SECOND and t1 < 1.2 * GasData.TOXIN_PER_SECOND, t1)
 	await h.shot("filling")
-	await h.until(func(): return field.toxin >= 80.0, 3.0)
+	await h.until(func(): return field.toxin >= 80.0, 5.0)
 	field.freeze_toxin = true
 	await h.wait(0.8)
 	await h.burst("warning", 8, 6)

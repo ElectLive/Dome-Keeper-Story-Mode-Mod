@@ -31,13 +31,21 @@ const CAVERN_SIZE := [5, 20]
 const CAVERN_GAP := 2
 
 # --- the gas -------------------------------------------------------------------
-const TICK := 0.02                     # seconds per simulation step
+# Seconds per simulation step: the gas's clock (#211). Gas climbs at most one
+# cell a step, so a cloud in an open shaft rises at up to 1 / TICK tiles a
+# second, 4.0 at 0.25: a keeper with Jetpack Speed II (3.9 tiles/s) about keeps
+# pace, III (4.8) and IV (5.8) outrun it, no upgrade (2.3) and I (3.1) do not.
+# It was 0.02 (50 tiles/s).
+# Everything the flow does (rising, spreading under ceilings, venting, a
+# breached pocket's jet) runs on this clock; the look blends between steps.
+const TICK := 0.25
 const COMPRESS := 0.5                  # how much more the upper of two full cells holds
 const MAX_FLOW := 1.0                  # most gas one cell passes on in one direction a step
 const RISE_SHARE := 0.7                # share of the balancing flow moved up each step
 const SIDE_DIVISOR := 2.4              # sideways along a ceiling: this share of the difference a step
 const DRIFT_DIVISOR := 16.0            # sideways while still rising (a loose cloud widens slowly)
 const MIN_FLOW := 0.002
+const MIN_PACKET := 0.012              # least gas that moves sideways into an empty cell (more than MIN_MASS, or it is dropped)
 const MIN_MASS := 0.004
 const SOURCE_RATE := 0.5               # gas a breached gas rock cell lets out a step ...
 const SOURCE_PRESSURE := 3.0           # ... until its own cell holds this much (the jet)
@@ -49,7 +57,7 @@ const VENT_PER_STEP := 1.0
 # --- toxin (#202) --------------------------------------------------------------
 const TOXIC_MASS := 0.12               # gas this dense in the keeper's cells poisons
 const DENSE_MASS := 0.8                # at this density and above the bar fills at full rate
-const TOXIN_PER_SECOND := 50.0         # full rate: 2 s from clean to recall
+const TOXIN_PER_SECOND := 30.0         # full rate: 3.3 s from clean to recall (was 50: 2 s; #211)
 const TOXIN_THIN_SHARE := 0.25         # share of the full rate at TOXIC_MASS
 const CLEAR_PER_SECOND := 30.0         # out of the gas
 const TOXIN_MAX := 100.0
@@ -60,9 +68,11 @@ const WARN_SHARE := 0.7                # the bar flashes and the screen greens p
 # fire runs through the cloud, using it up. It heats the suit; it breaks nothing.
 const IGNITE_MASS := 0.05              # gas this dense can burn
 const LAVA_IGNITES_MASS := 0.18        # lava this deep lights gas beside it (the lava's own BURN_MASS)
-const FIRE_SPREAD_SECONDS := [0.16, 0.06]   # a burning cell lights its neighbours this much later: thin gas, thick gas
-const FIRE_BURN_PER_SECOND := 4.0      # gas a burning cell uses up a second
-const FIRE_EMBER_SECONDS := 0.4        # a burnt-out cell still glows (and heats) this long
+# #211: an area stays alight about 3.5x as long as at first (burn 4.0, ember
+# 0.4, spread [0.16, 0.06]).
+const FIRE_SPREAD_SECONDS := [0.4, 0.16]    # a burning cell lights its neighbours this much later: thin gas, thick gas
+const FIRE_BURN_PER_SECOND := 1.1      # gas a burning cell uses up a second
+const FIRE_EMBER_SECONDS := 1.5       # a burnt-out cell still glows (and heats) this long
 const FIRE_HEAT_PER_SECOND := 110.0    # suit heat a second in a burning cell, before Heat Shielding
 
 
