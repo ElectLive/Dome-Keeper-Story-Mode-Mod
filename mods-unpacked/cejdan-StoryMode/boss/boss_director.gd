@@ -552,6 +552,9 @@ func _client_process(delta: float) -> void:
 			music.stop()
 		if st == "lost" and was in ["fight", "chase"]:
 			_team_down()
+			# The host ran out of hearts: the lost ending here too.
+			if Level.mode != null and Level.mode.has_method("keeper_lost"):
+				Level.mode.keeper_lost()
 		if st == "" and _puppet() != null:
 			# The fight starts over (the host loaded a save).
 			velle.queue_free()
@@ -567,6 +570,7 @@ func _client_process(delta: float) -> void:
 				layer.add_child(velle)
 				layer.move_child(velle, 0)
 				velle.setup(arena, health, _chamber())
+				_reveal_chamber()
 				_fight_opens()
 			_seal(delta)
 			music.fight(velle.phase)
@@ -578,6 +582,19 @@ func _client_process(delta: float) -> void:
 			music.hush()
 		_:
 			_held.clear()
+
+
+# A client's view of the chamber. Rock broken in real play is revealed on
+# every peer, but a chamber the host opened alone (the dev command, a
+# playtest) is still dark here.
+func _reveal_chamber() -> void:
+	var ch: Rect2i = _chamber()
+	var cells: Array = []
+	for y in range(ch.position.y - 1, ch.end.y + 1):
+		for x in range(ch.position.x - 1, ch.end.x + 1):
+			cells.append(Vector2(x, y))
+	Level.map.tileCoordsToReveal.append_array(cells)
+	Level.map.floodRevealTiles()
 
 
 # Dev command (editor only): `-- --story --boss` drops the keeper into Velle's

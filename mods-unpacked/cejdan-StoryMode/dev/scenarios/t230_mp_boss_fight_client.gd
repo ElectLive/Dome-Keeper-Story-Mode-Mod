@@ -36,7 +36,13 @@ func run(h) -> void:
 	for y in range(ch.position.y - 3, ch.end.y + 2):
 		for x in range(ch.position.x - 2, ch.end.x + 2):
 			cells.append(Vector2i(x, y))
+	var mid: Vector2 = Vector2(ch.get_center())
+	var cell_facts := func(): return {"hard": Level.map.tileData.get_hardnessv(mid), "res": Level.map.tileData.get_resourcev(mid),
+		"visible": Level.map.visibleTileCoords.get(mid, "no"), "tiles": Level.map.tiles.size(), "visibles": Level.map.visibleTileCoords.size(),
+		"revealdistance": Data.ofOr("map.revealdistance", null), "pending": Level.map.flood_pending() if Level.map.has_method("flood_pending") else null}
+	h.note("chamber cell before the reveal", cell_facts.call())
 	await h.reveal(cells)
+	h.note("chamber cell after the reveal", cell_facts.call())
 	var boss = Director.instance()
 	h.check("the boss director is on the client", boss != null)
 	h.check("no boss state yet", Director.current() == "" and not Director.jams_recall(), Director.current())
