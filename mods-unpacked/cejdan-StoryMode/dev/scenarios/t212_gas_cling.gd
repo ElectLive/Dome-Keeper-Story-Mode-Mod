@@ -13,8 +13,10 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 #
 # Before #212 every bit of the pocket's gas left through the bend. Now gas
 # resting under a ceiling keeps a layer (CLING_MASS) that does not flow
-# sideways: part stays in the pocket, part in the bend, and the rest leaves,
-# slowly.
+# sideways, so the pocket's two cells away from the breach keep theirs. Since
+# #217 the cell beside the breach spills into it, and the gas that climbs the
+# breach into the bend has the momentum to run along the bend's ceiling to the
+# way out, so the bend keeps none: the rest leaves, over a few seconds.
 
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const TIMEOUT := 200
@@ -112,11 +114,11 @@ func run(h) -> void:
 	h.note("after 45 s", {"pocket": held_pocket, "bend": held_bend, "escaped": escaped, "escaped over time": out_at, "faded": field.faded, "cling": GasData.CLING_MASS})
 	await h.shot("after_45s")
 	h.check("gas is conserved", absf(field.total() + field.faded + field.vented - 4.0) < 0.01, field.stats())
-	h.check("the pocket keeps some of its gas under its ceiling", held_pocket > 1.0, held_pocket)
-	h.check("some is trapped in the bend", held_bend > 0.6, held_bend)
-	h.check("some escapes, but under half", escaped > 0.3 and escaped < 2.0, escaped)
-	h.check("it escapes slowly: under half of it in the first 3 s", out_at[3.0] < 0.5 * escaped, out_at)
-	h.check("what is held is still toxic", field.mass.get(_c(2, 1), 0.0) >= GasData.TOXIC_MASS and field.mass.get(_c(0, 3), 0.0) >= GasData.TOXIC_MASS, [field.mass.get(_c(2, 1), 0.0), field.mass.get(_c(0, 3), 0.0)])
+	h.check("the pocket keeps CLING_MASS in each cell away from the breach", absf(held_pocket - 2.0 * GasData.CLING_MASS) < 0.08 and field.mass.get(_c(2, 3), 0.0) < 0.05, [held_pocket, field.mass.get(_c(2, 3), 0.0)])
+	h.check("the bend lets the climbing gas through: it keeps none", held_bend < 0.05, held_bend)
+	h.check("the rest escapes", absf(escaped - (4.0 - held_pocket - field.faded)) < 0.05, escaped)
+	h.check("not all at once: under three quarters of it in the first 3 s", out_at[3.0] < 0.75 * escaped, out_at)
+	h.check("what is held is still toxic", field.mass.get(_c(0, 3), 0.0) >= GasData.TOXIC_MASS and field.mass.get(_c(1, 3), 0.0) >= GasData.TOXIC_MASS, [field.mass.get(_c(0, 3), 0.0), field.mass.get(_c(1, 3), 0.0)])
 
 	# ---- breaking the ceiling over trapped gas lets it rise (into the new
 	# dead end above it)

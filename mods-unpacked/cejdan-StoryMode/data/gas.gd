@@ -50,6 +50,20 @@ const MIN_FLOW := 0.002
 # part of a pocket (toxic: over TOXIC_MASS) and only the rest moves on.
 # Burning it, or opening the rock above it, frees it.
 const CLING_MASS := 0.5
+# But it never clings toward an open cell beside it that leads up (#217): gas
+# under rock next to an opening spills out into it; one cell further along the
+# ceiling it sticks.
+# Rising gas carries momentum (#217), counted in tiles: each tile it climbs
+# adds 1 (up to RISE_MAX), each cell it moves sideways takes 1 off, and gas
+# that stays put loses RISE_DECAY a step. Gas under rock with at least 1
+# splashes: SPLASH_SHARE of it a step is pushed along the ceiling, out both
+# ways where it hit, then on in the way it was going, whatever is there. Gas
+# with momentum does not cling (fading in as it drops under 1), so gas that
+# climbed a tall shaft runs along the ceiling it hits before it settles; gas
+# that barely rose clings at once.
+const RISE_MAX := 8.0
+const RISE_DECAY := 1.0
+const SPLASH_SHARE := 0.8
 const MIN_PACKET := 0.012             # least gas that moves sideways into an empty cell (more than MIN_MASS, or it is dropped)
 const MIN_MASS := 0.004
 const SOURCE_RATE := 0.5               # gas a breached gas rock cell lets out a step ...
