@@ -170,5 +170,7 @@ func run(h) -> void:
 	await h.wait(1.0)
 	field.fill([Vector2i(col - 2, 4), Vector2i(col - 1, 4), Vector2i(col, 4), Vector2i(col + 1, 4)], 3.0)
 	await h.burst("plume", 20, 6)
+	# The gas climbs at 4 tiles a second (#211): give it time to reach the surface.
+	await h.until(func(): return field.vented > 5.0, 10.0)
 	h.check("gas left through the surface", field.vented > 5.0, field.vented)
 	h.check("the vent sounded", int(GasSfx.played.get("vent", 0)) >= 1, GasSfx.played)
