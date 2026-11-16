@@ -15,7 +15,7 @@ This folder is the decompiled Dome Keeper project (Godot 4.3.1, custom build). W
 - The user is mostly away. Verify every change by playtesting it in the running game (playtest harness, screenshots, frame bursts, state logs) before calling it done. Report what was seen, not what was expected.
 - Game-design calls (values, feel, story, scope) are the user's: leave them as HITL tickets. Technical how-to calls are yours: resolve them by spike and record the reasoning on the ticket.
 - One ticket per session, except research tickets.
-- Story Mode is single-player only and its own game mode; vanilla modes must keep working.
+- Story Mode is its own game mode; vanilla modes must keep working. Since 2026-11-16 it must also work in v5 multiplayer (online co-op and splitscreen; map #222): host-authoritative, `Data.apply` only on the host, anything a client's keeper does to the team goes to the host.
 
 ## Version control
 
