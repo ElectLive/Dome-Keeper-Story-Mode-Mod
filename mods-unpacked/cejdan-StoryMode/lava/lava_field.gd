@@ -14,6 +14,7 @@ extends Node2D
 
 const LavaData = preload("res://mods-unpacked/cejdan-StoryMode/data/lava.gd")
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
+const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 const SAVE_KEY := "story.lava"
 
 const POCKET_MIN_DEPTH := LavaData.POCKET_MIN_DEPTH
@@ -105,6 +106,17 @@ var _melt_check: Dictionary = {}   # magma cells that lava may be touching
 var _melt_full := true             # scan all magma once (after a fill, load or direct edit)
 const WAKE_EPS := 0.00005
 
+# Online multiplayer (#227): the host alone moves the lava (flow, melting, water
+# hardening) and sends clients the cells that changed, NET_EVERY seconds, as
+# absolute masses; a client draws what it is sent. Suit heat stays with each
+# player's own instance (their keeper); a death's penalty and beat are the host's.
+const NET_EVERY := 0.1
+const NET_EPS := 0.001
+var net_client := false            # this instance draws the host's lava
+var _net_dirty: Dictionary = {}    # host: cells whose mass may have changed since the last send
+var _net_sent: Dictionary = {}     # host: the mass clients last got per cell
+var _net_t := 0.0
+
 
 func setup(p_map) -> void:
 	map = p_map
@@ -149,6 +161,11 @@ func setup(p_map) -> void:
 		_fill_ocean()
 	map.tile_destroyed.connect(_on_tile_destroyed)
 	add_to_group("saveable")
+	net_client = StoryNet.is_client()
+	if net_client:
+		StoryNet.lava_full_request()
+	else:
+		_net_sent = mass.duplicate()
 
 
 # --- pocket placement ----------------------------------------------------------
@@ -237,6 +254,7 @@ func wake_all() -> void:
 
 func _wake(c: Vector2i) -> void:
 	_awake[c] = true
+	_net_dirty[c] = true
 	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 		_awake[c + d] = true
 
@@ -321,13 +339,15 @@ func _physics_body(delta: float) -> void:
 	if map == null or GameWorld.paused:
 		return
 	_time += delta
-	_acc += delta
-	while _acc >= TICK:
-		_acc -= TICK
-		if not freeze_flow:
-			_step()
-	_melt(delta)
-	_check_water()
+	if not net_client:
+		_acc += delta
+		while _acc >= TICK:
+			_acc -= TICK
+			if not freeze_flow:
+				_step()
+		_melt(delta)
+		_check_water()
+		_net_send(delta)
 	_update_heat(delta)
 	if not _steam.is_empty():
 		for e in _steam:
@@ -586,6 +606,11 @@ func _melt(delta: float) -> void:
 		if melt_timers[c] >= MELT_SECONDS:
 			var tile = map.getTile(Vector2(c))
 			if tile != null and is_instance_valid(tile):
+				# A client only breaks tiles it has made, and magma deep in rock
+				# may be unrevealed there: reveal it everywhere first, as vanilla
+				# does (#227).
+				if StoryNet.online():
+					map.networkRevealTile(Vector2(c), 0.0)
 				map.destroyTile("team1", "", tile)   # fires tile_destroyed -> breach
 			melt_timers.erase(c)
 
@@ -629,6 +654,8 @@ func _harden_from(start: Vector2i, limit: int) -> Array:
 				open.append(n)
 	for c in out:
 		_harden(c)
+	if not out.is_empty():
+		StoryNet.lava_harden(PackedVector2Array(out.map(func(c): return Vector2(c))))
 	last_hardened = out
 	hardened += out.size()
 	return out
@@ -708,26 +735,44 @@ func _update_heat(delta: float) -> void:
 		if _chamber.has_point(map.getTileCoord(keeper.global_position)):
 			boss_chamber_reached = true
 			ModLoaderLog.info("boss chamber reached", "cejdan-StoryMode")
-			# Breaking into the chamber wakes the horror (#95).
+			# Breaking into the chamber wakes the horror (#95); the host's to do.
 			if Story.is_story():
-				load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
+				if net_client:
+					StoryNet.chamber_reached()
+				else:
+					load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
 func _recall(keeper) -> void:
 	# Placeholder for "the keeper dies in the mine": the suit dumps its cargo where
-	# it stands and yanks the keeper back to the dome.
-	recalls += 1
+	# it stands and yanks the keeper back to the dome. This runs on the keeper's
+	# own instance (#227); the team's side (team_death) on the host.
 	heat = 0.0
-	# The horror is tender about it (#26): its own beat for each of the first
-	# five deaths in a run (#157); the 5th plays again on every death after.
-	if Story.is_story():
-		load("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd").trigger("lava_death:%d" % mini(recalls, 5))
 	for c in keeper.carriedCarryables.duplicate():
 		if is_instance_valid(c):
 			keeper.dropCarry(c)
 	InputSystem.shake(10.0, 0.4, 24.0)
 	if recall_pos != null:
 		keeper.teleport(recall_pos)
+	if net_client:
+		# The money is the host's to take; the loss shows here right away.
+		if Story.is_story():
+			var loss: int = int(floor(int(Data.ofOr(keeper.teamId + ".inventory.money", 0)) / 2.0))
+			if loss > 0:
+				_float_loss(keeper, loss)
+		StoryNet.lava_died(keeper.playerId)
+		return
+	team_death(keeper)
+
+
+# The team's side of a lava death, on the host: the count, the horror's beat
+# and the money penalty. `keeper` died on its own instance (maybe a client's).
+func team_death(keeper) -> void:
+	recalls += 1
+	# The horror is tender about it (#26): its own beat for each of the first
+	# five deaths in a run (#157); the 5th plays again on every death after.
+	if Story.is_story():
+		load("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd").trigger("lava_death:%d" % mini(recalls, 5))
 	# Dying in the deep costs half the money (#45). With $0 or $1 it stays free.
 	last_penalty = 0
 	if Story.is_story():
@@ -736,8 +781,9 @@ func _recall(keeper) -> void:
 		if loss > 0:
 			Data.changeByInt(key, -loss)
 			last_penalty = loss
-			_float_loss(keeper, loss)
-		ModLoaderLog.info("Overheat recall: lost $%d" % loss, "cejdan-StoryMode")
+			if keeper.peerId == multiplayer.get_unique_id():
+				_float_loss(keeper, loss)
+		ModLoaderLog.info("Overheat recall (%s): lost $%d" % [keeper.playerId, loss], "cejdan-StoryMode")
 
 
 # A short "-$X" rising over the keeper where it lands (placeholder look; the
@@ -757,6 +803,82 @@ func _float_loss(keeper, loss: int) -> void:
 	tw.tween_property(label, "position:y", label.position.y - 30.0, 2.5)
 	tw.parallel().tween_property(label, "modulate:a", 0.0, 2.5).set_delay(1.0)
 	tw.tween_callback(label.queue_free)
+
+
+# --- online multiplayer (#227) -----------------------------------------------------
+
+# Host: the cells whose mass moved by more than NET_EPS since clients last got
+# them, every NET_EVERY seconds.
+func _net_send(delta: float) -> void:
+	_net_t += delta
+	if _net_t < NET_EVERY:
+		return
+	_net_t = 0.0
+	if not StoryNet.online() or Network.clients.is_empty():
+		_net_dirty.clear()
+		_net_sent = mass.duplicate()
+		return
+	var buf := StreamPeerBuffer.new()
+	var n := 0
+	for c: Vector2i in _net_dirty:
+		var m: float = mass.get(c, 0.0)
+		if m > 0.0 and absf(m - _net_sent.get(c, 0.0)) <= NET_EPS:
+			continue
+		if m <= 0.0 and not _net_sent.has(c):
+			continue
+		buf.put_16(c.x)
+		buf.put_16(c.y)
+		buf.put_float(m)
+		n += 1
+		if m > 0.0:
+			_net_sent[c] = m
+		else:
+			_net_sent.erase(c)
+	_net_dirty.clear()
+	if n > 0:
+		StoryNet.lava_cells(buf.data_array)
+
+
+# Host: every lava cell, for a client whose field was just built.
+func net_full() -> PackedByteArray:
+	var buf := StreamPeerBuffer.new()
+	for c: Vector2i in mass:
+		buf.put_16(c.x)
+		buf.put_16(c.y)
+		buf.put_float(mass[c])
+	return buf.data_array
+
+
+# Client: cells from the host. `full` replaces all the lava.
+func net_apply(data: PackedByteArray, full: bool) -> void:
+	var buf := StreamPeerBuffer.new()
+	buf.data_array = data
+	if full:
+		for c in mass:
+			_shown_dirty[c] = true
+		mass.clear()
+	while buf.get_position() + 8 <= data.size():
+		var c := Vector2i(buf.get_16(), buf.get_16())
+		var m: float = buf.get_float()
+		var o: float = mass.get(c, 0.0)
+		if m > MIN_MASS:
+			mass[c] = m
+		else:
+			mass.erase(c)
+		_shown_dirty[c] = true
+		# Steam off lava that cooled, as the host's _step puffs it (its odds are
+		# per TICK; a send covers NET_EVERY).
+		if not full and m < o and _on_screen(c) and _cools(c, m, mass):
+			if m <= MIN_MASS:
+				_puff(c, 3)
+			elif _puff_rng.randf() < (0.3 if m < FILM_MASS else 0.035) * NET_EVERY / TICK:
+				_puff(c, 1)
+
+
+# Client: lava the host hardened into rock with water.
+func net_harden(cells: PackedVector2Array) -> void:
+	for v in cells:
+		_harden(Vector2i(v))
 
 
 # --- drawing -------------------------------------------------------------------

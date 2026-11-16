@@ -119,3 +119,88 @@ func _client_prices() -> void:
 	Prices.apply(story)
 	Minerals.use_story_iron(story)
 	ModLoaderLog.info("Client: Story Mode prices %s" % ("on" if story else "off"), Story.LOG)
+
+
+# --- lava (#227) ---------------------------------------------------------------
+# The RPCs go through this node: it sits at the same path on every peer from
+# start-up, while a map's LavaField only exists during a run (an RPC to a node a
+# peer doesn't have is an error). A client without a field drops the cells; it
+# asks for a full snapshot once its field is built.
+
+static var _inst = null
+
+
+func _enter_tree() -> void:
+	_inst = self
+
+
+static func _lava():
+	if Level.map == null or not is_instance_valid(Level.map):
+		return null
+	return Level.map.get_node_or_null("StoryLavaField")
+
+
+# Host -> every client: changed lava cells.
+static func lava_cells(data: PackedByteArray) -> void:
+	if _inst != null:
+		_inst.rpc("_lava_cells", data, false)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _lava_cells(data: PackedByteArray, full: bool) -> void:
+	var f = _lava()
+	if f != null and f.net_client:
+		f.net_apply(data, full)
+
+
+# Client -> host: send me all the lava.
+static func lava_full_request() -> void:
+	if _inst != null:
+		_inst.rpc_id(1, "_lava_full_request")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _lava_full_request() -> void:
+	var f = _lava()
+	if f != null and not f.net_client:
+		rpc_id(multiplayer.get_remote_sender_id(), "_lava_cells", f.net_full(), true)
+
+
+# Host -> every client: lava water turned to rock.
+static func lava_harden(cells: PackedVector2Array) -> void:
+	if _inst != null and online():
+		_inst.rpc("_lava_harden", cells)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _lava_harden(cells: PackedVector2Array) -> void:
+	var f = _lava()
+	if f != null and f.net_client:
+		f.net_harden(cells)
+
+
+# Client -> host: my keeper died in the heat (the host takes the money, plays the beat).
+static func lava_died(player_id: String) -> void:
+	if _inst != null:
+		_inst.rpc_id(1, "_lava_died", player_id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _lava_died(player_id: String) -> void:
+	var f = _lava()
+	var k = Keepers.getKeeper(player_id) if Keepers.hasKeeper(player_id) else null
+	if f == null or k == null or k.peerId != multiplayer.get_remote_sender_id():
+		return
+	f.team_death(k)
+
+
+# Client -> host: my keeper broke into the boss chamber (#95 wakes the horror).
+static func chamber_reached() -> void:
+	if _inst != null:
+		_inst.rpc_id(1, "_chamber_reached")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _chamber_reached() -> void:
+	if Story.is_story():
+		load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
