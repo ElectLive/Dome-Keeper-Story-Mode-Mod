@@ -51,7 +51,7 @@ Unchanged code, already per instance: `_update_toxin` uses `Keepers.first()` (th
 
 Vanilla sends clients a tile's hits (`Tile.tile_hit` -> `Tiles.on_tile_hit`), not `Map.destroyTile`. Gas rock bursting (`_burst`) and magma melting (`lava_field._melt`, from #227) call `map.destroyTile` directly, so on clients those tiles stayed solid. The first #228 run showed it: 1 of 5 pocket cells open on the client. (#227's scenario only breached with `h.clear_tiles`, which goes through `tile.hit`, so it never saw this.)
 
-Fix: `StoryNet.tile_break(map, c)`, called right before `map.destroyTile` in both places. Host only, online only: `map.networkRevealTile(c, 0.0)` then RPC `_tile_break`; the client reveals the tile if it still has none and calls `map.destroyTile("team1", "", tile)`. This replaced #227's bare `networkRevealTile` in `lava_field._melt`. The gas burst is verified; **the lava melt path through `tile_break` is not verified online** (no scenario melts magma with lava in multiplayer).
+Fix: `StoryNet.tile_break(map, c)`, called right before `map.destroyTile` in both places. Host only, online only: `map.networkRevealTile(c, 0.0)` then RPC `_tile_break`; the client reveals the tile if it still has none and calls `map.destroyTile("team1", "", tile)`. This replaced #227's bare `networkRevealTile` in `lava_field._melt`. The gas burst is verified. The lava melt path is verified too (2026-11-16, final pass): `t227_mp_lava_host` now turns a rock tile touching the lava into magma (`add_pocket`), the lava melts it, and `t227_mp_lava_client` checks it is open on the client; the host also waits for its lava to settle before the final snapshot.
 
 ## Verified
 
