@@ -4,6 +4,9 @@ extends "res://content/monster/Monster.gd"
 # trailing its nerve, takes a place in the sky over the dome and spits bolts at
 # it. A real Monster like the tentacles, so the dome's weapon aims at it and
 # kills it the vanilla way. Built in code by make().
+#
+# Online (#230) a client draws a `puppet` copy (make_copy()) that follows the
+# host's flyer and spits when it does (net_apply()); see surface_tentacle.gd.
 
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
@@ -28,6 +31,9 @@ var fall: float = 0.0
 var shots: int = 0
 var hits: int = 0
 var vel: Vector2 = Vector2.ZERO
+var puppet: bool = false
+var _net_pos: Vector2 = Vector2.ZERO
+var _net_seen: bool = false
 
 
 static func register(hp: float) -> void:
@@ -92,6 +98,18 @@ func _hover_point() -> Vector2:
 func subProcess(delta: float) -> void:
 	time += delta
 	flash = maxf(0.0, flash - delta)
+	if puppet:
+		# Glides on at the host's speed, pulled onto the host's place.
+		if _net_seen:
+			_net_pos += vel * delta
+			global_position = global_position.lerp(_net_pos, minf(1.0, delta * 8.0)) + vel * delta
+		if charge >= 0.0:
+			charge += delta
+			if charge >= CHARGE:
+				charge = -1.0
+		_update_bolts(delta)
+		queue_redraw()
+		return
 	# A soft spring to its place in the sky.
 	var want: Vector2 = _hover_point()
 	vel += (want - global_position) * 3.2 * delta
@@ -135,6 +153,47 @@ func _update_bolts(delta: float) -> void:
 
 func handleDamage():
 	flash = 0.1
+
+
+# ---------------------------------------------------------------- online (#230)
+
+func hit(source: String, damage: float, stun: float, immediateStun: = false):
+	if puppet:
+		if hittable:
+			flash = maxf(flash, 0.05)
+		return
+	super(source, damage, stun, immediateStun)
+
+
+func net_record() -> Array:
+	return ["flyer", UID, dead, global_position, perch, radius, seed_f,
+		PackedFloat32Array([global_position.x, global_position.y, vel.x, vel.y, charge, shots, time])]
+
+
+static func make_copy(r: Array):
+	var m = make(r[3], float(r[4]))
+	m.puppet = true
+	m.UID = int(r[1])
+	m.radius = float(r[5])
+	m.seed_f = float(r[6])
+	return m
+
+
+func net_apply(d: PackedFloat32Array) -> void:
+	if d.size() < 7 or dead:
+		return
+	_net_pos = Vector2(d[0], d[1])
+	if not _net_seen:
+		_net_seen = true
+		global_position = _net_pos
+	vel = Vector2(d[2], d[3])
+	if d[4] >= 0.0 and charge < 0.0:
+		charge = d[4]
+	while shots < int(d[5]):
+		_spit()
+		charge = -1.0
+	if absf(time - d[6]) > 0.5:
+		time = d[6]
 
 
 func animateDeath():

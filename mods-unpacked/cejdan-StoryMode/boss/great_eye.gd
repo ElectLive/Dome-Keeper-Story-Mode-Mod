@@ -15,6 +15,10 @@ extends "res://content/monster/Monster.gd"
 # the ground (`crashed`).
 #
 # Built in code by make().
+#
+# Online (#230) a client draws a `puppet` copy (make_copy()) on its own
+# clocks, taking the host's pounds, gazes, flinches and fall (net_apply());
+# see surface_tentacle.gd.
 
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
@@ -50,6 +54,7 @@ var stalk: Node2D = null
 var _did_hit: bool = false
 var _land_flash: float = 0.0
 var _sway_a0: float = 0.0
+var puppet: bool = false
 
 const RISE := 1.5
 const SLAM_TELE := 1.0
@@ -214,7 +219,7 @@ func subProcess(delta: float) -> void:
 			next_slam = Boss.FINALE_SLAM_EVERY * randf_range(0.8, 1.25) * fury
 	elif gaze_t >= 0.0:
 		_update_gaze(delta)
-	else:
+	elif not puppet:
 		next_slam -= delta
 		if next_slam <= 0.0:
 			attacks_done += 1
@@ -238,7 +243,7 @@ func gaze_broken_share() -> float:
 func _update_gaze(delta: float) -> void:
 	gaze_t += delta
 	if gaze_t < Boss.FINALE_GAZE_CHARGE:
-		if gaze_broken_share() >= 1.0:
+		if gaze_broken_share() >= 1.0 and not puppet:
 			# Hurt enough: it flinches and the shot is lost.
 			gaze_t = -1.0
 			gazes_broken += 1
@@ -263,16 +268,77 @@ func _update_gaze(delta: float) -> void:
 
 func _hit_dome() -> void:
 	var dome = Level.getDome(teamId)
-	if dome == null or not multiplayer.is_server():
+	if dome == null or (not multiplayer.is_server() and not puppet):
 		return
 	slams += 1
-	dome.requestMeleeDamage(int(Boss.FINALE_SLAM_DAMAGE * 2.0), _cupola_top(), self)
+	if not puppet:
+		dome.requestMeleeDamage(int(Boss.FINALE_SLAM_DAMAGE * 2.0), _cupola_top(), self)
 	InputSystem.shake(26.0, 0.4, 20.0, global_position)
 	Sfx.play("whip", -2.0, 0.7)
 
 
 func handleDamage():
 	flash = 0.1
+
+
+# ---------------------------------------------------------------- online (#230)
+
+func hit(source: String, damage: float, stun: float, immediateStun: = false):
+	if puppet:
+		if hittable:
+			flash = maxf(flash, 0.05)
+		return
+	super(source, damage, stun, immediateStun)
+
+
+func net_record() -> Array:
+	return ["great", UID, dead, global_position, seed_f,
+		PackedFloat32Array([emerge_t, slam_t, gaze_t, fall_t, fall_side, gazes_broken, time])]
+
+
+static func make_copy(r: Array):
+	var m = make()
+	m.puppet = true
+	m.UID = int(r[1])
+	m.seed_f = float(r[4])
+	return m
+
+
+func net_apply(d: PackedFloat32Array) -> void:
+	if d.size() < 7:
+		return
+	if emerge_t < RISE and absf(emerge_t - d[0]) > 0.3:
+		emerge_t = d[0]
+	if not dead:
+		var hs: float = d[1]
+		if hs >= 0.0 and (slam_t >= 0.0 or hs < SLAM_TELE + SLAM_STRIKE + SLAM_HOLD) and (slam_t < 0.0 or absf(slam_t - hs) > 0.25):
+			if slam_t < 0.0:
+				_did_hit = hs > SLAM_TELE + SLAM_STRIKE + 0.2
+			slam_t = hs
+		var hg: float = d[2]
+		if hg >= 0.0 and gaze_t < 0.0 and hg < Boss.FINALE_GAZE_CHARGE + GAZE_FIRE - 0.2:
+			# The gaze begins.
+			gaze_t = hg
+			gaze_hp = currentHealth
+			_did_hit = hg > Boss.FINALE_GAZE_CHARGE + 0.2
+			Sfx.play("charge", -2.0, 0.6)
+		elif hg >= 0.0 and gaze_t >= 0.0 and absf(gaze_t - hg) > 0.25:
+			gaze_t = hg
+		if int(d[5]) > gazes_broken:
+			# Broken: it flinches and the shot is lost.
+			gazes_broken = int(d[5])
+			gaze_t = -1.0
+			flinch = 1.0
+			flash = 0.3
+			Sfx.play("hurt", 0.0, 0.7)
+			InputSystem.shake(18.0, 0.4, 22.0, global_position)
+	if d[3] >= 0.0 and fall_t < 0.0:
+		fall(d[4])
+		fall_t = d[3]
+	elif fall_t >= 0.0 and not fallen and absf(fall_t - d[3]) > 0.3:
+		fall_t = d[3]
+	if absf(time - d[6]) > 0.5:
+		time = d[6]
 
 
 # Beaten: the eye closes. It stays where it is until fall().

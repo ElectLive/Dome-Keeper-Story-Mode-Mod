@@ -181,6 +181,16 @@ func horror_defeated() -> bool:
 	return true
 
 
+# A client's run when the host's team beat the horror (#230): the boss
+# director decides on the host; every instance plays the saved ending.
+func horror_defeated_here() -> bool:
+	if multiplayer.is_server() or not _can_end():
+		return false
+	_ending = true
+	_saved_ending()
+	return true
+
+
 func _saved_ending() -> void:
 	ModLoaderLog.info("The horror is defeated: the planet is saved", Story.LOG)
 	await _stop_play()

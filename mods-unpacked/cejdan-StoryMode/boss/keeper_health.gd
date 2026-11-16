@@ -4,6 +4,13 @@ extends Node2D
 # apart from the heat bar. A hit costs a heart, throws the keeper back, shakes
 # and flashes the screen, and leaves the keeper safe for a moment. At zero the
 # `died` signal fires once. Hearts live in Data, so a save keeps them.
+#
+# With a team (#230) the hearts are one pool for all keepers (KEY; the user has
+# yet to decide between this and hearts per keeper): a hit on any keeper costs
+# one. Only the host takes hearts. What a hit does to the keeper itself (the
+# throw, the shake, the red flash) happens on that keeper's own instance:
+# `hit` tells the director, which sends it on, and a client plays it with
+# net_hit(). Each keeper has its own safe moment after a hit.
 
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
@@ -12,15 +19,18 @@ const KEY := "team1.story.hearts"
 
 signal hurt_taken(hearts_left: int, cause: String)
 signal died(cause: String)
+signal hit(keeper, push: Vector2)   # host: a keeper was hit, for its own instance to play
 
+# Seconds this instance's first keeper is still safe; the other keepers'
+# are in _safe (playerId -> seconds).
 var invulnerable: float = 0.0
+var _safe: Dictionary = {}
+var _pushes: Dictionary = {}    # playerId -> [push, seconds left]
 var dead: bool = false
 var hits: int = 0
 var _time: float = 0.0
 var _lost_flash: float = 0.0
 var _gain_flash: float = 0.0
-var _push: Vector2 = Vector2.ZERO
-var _push_t: float = 0.0
 var _flash: ColorRect = null
 var _layer: CanvasLayer = null
 
@@ -28,7 +38,7 @@ var _layer: CanvasLayer = null
 func _ready() -> void:
 	z_index = 9
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	if not Data.has(KEY):
+	if not Data.has(KEY) and multiplayer.is_server():
 		Data.apply(KEY, Boss.HEARTS)
 	# A red wash over the whole screen on a hit.
 	_layer = CanvasLayer.new()
@@ -70,26 +80,36 @@ func heal() -> bool:
 	return true
 
 
-# One heart of damage from something at `from` (this node's space). False when
-# the keeper is still safe from the last hit, or already dead.
-func hurt(from: Vector2, cause: String = "") -> bool:
-	var keeper = Keepers.first()
-	if dead or invulnerable > 0.0 or keeper == null or not is_instance_valid(keeper):
+func _me():
+	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
+
+
+func safe_left(keeper) -> float:
+	return invulnerable if keeper == _me() else float(_safe.get(keeper.playerId, 0.0))
+
+
+func set_safe(keeper, sec: float) -> void:
+	if keeper == _me():
+		invulnerable = sec
+	else:
+		_safe[keeper.playerId] = sec
+
+
+# One heart of damage to `keeper` (this instance's own when left out) from
+# something at `from` (this node's space). False when that keeper is still
+# safe from its last hit, or the team is already dead. The host's to call.
+func hurt(from: Vector2, cause: String = "", keeper = null) -> bool:
+	if keeper == null:
+		keeper = _me()
+	if dead or keeper == null or not is_instance_valid(keeper) or not multiplayer.is_server() or safe_left(keeper) > 0.0:
 		return false
 	var left: int = maxi(0, hearts() - 1)
 	Data.apply(KEY, left)
 	hits += 1
-	invulnerable = Boss.HURT_INVULNERABLE
-	_lost_flash = 0.6
 	var kp: Vector2 = to_local(keeper.global_position)
 	var dir: Vector2 = (kp - from).normalized() if kp.distance_to(from) > 0.5 else Vector2.UP
-	_push = dir * Boss.HURT_KNOCKBACK
-	_push_t = 0.16
-	if "move" in keeper:
-		keeper.move = Vector2.ZERO
-	InputSystem.shake(14.0, 0.35, 22.0)
-	_flash.color.a = 0.34
-	Audio.sound("gui_err")
+	_play_hit(keeper, dir * Boss.HURT_KNOCKBACK)
+	hit.emit(keeper, dir * Boss.HURT_KNOCKBACK)
 	ModLoaderLog.info("Keeper hit (%s): %d hearts left" % [cause, left], "cejdan-StoryMode")
 	hurt_taken.emit(left, cause)
 	if left <= 0:
@@ -98,32 +118,56 @@ func hurt(from: Vector2, cause: String = "") -> bool:
 	return true
 
 
+# A client: the host says the keeper `player_id` was hit.
+func net_hit(player_id: String, push: Vector2) -> void:
+	var keeper = Keepers.getKeeper(player_id) if Keepers.hasKeeper(player_id) else null
+	if keeper != null and is_instance_valid(keeper):
+		_play_hit(keeper, push)
+
+
+# The hit as this instance shows it: the keeper blinks; one of our own is
+# thrown, with the shake and the red flash.
+func _play_hit(keeper, push: Vector2) -> void:
+	set_safe(keeper, Boss.HURT_INVULNERABLE)
+	_lost_flash = 0.6
+	if not Keepers.local.has(keeper):
+		return
+	_pushes[keeper.playerId] = [push, 0.16]
+	if "move" in keeper:
+		keeper.move = Vector2.ZERO
+	InputSystem.shake(14.0, 0.35, 22.0)
+	_flash.color.a = 0.34
+	Audio.sound("gui_err")
+
+
 func _physics_process(delta: float) -> void:
 	if GameWorld.paused:
 		return
 	_time += delta
 	invulnerable = maxf(0.0, invulnerable - delta)
+	for id: String in _safe:
+		_safe[id] = maxf(0.0, float(_safe[id]) - delta)
 	_lost_flash = maxf(0.0, _lost_flash - delta)
 	_gain_flash = maxf(0.0, _gain_flash - delta)
 	_flash.color.a = maxf(0.0, _flash.color.a - delta * 0.9)
-	var keeper = Keepers.first()
-	if keeper == null or not is_instance_valid(keeper):
-		return
-	if _push_t > 0.0:
-		# The throw: a short shove through the keeper's own collision.
-		var step: Vector2 = _push * (delta / 0.16)
-		_push_t -= delta
-		if keeper.has_method("move_and_collide"):
-			keeper.move_and_collide(step)
-	# The keeper blinks while safe.
-	var sprite = keeper.get("keeper_sprite")
-	if sprite != null and is_instance_valid(sprite) and not keeper.disabled:
-		sprite.modulate.a = 0.35 if (invulnerable > 0.0 and fposmod(_time * 12.0, 1.0) < 0.5) else 1.0
+	for keeper in Keepers.getAll():
+		if keeper == null or not is_instance_valid(keeper):
+			continue
+		var push: Array = _pushes.get(keeper.playerId, [])
+		if not push.is_empty() and push[1] > 0.0:
+			# The throw: a short shove through the keeper's own collision.
+			push[1] -= delta
+			if keeper.has_method("move_and_collide"):
+				keeper.move_and_collide(push[0] * (delta / 0.16))
+		# A keeper blinks while safe.
+		var sprite = keeper.get("keeper_sprite")
+		if sprite != null and is_instance_valid(sprite) and not keeper.disabled:
+			sprite.modulate.a = 0.35 if (safe_left(keeper) > 0.0 and fposmod(_time * 12.0, 1.0) < 0.5) else 1.0
 	queue_redraw()
 
 
 func _draw() -> void:
-	var keeper = Keepers.first()
+	var keeper = _me()
 	if keeper == null or not is_instance_valid(keeper) or not keeper.visible:
 		return
 	var n: int = Boss.HEARTS

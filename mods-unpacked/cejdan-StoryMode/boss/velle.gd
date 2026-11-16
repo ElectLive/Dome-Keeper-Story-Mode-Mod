@@ -29,10 +29,19 @@ extends Node2D
 #
 # The boss director owns this node, feeds it explosions (`explosion()`), and
 # listens for `defeated`.
+#
+# With a team (#230) Velle fights every keeper in the chamber: an attack picks
+# one of them, a stalk aims at the nearest, and anything that touches any
+# keeper costs the team a heart. Online the host runs all of this; a client's
+# copy is a `puppet` that skips the AI and the hits, draws the host's state
+# (`net_state()` -> `net_apply()`, sent by the director some 15 times a
+# second) and plays the host's sounds, bursts and shakes (`take_events()` ->
+# `play_events()`).
 
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
+const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 
 signal defeated
 signal phase_changed(phase: int)
@@ -87,6 +96,17 @@ var stats: Dictionary = {"stalks_popped": 0, "core_hits": 0, "orbs": 0, "attacks
 var spawn_bombs: bool = true
 var attack_enabled: bool = true
 
+# Online (#230).
+var puppet: bool = false           # a client's copy: draws what the host sends
+var collect_events: bool = false   # host with clients: queue sounds, bursts and shakes for them
+var _ev: Array = []
+var _ks: Array = []                # the keepers in reach this frame: [keeper, its position here]
+var _here: bool = false            # one of this instance's own keepers is at the chamber
+var _who = null                    # the keeper the attack being built is aimed at
+var _attack_id: int = 0
+var _net_time: float = -1.0
+var _bomb_scan: float = 0.0
+
 
 func setup(p_arena: Rect2, p_health: Node, p_chamber: Rect2i = Rect2i()) -> void:
 	arena = p_arena
@@ -114,17 +134,90 @@ func alive_stalks() -> int:
 	return n
 
 
+# The keepers Velle can reach: those in the chamber (or at its edge).
+func _gather() -> void:
+	_ks.clear()
+	_here = false
+	var reach: Rect2 = arena.grow(30.0)
+	for k in Keepers.getAll():
+		if k == null or not is_instance_valid(k):
+			continue
+		var p: Vector2 = to_local(k.global_position)
+		var mine: bool = Keepers.local.has(k)
+		if mine and arena.grow(220.0).has_point(p):
+			_here = true
+		if reach.has_point(p):
+			_ks.append([k, p])
+
+
+# The reachable keeper nearest to `p`: [keeper, position], or [] when the
+# chamber is empty.
+func _near(p: Vector2) -> Array:
+	var best: Array = []
+	for e: Array in _ks:
+		if best.is_empty() or p.distance_squared_to(e[1]) < p.distance_squared_to(best[1]):
+			best = e
+	return best
+
+
+# Where Velle looks: the keeper nearest its great eye.
 func _kp() -> Vector2:
-	var k = Keepers.first()
-	if k == null or not is_instance_valid(k):
-		return arena.get_center()
-	return to_local(k.global_position)
+	var e: Array = _near(eye_pos())
+	return e[1] if not e.is_empty() else arena.get_center()
+
+
+# Who the next attack is for: one of the keepers in the chamber.
+func _pick() -> Array:
+	if _ks.size() <= 1:
+		return _ks[0] if _ks.size() == 1 else []
+	return _ks[_rng.randi() % _ks.size()]
+
+
+# Where the keeper an attack was aimed at is now.
+func _who_pos(a: Dictionary, fallback: Vector2) -> Vector2:
+	var k = a.get("who")
+	if k != null and is_instance_valid(k):
+		return to_local(k.global_position)
+	return fallback
+
+
+func _add(a: Dictionary) -> void:
+	_attack_id += 1
+	a["id"] = _attack_id
+	attacks.append(a)
+
+
+# Sounds and shakes are for the keepers who are there; online they also go to
+# the clients, who decide the same way.
+func _sfx(sound: String, volume_db: float = 0.0, pitch: float = 1.0) -> void:
+	if _here:
+		Sfx.play(sound, volume_db, pitch)
+	if collect_events:
+		_ev.append([0, sound, volume_db, pitch])
+
+
+func _shake(amount: float, sec: float, speed: float) -> void:
+	if _here:
+		InputSystem.shake(amount, sec, speed)
+	if collect_events:
+		_ev.append([1, amount, sec, speed])
+
+
+func take_events() -> Array:
+	var out: Array = _ev
+	_ev = []
+	return out
 
 
 # ---------------------------------------------------------------- update
 
 func _physics_process(delta: float) -> void:
 	if GameWorld.paused:
+		return
+	_gather()
+	if puppet:
+		_puppet_step(delta)
+		queue_redraw()
 		return
 	time += delta
 	state_t += delta
@@ -138,7 +231,7 @@ func _physics_process(delta: float) -> void:
 		"rise":
 			rise = minf(1.0, state_t / 2.4)
 			if fposmod(time, 0.12) < delta:
-				InputSystem.shake(4.0, 0.15, 30.0)
+				_shake(4.0, 0.15, 30.0)
 				_burst(base + Vector2(_rng.randf_range(-50, 50), -4), 3, Pix.FLESH_LIGHT, 40.0)
 			if state_t >= 2.6:
 				_grow_stalks()
@@ -168,8 +261,7 @@ func _physics_process(delta: float) -> void:
 			lid = move_toward(lid, 0.0, delta * 6.0)
 			if _shock >= 0.0:
 				_shock += delta
-			if state_t < 0.7 and kp.distance_to(base) < 150.0:
-				_shove_keeper((kp - eye_pos()).normalized() * 70.0 * delta)
+			_roar_shove(delta)
 			if state_t >= 1.6:
 				_shock = -1.0
 				_grow_stalks()
@@ -180,15 +272,15 @@ func _physics_process(delta: float) -> void:
 			if fposmod(time, 0.16) < delta:
 				var p: Vector2 = base + Vector2(_rng.randf_range(-48, 48), _rng.randf_range(-60, -6))
 				_burst(p, 8, [Pix.IRIS, Pix.SUCKER, Pix.VIOLET_LIGHT][_rng.randi() % 3], 80.0)
-				InputSystem.shake(10.0, 0.2, 26.0)
+				_shake(10.0, 0.2, 26.0)
 				if fposmod(time, 0.48) < 0.16:
-					Sfx.play("pop", -6.0, _rng.randf_range(0.7, 1.1))
+					_sfx("pop", -6.0, _rng.randf_range(0.7, 1.1))
 			if state_t >= 3.8:
 				_set_state("dead")
 				rise = 0.45
 				_burst(eye_pos(), 40, Pix.IRIS, 140.0)
-				InputSystem.shake(30.0, 0.8, 18.0)
-				Sfx.play("boom", -2.0, 0.7)
+				_shake(30.0, 0.8, 18.0)
+				_sfx("boom", -2.0, 0.7)
 				defeated.emit()
 		"dead":
 			pass
@@ -199,9 +291,10 @@ func _physics_process(delta: float) -> void:
 	if state in ["fight", "open", "roar"]:
 		_update_bombs(delta)
 		# The body itself hurts.
-		var d: Vector2 = kp - (base + Vector2(0, -22))
-		if (d.x / 56.0) * (d.x / 56.0) + (d.y / 40.0) * (d.y / 40.0) < 1.0:
-			_hurt(base + Vector2(0, -10), "body")
+		for e: Array in _ks.duplicate():
+			var d: Vector2 = e[1] - (base + Vector2(0, -22))
+			if (d.x / 56.0) * (d.x / 56.0) + (d.y / 40.0) * (d.y / 40.0) < 1.0:
+				_hurt(base + Vector2(0, -10), "body", e[0])
 	queue_redraw()
 
 
@@ -210,15 +303,37 @@ func _set_state(s: String) -> void:
 	state_t = 0.0
 
 
-func _hurt(from: Vector2, cause: String) -> void:
+func _hurt(from: Vector2, cause: String, keeper = null) -> void:
 	if health != null and state != "dying" and state != "dead":
-		health.hurt(from, cause)
+		health.hurt(from, cause, keeper)
 
 
-func _shove_keeper(step: Vector2) -> void:
-	var k = Keepers.first()
-	if k != null and is_instance_valid(k) and k.has_method("move_and_collide") and not k.disabled:
+# A keeper is moved on its owner's instance: the host and each client shove
+# their own (the roar's blast, the pull).
+func _shove_keeper(k, step: Vector2) -> void:
+	if k != null and is_instance_valid(k) and Keepers.local.has(k) and k.has_method("move_and_collide") and not k.disabled:
 		k.move_and_collide(step)
+
+
+func _roar_shove(delta: float) -> void:
+	if state_t >= 0.7:
+		return
+	for e: Array in _ks:
+		if e[1].distance_to(base) < 150.0:
+			_shove_keeper(e[0], (e[1] - eye_pos()).normalized() * 70.0 * delta)
+
+
+# Drags the keepers in, but never onto the body itself.
+func _pull(delta: float) -> void:
+	for e: Array in _ks:
+		var d: Vector2 = eye_pos() - e[1]
+		if d.length() > 92.0:
+			_shove_keeper(e[0], d.normalized() * 34.0 * delta)
+	if fposmod(time, 0.05) < delta:
+		var ang: float = _rng.randf() * TAU
+		var p: Vector2 = eye_pos() + Vector2.RIGHT.rotated(ang) * _rng.randf_range(90, 170)
+		if arena.has_point(p):
+			fx.append({"p": p, "v": (eye_pos() - p).normalized() * 120.0, "life": 0.6, "col": Pix.VIOLET_LIGHT, "s": 1.0})
 
 
 # ---------------------------------------------------------------- stalks
@@ -236,7 +351,7 @@ func _grow_stalks() -> void:
 			anchor = Vector2(arena.position.x if homes[i].x < 0.5 else arena.end.x, h.y + 26.0)
 		stalks.append({"anchor": anchor, "home": h, "pos": anchor, "hp": Boss.STALK_HP, "alive": true, "grow": 0.0,
 			"fire_t": 1.6 + i * 0.7 + _rng.randf() * 0.8, "charge": -1.0, "seed": _rng.randf() * TAU, "flash": 0.0, "gone": 0.0})
-	Sfx.play("grow", -8.0, 0.8)
+	_sfx("grow", -8.0, 0.8)
 
 
 func _all_stalks_gone() -> bool:
@@ -254,24 +369,29 @@ func _update_stalks(delta: float, kp: Vector2) -> void:
 			continue
 		s["grow"] = minf(1.0, s["grow"] + delta * 1.4)
 		var sway: Vector2 = Vector2(sin(time * 0.9 + s["seed"]) * 14.0, cos(time * 1.3 + s["seed"]) * 9.0)
-		var lean: Vector2 = (kp - s["home"]).limit_length(8.0 + 10.0 * phase)
+		# Each stalk watches the keeper nearest to it.
+		var near: Array = _near(s["home"])
+		var np: Vector2 = near[1] if not near.is_empty() else kp
+		var lean: Vector2 = (np - s["home"]).limit_length(8.0 + 10.0 * phase)
 		var goal: Vector2 = s["home"] + sway + lean
 		s["pos"] = s["anchor"].lerp(goal, ease(s["grow"], 0.4))
 		if s["grow"] < 1.0:
 			continue
-		if kp.distance_to(s["pos"]) < 13.0:
-			_hurt(s["pos"], "stalk")
+		for e: Array in _ks.duplicate():
+			if e[1].distance_to(s["pos"]) < 13.0:
+				_hurt(s["pos"], "stalk", e[0])
 		if state != "fight" or not attack_enabled:
 			continue
 		if s["charge"] >= 0.0:
 			s["charge"] -= delta
 			if s["charge"] < 0.0:
-				_spit(s["pos"], kp)
+				_spit(s["pos"], np)
 		else:
 			s["fire_t"] -= delta
 			if s["fire_t"] <= 0.0 and _rng.randf() < Boss.stalk_laser_share(phase):
 				# A thin laser instead of an orb.
-				attacks.append(_ray(s["pos"], kp, 0.8, 0.25, 0.35, 3.0, "stalk", s))
+				_who = near[0] if not near.is_empty() else null
+				_add(_ray(s["pos"], np, 0.8, 0.25, 0.35, 3.0, "stalk", s))
 				s["fire_t"] = Boss.stalk_fire_every(phase) * _rng.randf_range(0.85, 1.25)
 			elif s["fire_t"] <= 0.0:
 				s["charge"] = 0.7
@@ -282,7 +402,7 @@ func _spit(from: Vector2, kp: Vector2) -> void:
 	var dir: Vector2 = (kp - from).normalized()
 	orbs.append({"p": from + dir * 10.0, "v": dir * Boss.ORB_SPEED[phase], "life": 7.0, "r": 4.0})
 	stats["orbs"] += 1
-	Sfx.play("spit", -12.0, _rng.randf_range(0.9, 1.2))
+	_sfx("spit", -12.0, _rng.randf_range(0.9, 1.2))
 
 
 func _pop_stalk(s: Dictionary) -> void:
@@ -291,8 +411,8 @@ func _pop_stalk(s: Dictionary) -> void:
 	stats["stalks_popped"] += 1
 	_burst(s["pos"], 18, Pix.IRIS, 110.0)
 	_burst(s["pos"], 10, Pix.SUCKER, 70.0)
-	InputSystem.shake(12.0, 0.25, 24.0)
-	Sfx.play("pop", -4.0, _rng.randf_range(0.85, 1.15))
+	_shake(12.0, 0.25, 24.0)
+	_sfx("pop", -4.0, _rng.randf_range(0.85, 1.15))
 	# Its thrashing shakes a charge loose.
 	if state == "fight" and spawn_bombs and multiplayer.is_server():
 		spawn_bomb(Vector2(_bomb_x(), arena.position.y + 16.0))
@@ -307,9 +427,9 @@ func _open_eye() -> void:
 	attacks.clear()
 	stats["opens"] += 1
 	_white = 0.5
-	InputSystem.shake(18.0, 0.6, 20.0)
-	Sfx.play("open", -4.0, 0.9)
-	Sfx.play("roar", -8.0, 1.3)
+	_shake(18.0, 0.6, 20.0)
+	_sfx("open", -4.0, 0.9)
+	_sfx("roar", -8.0, 1.3)
 	# The whole chamber shudders: charges fall either side of the eye.
 	if spawn_bombs and multiplayer.is_server():
 		for i in Boss.BOMBS_ON_OPEN:
@@ -321,16 +441,21 @@ func _open_eye() -> void:
 
 # What the open eye does next. Returns how long it is busy with it.
 func _open_volley(kp: Vector2) -> float:
+	var target: Array = _pick()
+	var who = null
+	if not target.is_empty():
+		kp = target[1]
+		who = target[0]
 	_volley += 1
 	var odd: bool = _volley % 2 == 1
 	if odd or phase == 0:
 		var n: int = Boss.open_beams(phase)
-		start_attack(["beam1", "beam2", "beam"][clampi(n, 1, 3) - 1], kp)
+		start_attack(["beam1", "beam2", "beam"][clampi(n, 1, 3) - 1], kp, who)
 		return [0.6, 1.4, 2.0][clampi(n, 1, 3) - 1]
 	if phase == 1 or not Boss.T_JAWS[Boss.tier()]:
-		start_attack("wall", kp)
+		start_attack("wall", kp, who)
 	else:
-		start_attack("jaws", kp)
+		start_attack("jaws", kp, who)
 	return 3.6
 
 
@@ -343,7 +468,7 @@ func _ring_burst() -> void:
 			continue
 		orbs.append({"p": eye_pos() + dir * 18.0, "v": dir * Boss.ORB_SPEED[phase] * 0.8, "life": 7.0, "r": 4.0})
 	stats["orbs"] += n
-	Sfx.play("spit", -8.0, 0.7)
+	_sfx("spit", -8.0, 0.7)
 
 
 # ---------------------------------------------------------------- orbs
@@ -358,9 +483,17 @@ func _update_orbs(delta: float, kp: Vector2) -> void:
 			_burst(o["p"], 4, Pix.VIOLET_LIGHT, 40.0)
 			orbs.remove_at(i)
 			continue
-		if kp.distance_to(o["p"]) < o["r"] + 5.0:
-			_hurt(o["p"] - o["v"].normalized() * 6.0, "orb")
+		var hit = null
+		for e: Array in _ks:
+			if e[1].distance_to(o["p"]) < o["r"] + 5.0:
+				hit = e[0]
+				break
+		if hit != null:
+			_hurt(o["p"] - o["v"].normalized() * 6.0, "orb", hit)
 			_burst(o["p"], 6, Pix.VIOLET_LIGHT, 60.0)
+			# The hit that ends the run clears the orbs.
+			if i >= orbs.size():
+				return
 			orbs.remove_at(i)
 
 
@@ -384,11 +517,18 @@ func _schedule_attacks(delta: float, kp: Vector2) -> void:
 	var kind: String = pool[_rng.randi() % pool.size()]
 	if kind == _last_attack and pool.size() > 1:
 		kind = pool[(pool.find(kind) + 1) % pool.size()]
-	start_attack(kind, kp)
+	var target: Array = _pick()
+	if target.is_empty():
+		start_attack(kind, kp)
+	else:
+		start_attack(kind, target[1], target[0])
 
 
-# Starts one attack by name (also called by playtests).
-func start_attack(kind: String, kp: Vector2) -> void:
+# Starts one attack by name (also called by playtests), aimed at `kp`: where
+# the keeper `who` is. Without `who`, what tracks a keeper tracks the one
+# nearest the great eye.
+func start_attack(kind: String, kp: Vector2, who = null) -> void:
+	_who = who
 	_last_attack = kind
 	stats["attacks"][kind] = int(stats["attacks"].get(kind, 0)) + 1
 	match kind:
@@ -397,26 +537,26 @@ func start_attack(kind: String, kp: Vector2) -> void:
 			var dir: Vector2 = (kp - a).normalized()
 			if dir.y > 0.2:
 				dir = Vector2(signf(dir.x) if dir.x != 0.0 else 1.0, 0.2).normalized()
-			attacks.append(_strike(a, _to_wall(a, dir), 0.9, 0.2, 0.4, 0.5, 7.0, 0.0))
+			_add(_strike(a, _to_wall(a, dir), 0.9, 0.2, 0.4, 0.5, 7.0, 0.0))
 		"lunge":
 			var horizontal: bool = _rng.randf() < 0.5
-			attacks.append(_lunge(kp, horizontal, 0.0))
+			_add(_lunge(kp, horizontal, 0.0))
 			if phase >= 2 and Boss.T_DOUBLE_LUNGE[Boss.tier()]:
-				attacks.append(_lunge(kp, not horizontal, -0.45))
+				_add(_lunge(kp, not horizontal, -0.45))
 		"erupt":
 			for i in 3:
-				attacks.append({"kind": "erupt", "t": -0.55 * i, "aimed": false})
+				_add({"kind": "erupt", "t": -0.55 * i, "aimed": false, "who": who})
 		"pull":
-			attacks.append({"kind": "pull", "t": 0.0})
-			Sfx.play("pull", -6.0, 0.6)
+			_add({"kind": "pull", "t": 0.0})
+			_sfx("pull", -6.0, 0.6)
 		"beam1":
-			attacks.append(_ray(eye_pos(), kp, 1.0, 0.35, 0.5, 8.0, "eye"))
+			_add(_ray(eye_pos(), kp, 1.0, 0.35, 0.5, 8.0, "eye"))
 		"beam2":
 			for i in 2:
-				attacks.append(_ray(eye_pos(), kp, 0.9, 0.3, 0.45, 8.0, "eye", {}, -0.75 * i))
+				_add(_ray(eye_pos(), kp, 0.9, 0.3, 0.45, 8.0, "eye", {}, -0.75 * i))
 		"beam":
 			for i in 3:
-				attacks.append(_ray(eye_pos(), kp, 0.8, 0.3, 0.45, 8.0, "eye", {}, -0.62 * i))
+				_add(_ray(eye_pos(), kp, 0.8, 0.3, 0.45, 8.0, "eye", {}, -0.62 * i))
 		"cross":
 			# Eyes open in the walls: one line across, one line down, both
 			# through where the keeper is now.
@@ -436,10 +576,10 @@ func start_attack(kind: String, kp: Vector2) -> void:
 				_wall_ray(kp + Vector2(side * 96.0, 0), false, -0.15)
 				_wall_ray(kp, true, -0.45)
 		"wall":
-			attacks.append(_sweep_beam(1.0 if kp.x >= base.x else -1.0, 1.75))
+			_add(_sweep_beam(1.0 if kp.x >= base.x else -1.0, 1.75))
 		"jaws":
-			attacks.append(_sweep_beam(-1.0, 1.29))
-			attacks.append(_sweep_beam(1.0, 1.29))
+			_add(_sweep_beam(-1.0, 1.29))
+			_add(_sweep_beam(1.0, 1.29))
 
 
 # A laser along a line: a warning for `tele`, a bright lock, then it burns for
@@ -449,7 +589,7 @@ func _ray(a: Vector2, toward: Vector2, tele: float, lock: float, fire: float, w:
 	stats["rays"] += 1
 	var dir: Vector2 = (toward - a).normalized() if toward.distance_to(a) > 0.5 else Vector2.UP
 	return {"kind": "ray", "t": delay, "a": a, "b": _to_wall(a, dir), "tele": tele, "lock": lock, "fire": fire, "w": w,
-		"track": track, "stalk": s, "wall_eye": false, "locked": false, "fired": false}
+		"track": track, "stalk": s, "wall_eye": false, "locked": false, "fired": false, "who": _who}
 
 
 # A fixed laser from an eye that opens in the wall: across the chamber at
@@ -468,7 +608,7 @@ func _wall_ray(p: Vector2, across: bool, delay: float) -> void:
 		b = Vector2(x, arena.end.y)
 	var r: Dictionary = _ray(a, b, 1.0, 0.25, 0.4, 3.0, "", {}, delay)
 	r["wall_eye"] = true
-	attacks.append(r)
+	_add(r)
 
 
 # A wall of light from the great eye: it starts along the floor on one side
@@ -552,32 +692,27 @@ func _update_attacks(delta: float, kp: Vector2) -> void:
 				var e: float = strike_ext(a)
 				if e > 0.0 and not a["struck"]:
 					a["struck"] = true
-					InputSystem.shake(8.0, 0.2, 26.0)
-					Sfx.play("whip", -8.0, _rng.randf_range(0.8, 1.1))
-				if e > 0.15 and _seg_dist(kp, a["a"], a["a"].lerp(a["b"], e)) < a["w"] + 5.0:
-					_hurt(a["a"].lerp(a["b"], e * 0.5), "tentacle")
+					_shake(8.0, 0.2, 26.0)
+					_sfx("whip", -8.0, _rng.randf_range(0.8, 1.1))
+				if e > 0.15:
+					for k: Array in _ks.duplicate():
+						if _seg_dist(k[1], a["a"], a["a"].lerp(a["b"], e)) < a["w"] + 5.0:
+							_hurt(a["a"].lerp(a["b"], e * 0.5), "tentacle", k[0])
 				done = a["t"] >= a["tele"] + a["ext"] + a["hold"] + a["retract"]
 			"erupt":
 				if not a["aimed"]:
 					a["aimed"] = true
-					var x: float = clampf(kp.x, arena.position.x + 12.0, arena.end.x - 12.0)
-					var top: float = clampf(kp.y - 16.0, arena.position.y + 8.0, arena.end.y - 70.0)
+					var at: Vector2 = _who_pos(a, kp)
+					var x: float = clampf(at.x, arena.position.x + 12.0, arena.end.x - 12.0)
+					var top: float = clampf(at.y - 16.0, arena.position.y + 8.0, arena.end.y - 70.0)
 					# A spike is a strike from the floor, straight up.
 					var s: Dictionary = _strike(Vector2(x, arena.end.y), Vector2(x, top), 0.75, 0.14, 0.3, 0.35, 7.0, 0.0)
 					s["spike"] = true
-					attacks.append(s)
+					_add(s)
 				done = true
 			"pull":
 				if a["t"] < 2.8:
-					var d: Vector2 = eye_pos() - kp
-					# Drags the keeper in, but never onto the body itself.
-					if d.length() > 92.0:
-						_shove_keeper(d.normalized() * 34.0 * delta)
-					if fposmod(time, 0.05) < delta:
-						var ang: float = _rng.randf() * TAU
-						var p: Vector2 = eye_pos() + Vector2.RIGHT.rotated(ang) * _rng.randf_range(90, 170)
-						if arena.has_point(p):
-							fx.append({"p": p, "v": (eye_pos() - p).normalized() * 120.0, "life": 0.6, "col": Pix.VIOLET_LIGHT, "s": 1.0})
+					_pull(delta)
 				else:
 					done = true
 			"ray":
@@ -588,21 +723,23 @@ func _update_attacks(delta: float, kp: Vector2) -> void:
 				elif t < a["tele"]:
 					if a["track"] != "":
 						var o: Vector2 = eye_pos() if a["track"] == "eye" else st["pos"]
+						var at2: Vector2 = _who_pos(a, kp)
 						a["a"] = o
-						if kp.distance_to(o) > 1.0:
-							a["b"] = _to_wall(o, (kp - o).normalized())
+						if at2.distance_to(o) > 1.0:
+							a["b"] = _to_wall(o, (at2 - o).normalized())
 				elif t < a["tele"] + a["lock"]:
 					if not a["locked"]:
 						a["locked"] = true
-						Sfx.play("charge", -8.0 if a["w"] > 5.0 else -16.0, 1.3)
+						_sfx("charge", -8.0 if a["w"] > 5.0 else -16.0, 1.3)
 				elif t < a["tele"] + a["lock"] + a["fire"]:
 					if not a["fired"]:
 						a["fired"] = true
 						var big: bool = a["w"] > 5.0
-						InputSystem.shake(16.0 if big else 5.0, 0.4 if big else 0.2, 28.0)
-						Sfx.play("beam", -4.0 if big else -14.0, 0.8 if big else 1.5)
-					if _seg_dist(kp, a["a"], a["b"]) < a["w"] + 3.0:
-						_hurt(a["a"], "gaze" if a["track"] == "eye" else "laser")
+						_shake(16.0 if big else 5.0, 0.4 if big else 0.2, 28.0)
+						_sfx("beam", -4.0 if big else -14.0, 0.8 if big else 1.5)
+					for k: Array in _ks.duplicate():
+						if _seg_dist(k[1], a["a"], a["b"]) < a["w"] + 3.0:
+							_hurt(a["a"], "gaze" if a["track"] == "eye" else "laser", k[0])
 				else:
 					done = true
 			"sweep":
@@ -611,13 +748,17 @@ func _update_attacks(delta: float, kp: Vector2) -> void:
 				elif a["t"] >= a["tele"]:
 					if not a["fired"]:
 						a["fired"] = true
-						Sfx.play("beam", -3.0, 0.6)
+						_sfx("beam", -3.0, 0.6)
 					if fposmod(a["t"], 0.12) < delta:
-						InputSystem.shake(6.0, 0.15, 30.0)
+						_shake(6.0, 0.15, 30.0)
 					var sdir: Vector2 = _sweep_dir(a["side"], sweep_angle(a))
-					if _seg_dist(kp, eye_pos(), _to_wall(eye_pos(), sdir)) < 9.0:
-						_hurt(eye_pos(), "gaze")
+					for k: Array in _ks.duplicate():
+						if _seg_dist(k[1], eye_pos(), _to_wall(eye_pos(), sdir)) < 9.0:
+							_hurt(eye_pos(), "gaze", k[0])
 					done = a["t"] >= a["tele"] + a["dur"] + 0.25
+		# The hit that ends the run clears the attacks.
+		if i >= attacks.size() or not is_same(attacks[i], a):
+			return
 		if done:
 			attacks.remove_at(i)
 
@@ -627,6 +768,8 @@ func _update_attacks(delta: float, kp: Vector2) -> void:
 # An explosion at `pos` (this node's space). kind: bomb, mine, blast.
 # `radius` overrides the kind's own (the Suit Blaster's comes from its upgrade).
 func explosion(pos: Vector2, kind: String, radius: float = 0.0) -> void:
+	if puppet:
+		return
 	if state == "rise" or state == "dying" or state == "dead":
 		return
 	var d: Dictionary = Boss.DAMAGE.get(kind, Boss.DAMAGE["bomb"])
@@ -645,7 +788,7 @@ func explosion(pos: Vector2, kind: String, radius: float = 0.0) -> void:
 			_clang = 0.5
 			stats["blocked"] += 1
 			_burst(eye_pos(), 10, Pix.VIOLET_LIGHT, 90.0)
-			Sfx.play("clang", -6.0, 1.0)
+			_sfx("clang", -6.0, 1.0)
 
 
 func _damage_core(amount: float) -> void:
@@ -655,8 +798,8 @@ func _damage_core(amount: float) -> void:
 	stats["core_hits"] += 1
 	_burst(eye_pos(), 24, Pix.IRIS, 130.0)
 	_burst(eye_pos(), 12, Pix.SCLERA, 180.0)
-	InputSystem.shake(22.0, 0.45, 22.0)
-	Sfx.play("hurt", -2.0, _rng.randf_range(0.8, 1.0))
+	_shake(22.0, 0.45, 22.0)
+	_sfx("hurt", -2.0, _rng.randf_range(0.8, 1.0))
 	_hitstop(0.05, 0.07)
 	ModLoaderLog.info("Velle hit for %.0f: %.0f / %.0f" % [amount, hp, Boss.CORE_HP], "cejdan-StoryMode")
 	if hp <= 0.0:
@@ -669,7 +812,7 @@ func _damage_core(amount: float) -> void:
 		pickups.clear()
 		_white = 1.0
 		_hitstop(0.2, 0.9)
-		Sfx.play("roar", 0.0, 0.6)
+		_sfx("roar", 0.0, 0.6)
 		return
 	var new_phase: int = phase
 	for i in Boss.PHASE_AT.size():
@@ -684,16 +827,17 @@ func _damage_core(amount: float) -> void:
 		_hitstop(0.25, 0.45)
 		_drop_heart()
 		_set_state("roar")
-		InputSystem.shake(30.0, 1.0, 16.0)
-		Sfx.play("roar", -1.0, 0.85 - 0.1 * phase)
+		_shake(30.0, 1.0, 16.0)
+		_sfx("roar", -1.0, 0.85 - 0.1 * phase)
 		ModLoaderLog.info("Velle: phase %d" % (phase + 1), "cejdan-StoryMode")
 		phase_changed.emit(phase)
 
 
 # A beat of slow motion on a big hit (real seconds, whatever the time scale).
 # Left alone when something else, a playtest say, has changed the game speed.
+# Not online: the host's clock is the whole team's.
 func _hitstop(scale: float, real_sec: float) -> void:
-	if not is_equal_approx(Engine.time_scale, 1.0) or not is_inside_tree():
+	if not is_equal_approx(Engine.time_scale, 1.0) or not is_inside_tree() or StoryNet.online():
 		return
 	Engine.time_scale = scale
 	await get_tree().create_timer(real_sec, true, false, true).timeout
@@ -720,10 +864,13 @@ func _update_pickups(delta: float, kp: Vector2) -> void:
 		h["v"] *= 1.0 - delta * 2.2
 		h["p"] += h["v"] * delta
 		h["p"] = Vector2(clampf(h["p"].x, inner.position.x, inner.end.x), clampf(h["p"].y, inner.position.y, inner.end.y))
-		if h["t"] > 0.5 and kp.distance_to(h["p"]) < 15.0 and health != null and health.heal():
+		var taken: bool = false
+		for e: Array in _ks:
+			taken = taken or (h["t"] > 0.5 and e[1].distance_to(h["p"]) < 15.0)
+		if taken and health != null and health.heal():
 			stats["hearts_taken"] += 1
 			_burst(h["p"], 14, Color("ff3b4f"), 90.0)
-			Sfx.play("heart", -4.0, 1.2)
+			_sfx("heart", -4.0, 1.2)
 			pickups.remove_at(i)
 		elif h["t"] > Boss.HEART_SECONDS:
 			pickups.remove_at(i)
@@ -796,21 +943,31 @@ func _return_lost_bombs() -> void:
 # An old mining charge shaken loose from the roof at `pos`; it falls to the
 # floor and lies there until the keeper picks it up.
 func spawn_bomb(pos: Vector2) -> Node:
-	for i in 10:
-		fx.append({"p": Vector2(pos.x + _rng.randf_range(-5, 5), arena.position.y + _rng.randf_range(0, 12)),
-			"v": Vector2(_rng.randf_range(-8, 8), _rng.randf_range(150, 260)), "life": 0.9, "col": Color("8a7f9c"), "s": 1.0})
+	_dust(pos.x)
+	if collect_events:
+		_ev.append([3, pos.x])
 	var bomb = Level.drops.network_spawn({"type": CONST.CAVEBOMB, "position": to_global(pos), "team": "team1"})
 	if bomb != null:
 		bomb.set_meta("story_calm", true)
 		bombs.append(bomb)
 		stats["bombs_spawned"] += 1
-	Sfx.play("drop", -14.0, _rng.randf_range(0.9, 1.1))
+	_sfx("drop", -14.0, _rng.randf_range(0.9, 1.1))
 	return bomb
 
 
 # ---------------------------------------------------------------- fx
 
-func _burst(p: Vector2, n: int, col: Color, speed: float) -> void:
+# Rock dust where a charge shakes loose from the roof.
+func _dust(x: float) -> void:
+	for i in 10:
+		fx.append({"p": Vector2(x + _rng.randf_range(-5, 5), arena.position.y + _rng.randf_range(0, 12)),
+			"v": Vector2(_rng.randf_range(-8, 8), _rng.randf_range(150, 260)), "life": 0.9, "col": Color("8a7f9c"), "s": 1.0})
+
+
+# `local`: drawn on every instance by its own code, not sent to clients.
+func _burst(p: Vector2, n: int, col: Color, speed: float, local: bool = false) -> void:
+	if collect_events and not local:
+		_ev.append([2, p, n, col, speed])
 	for i in n:
 		var v: Vector2 = Vector2.RIGHT.rotated(_rng.randf() * TAU) * _rng.randf_range(0.3, 1.0) * speed
 		fx.append({"p": p, "v": v, "life": _rng.randf_range(0.3, 0.8), "col": col, "s": float(1 + _rng.randi() % 2)})
@@ -824,6 +981,202 @@ func _update_fx(delta: float) -> void:
 		f["life"] -= delta
 		if f["life"] <= 0.0 or f["p"].y > arena.end.y:
 			fx.remove_at(i)
+
+
+# ---------------------------------------------------------------- online (#230)
+
+const NET_STATES: Array = ["rise", "fight", "open", "roar", "dying", "dead"]
+const NET_KINDS: Array = ["strike", "ray", "sweep", "pull"]
+const NET_HEAD := 16
+const NET_STALK := 12
+const NET_ORB := 4
+const NET_ATTACK := 14
+const NET_PICKUP := 5
+
+
+# Everything a client needs to draw Velle now, as floats: a header, then the
+# stalks, orbs, attacks and loose hearts. An attack is sent whole (its clock
+# and its line), so a client that joins mid-fight sees it too.
+func net_state() -> PackedFloat32Array:
+	var d: Array = []
+	var sent: Array = []
+	for a: Dictionary in attacks:
+		if NET_KINDS.has(a["kind"]):
+			sent.append(a)
+	d.append_array([time, hp, phase, NET_STATES.find(state), state_t, lid, rise, _white, _wall_open, _hit_flash, _clang, _shock,
+		stalks.size(), orbs.size(), sent.size(), pickups.size()])
+	for s: Dictionary in stalks:
+		d.append_array([s["anchor"].x, s["anchor"].y, s["home"].x, s["home"].y, s["pos"].x, s["pos"].y,
+			1.0 if s["alive"] else 0.0, s["grow"], s["charge"], s["seed"], s["gone"], s["flash"]])
+	for o: Dictionary in orbs:
+		d.append_array([o["p"].x, o["p"].y, o["v"].x, o["v"].y])
+	for a: Dictionary in sent:
+		match a["kind"]:
+			"strike":
+				d.append_array([a["id"], 0, a["t"], a["a"].x, a["a"].y, a["b"].x, a["b"].y, a["tele"], a["ext"], a["hold"], a["retract"],
+					a["w"], a["seed"], 1.0 if a.get("spike", false) else 0.0])
+			"ray":
+				d.append_array([a["id"], 1, a["t"], a["a"].x, a["a"].y, a["b"].x, a["b"].y, a["tele"], a["lock"], a["fire"], 0.0,
+					a["w"], 0.0, 1.0 if a["wall_eye"] else 0.0])
+			"sweep":
+				d.append_array([a["id"], 2, a["t"], a["side"], a["from"], a["to"], a["dur"], a["tele"], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+			"pull":
+				d.append_array([a["id"], 3, a["t"], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	for h: Dictionary in pickups:
+		d.append_array([h["p"].x, h["p"].y, h["v"].x, h["v"].y, h["t"]])
+	return PackedFloat32Array(d)
+
+
+# A puppet takes the host's state. Clocks that run here too (time, an
+# attack's own) are kept unless they have drifted, so nothing stutters.
+func net_apply(d: PackedFloat32Array) -> void:
+	if not puppet or d.size() < NET_HEAD or d[0] < _net_time:
+		return
+	var ns: int = int(d[12])
+	var no: int = int(d[13])
+	var na: int = int(d[14])
+	var np: int = int(d[15])
+	if d.size() != NET_HEAD + ns * NET_STALK + no * NET_ORB + na * NET_ATTACK + np * NET_PICKUP:
+		return
+	_net_time = d[0]
+	if absf(time - d[0]) > 0.25:
+		time = d[0]
+	hp = d[1]
+	phase = clampi(int(d[2]), 0, 2)
+	var st: String = NET_STATES[clampi(int(d[3]), 0, NET_STATES.size() - 1)]
+	if st != state or absf(state_t - d[4]) > 0.25:
+		state = st
+		state_t = d[4]
+	lid = d[5]
+	rise = d[6]
+	_white = d[7]
+	_wall_open = d[8]
+	_hit_flash = d[9]
+	_clang = d[10]
+	_shock = d[11]
+	var i: int = NET_HEAD
+	if stalks.size() != ns:
+		stalks.clear()
+		for j in ns:
+			stalks.append({"seed": -1.0})
+	for s: Dictionary in stalks:
+		var pos := Vector2(d[i + 4], d[i + 5])
+		if s["seed"] != d[i + 9]:
+			s["pos"] = pos
+		s["anchor"] = Vector2(d[i], d[i + 1])
+		s["home"] = Vector2(d[i + 2], d[i + 3])
+		s["npos"] = pos
+		s["alive"] = d[i + 6] > 0.5
+		s["grow"] = d[i + 7]
+		s["charge"] = d[i + 8]
+		s["seed"] = d[i + 9]
+		s["gone"] = d[i + 10]
+		s["flash"] = d[i + 11]
+		i += NET_STALK
+	orbs.clear()
+	for j in no:
+		orbs.append({"p": Vector2(d[i], d[i + 1]), "v": Vector2(d[i + 2], d[i + 3]), "life": 7.0, "r": 4.0})
+		i += NET_ORB
+	var old: Dictionary = {}
+	for a: Dictionary in attacks:
+		old[a["id"]] = a["t"]
+	attacks.clear()
+	for j in na:
+		var id: int = int(d[i])
+		var t: float = d[i + 2]
+		if old.has(id) and absf(float(old[id]) - t) < 0.12:
+			t = old[id]
+		var a: Dictionary = {"id": id, "kind": NET_KINDS[clampi(int(d[i + 1]), 0, NET_KINDS.size() - 1)], "t": t, "tele": d[i + 7]}
+		match a["kind"]:
+			"strike":
+				a.merge({"a": Vector2(d[i + 3], d[i + 4]), "b": Vector2(d[i + 5], d[i + 6]), "ext": d[i + 8], "hold": d[i + 9],
+					"retract": d[i + 10], "w": d[i + 11], "seed": d[i + 12], "spike": d[i + 13] > 0.5})
+			"ray":
+				a.merge({"a": Vector2(d[i + 3], d[i + 4]), "b": Vector2(d[i + 5], d[i + 6]), "lock": d[i + 8], "fire": d[i + 9],
+					"w": d[i + 11], "wall_eye": d[i + 13] > 0.5})
+			"sweep":
+				a.merge({"side": d[i + 3], "from": d[i + 4], "to": d[i + 5], "dur": d[i + 6]})
+		attacks.append(a)
+		i += NET_ATTACK
+	pickups.clear()
+	for j in np:
+		pickups.append({"p": Vector2(d[i], d[i + 1]), "v": Vector2(d[i + 2], d[i + 3]), "t": d[i + 4]})
+		i += NET_PICKUP
+
+
+# The host's sounds, bursts, shakes and roof dust.
+func play_events(ev: Array) -> void:
+	for e in ev:
+		if not (e is Array) or e.is_empty():
+			continue
+		match int(e[0]):
+			0:
+				if e.size() == 4:
+					_sfx(str(e[1]), float(e[2]), float(e[3]))
+			1:
+				if e.size() == 4:
+					_shake(float(e[1]), float(e[2]), float(e[3]))
+			2:
+				if e.size() == 5 and e[1] is Vector2 and e[3] is Color:
+					_burst(e[1], mini(int(e[2]), 60), e[3], float(e[4]))
+			3:
+				if e.size() == 2:
+					_dust(float(e[1]))
+
+
+# A puppet's frame: no AI and no hits, only what moves between two of the
+# host's states, and the shoves on this instance's own keeper.
+func _puppet_step(delta: float) -> void:
+	time += delta
+	state_t += delta
+	_hit_flash = maxf(0.0, _hit_flash - delta)
+	_clang = maxf(0.0, _clang - delta)
+	_white = maxf(0.0, _white - delta * 1.6)
+	if _shock >= 0.0:
+		_shock += delta
+	if state == "roar":
+		_roar_shove(delta)
+	for s: Dictionary in stalks:
+		s["flash"] = maxf(0.0, s["flash"] - delta)
+		s["pos"] = s["pos"].lerp(s["npos"], minf(1.0, delta * 18.0))
+		if s["charge"] > 0.0:
+			s["charge"] = maxf(0.0, s["charge"] - delta)
+		if not s["alive"]:
+			s["gone"] = minf(1.0, s["gone"] + delta * 1.6)
+	var inner: Rect2 = arena.grow(-3.0)
+	for i in range(orbs.size() - 1, -1, -1):
+		orbs[i]["p"] += orbs[i]["v"] * delta
+		if not inner.has_point(orbs[i]["p"]):
+			orbs.remove_at(i)
+	for i in range(attacks.size() - 1, -1, -1):
+		var a: Dictionary = attacks[i]
+		a["t"] += delta
+		var end: float = 2.8
+		match a["kind"]:
+			"strike":
+				end = a["tele"] + a["ext"] + a["hold"] + a["retract"]
+			"ray":
+				end = a["tele"] + a["lock"] + a["fire"]
+			"sweep":
+				end = a["tele"] + a["dur"] + 0.25
+			"pull":
+				if a["t"] >= 0.0 and a["t"] < end:
+					_pull(delta)
+		if a["t"] >= end:
+			attacks.remove_at(i)
+	for h: Dictionary in pickups:
+		h["t"] += delta
+		h["v"] *= 1.0 - delta * 2.2
+		h["p"] += h["v"] * delta
+	_update_fx(delta)
+	# The charges lying about, for their amber rings.
+	_bomb_scan -= delta
+	if _bomb_scan <= 0.0:
+		_bomb_scan = 0.4
+		bombs.clear()
+		for b in get_tree().get_nodes_in_group("carryable"):
+			if b is CaveBomb and arena.grow(30.0).has_point(to_local(b.global_position)):
+				bombs.append(b)
 
 
 # ---------------------------------------------------------------- drawing
@@ -1091,7 +1444,7 @@ func _draw_beams() -> void:
 				draw_line(eye_pos(), to2, Color(Pix.IRIS, 1.0), 9.0 * fl)
 				draw_line(eye_pos(), to2, Color.WHITE, 3.0)
 				if fposmod(time, 0.04) < 0.02:
-					_burst(to2, 2, Pix.IRIS, 70.0)
+					_burst(to2, 2, Pix.IRIS, 70.0, true)
 			continue
 		if a["kind"] != "ray":
 			continue

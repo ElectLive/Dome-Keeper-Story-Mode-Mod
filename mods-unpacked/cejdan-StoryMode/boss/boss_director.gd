@@ -19,6 +19,22 @@ extends Node
 # story beats wait and the monsters' pleas are off (Story.boss_active()), so
 # no text breaks the flow. The monsters' thanks after the finale still show.
 #
+# With a team (#230, online): the host runs the sequence and keeps the state
+# and the hearts. The fight starts when any keeper is in the chamber; every
+# instance holds its own keeper in (once it is in), and a client builds the
+# boss layer with a puppet Velle that draws what the host sends (_net_velle,
+# _net_events) and reports its own keeper's overheat (_net_overheated). The
+# host also repeats the state and the hearts to clients (_net_boss): a Data
+# change made while a client's full Data sync is on its way is overwritten by
+# that sync and never sent again. In the chase the tentacles hunt one keeper
+# out in the mine at a time and a touch on any keeper costs a heart; a client
+# draws a puppet chase from the host's trail and tips (_net_chase). The chase
+# is over when every keeper is home (in the dome, at the dome) and at least
+# one of them has been out in it. In the finale any keeper taking the dome's
+# weapon starts the bells (_net_battle); a client draws a puppet finale with
+# copies of the host's monsters (_net_finale, boss/finale.gd), and a won
+# finale plays the saved ending on every instance.
+#
 # Other code reaches it through the static helpers, which do nothing outside
 # the boss sequence:
 #   Director.explosion_at(global_pos, kind, radius_px)   kind: bomb, mine, blast
@@ -30,10 +46,15 @@ const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const Awakening = preload("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd")
 const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
+const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
+const KeeperHealth = preload("res://mods-unpacked/cejdan-StoryMode/boss/keeper_health.gd")
+const Chase = preload("res://mods-unpacked/cejdan-StoryMode/boss/chase.gd")
 
 const GROUP := "story-boss"
 const STATE := "team1.story.boss"
 const TILE := 24.0
+const NET_HZ := 15.0          # Velle's state to clients, times a second
+const NET_REPEAT := 2.0       # seconds between repeats of the state and hearts
 
 signal state_changed(state: String)
 
@@ -52,6 +73,12 @@ var _seal_flash: float = 0.0
 var _cam_blend: float = 0.0
 var _chase_left_dome: bool = false
 var dev_path: Array = []      # the shaft `--boss=chase` drilled (tile cells, bottom to top)
+var _held: Dictionary = {}    # this instance's keepers the chamber has sealed in (playerId -> true)
+var _net_t: float = 0.0
+var _net_repeat: float = 0.0
+var _client_state: String = ""
+var _chase_asked: float = -10.0
+var _battle_told: float = -10.0
 
 
 static func instance():
@@ -73,15 +100,22 @@ static func jams_recall() -> bool:
 	return instance() != null and active()
 
 
-# The suit overheated during the boss sequence: a heart, not a recall.
+# This instance's keeper overheated during the boss sequence: a heart, not a
+# recall. The hearts are the host's: a client asks it.
 static func overheated() -> void:
 	var n = instance()
-	if n == null or n.health == null:
+	var k = me()
+	if n == null or k == null:
 		return
-	var k = Keepers.first()
-	if k != null:
-		n.health.invulnerable = 0.0
-		n.health.hurt(n.health.to_local(k.global_position) + Vector2(0, 10), "overheat")
+	if StoryNet.is_client():
+		n.rpc_id(1, "_net_overheated", k.playerId)
+	else:
+		n._overheat(k)
+
+
+# This instance's own (first) keeper.
+static func me():
+	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
 
 
 static func explosion_at(global_pos: Vector2, kind: String, radius_px: float = 0.0) -> void:
@@ -103,6 +137,7 @@ func state() -> String:
 
 func _set_state(s: String) -> void:
 	Data.apply(STATE, s)
+	_net_repeat = 0.0
 	ModLoaderLog.info("Boss: " + (s if s != "" else "(reset)"), Story.LOG)
 	state_changed.emit(s)
 
@@ -124,7 +159,7 @@ func _ready_to_run() -> bool:
 
 
 func _chamber() -> Rect2i:
-	var ch = Level.map.tileData.get_meta("story_boss_chamber", null)
+	var ch = Level.map.tileData.get_meta("story_boss_chamber") if Level.map.tileData.has_meta("story_boss_chamber") else null
 	return ch if ch is Rect2i else Rect2i()
 
 
@@ -143,10 +178,14 @@ func _ensure_layer() -> bool:
 	health.name = "KeeperHealth"
 	layer.add_child(health)
 	health.died.connect(_keeper_died)
+	health.hit.connect(_keeper_hit)
 	return true
 
 
 func _physics_process(delta: float) -> void:
+	if StoryNet.is_client():
+		_client_process(delta)
+		return
 	if not _ready_to_run() or GameWorld.paused:
 		return
 	if GameWorld.won or GameWorld.lost:
@@ -156,34 +195,30 @@ func _physics_process(delta: float) -> void:
 		_resume()
 		if OS.has_feature("editor") and Story.user_arg("scenario") == "" and Story.has_user_arg("boss"):
 			_dev_boss(Story.user_arg("boss"))
-	var keeper = Keepers.first()
+	_net_host(delta)
 	match current():
 		"":
+			_held.clear()
 			if not Awakening.is_awake() or StoryBeats.is_open() or not StoryBeats.has_played("boss_chamber"):
 				return
 			if not _ensure_layer():
 				return
-			var kp: Vector2 = layer.to_local(keeper.global_position)
-			if arena.grow(-4.0).has_point(kp) and not keeper.disabled:
-				_start_fight()
+			# Any keeper of the team in the chamber starts it.
+			for k in Keepers.getAll():
+				if k != null and is_instance_valid(k) and not k.disabled and arena.grow(-4.0).has_point(layer.to_local(k.global_position)):
+					_start_fight()
+					break
 		"fight":
-			_seal(keeper, delta)
-			_recharge_blaster(keeper, delta)
+			_seal(delta)
+			for k in Keepers.getAll():
+				if k != null and is_instance_valid(k) and arena.grow(30.0).has_point(layer.to_local(k.global_position)):
+					_recharge_blaster(k, delta)
 			if velle != null and is_instance_valid(velle):
 				music.fight(velle.phase)
 		"chase":
 			if chase != null and is_instance_valid(chase):
-				music.chase(1.0 - chase.gap / 260.0)
-			# Home counts only once the keeper has been out of the dome: the dev
-			# command starts the chase the moment the keeper is teleported away,
-			# while the dome still counts the keeper as inside (#176).
-			# The flag alone is not enough either: it can flip on a moment
-			# after a teleport out, so the keeper must also be at the dome.
-			var dome = Level.getDome("team1")
-			var at_dome: bool = dome != null and keeper.global_position.distance_to(dome.global_position) < 240.0
-			if not keeper.isInsideDome:
-				_chase_left_dome = true
-			elif _chase_left_dome and at_dome:
+				music.chase(1.0 - chase.my_gap() / 260.0)
+			if _all_home():
 				_chase_done()
 		"finale":
 			# Silence while the finale draws its breath; the bells after.
@@ -194,14 +229,14 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	# The camera holds the whole chamber during the fight.
-	var keeper = Keepers.first()
-	if keeper == null or Level.viewports == null or layer == null or not is_instance_valid(layer):
+	# The camera holds the whole chamber during the fight, for a keeper in it.
+	var keeper = me()
+	if keeper == null or not is_instance_valid(keeper) or Level.viewports == null or layer == null or not is_instance_valid(layer):
 		return
 	var cam = Level.viewports.getPlayerCam(keeper.playerId)
 	if cam == null or not ("targetOffset" in cam):
 		return
-	var want: float = 1.0 if current() == "fight" else 0.0
+	var want: float = 1.0 if current() == "fight" and _held.has(keeper.playerId) else 0.0
 	if _cam_blend == want and want == 0.0:
 		return
 	_cam_blend = move_toward(_cam_blend, want, delta * 1.5)
@@ -243,7 +278,15 @@ func _start_fight() -> void:
 	layer.move_child(velle, 0)
 	velle.setup(arena, health, _chamber())
 	velle.defeated.connect(_velle_defeated)
+	_fight_opens()
+
+
+# The chamber seals and Velle roars, for a keeper who is there.
+func _fight_opens() -> void:
 	_seal_flash = 1.0
+	var k = me()
+	if k == null or not arena.grow(220.0).has_point(layer.to_local(k.global_position)):
+		return
 	Sfx.play("seal", -4.0, 0.7)
 	Sfx.play("roar", -3.0, 0.7)
 	InputSystem.shake(20.0, 1.2, 14.0)
@@ -256,20 +299,29 @@ func _stop_waves() -> void:
 			mm.instantlyKillWave()
 
 
-# Nobody leaves: the keeper is held inside the chamber.
-func _seal(keeper, delta: float) -> void:
+# Nobody leaves: a keeper who is in the chamber during the fight is held
+# inside it. Each instance holds its own keepers (a keeper moves on its
+# owner's instance); a teammate still outside can come in, and then stays.
+func _seal(delta: float) -> void:
 	_seal_flash = maxf(0.0, _seal_flash - delta)
 	var inner: Rect2 = arena.grow(-6.0)
-	var kp: Vector2 = layer.to_local(keeper.global_position)
-	if inner.has_point(kp):
-		return
-	var held := Vector2(clampf(kp.x, inner.position.x, inner.end.x), clampf(kp.y, inner.position.y, inner.end.y))
-	keeper.global_position = layer.to_global(held)
-	if "move" in keeper:
-		keeper.move = Vector2.ZERO
-	if _seal_flash <= 0.0:
-		_seal_flash = 0.5
-		Sfx.play("clang", -10.0, 0.8)
+	for keeper in Keepers.local.keepers:
+		if keeper == null or not is_instance_valid(keeper):
+			continue
+		var kp: Vector2 = layer.to_local(keeper.global_position)
+		if not _held.has(keeper.playerId):
+			if not arena.grow(4.0).has_point(kp):
+				continue
+			_held[keeper.playerId] = true
+		if inner.has_point(kp):
+			continue
+		var held := Vector2(clampf(kp.x, inner.position.x, inner.end.x), clampf(kp.y, inner.position.y, inner.end.y))
+		keeper.global_position = layer.to_global(held)
+		if "move" in keeper:
+			keeper.move = Vector2.ZERO
+		if _seal_flash <= 0.0:
+			_seal_flash = 0.5
+			Sfx.play("clang", -10.0, 0.8)
 
 
 func _recharge_blaster(keeper, delta: float) -> void:
@@ -296,6 +348,7 @@ func _velle_defeated() -> void:
 	if got > 0:
 		Sfx.play("heart", -2.0, 1.0)
 	ModLoaderLog.info("Boss: Velle is dead; %d hearts back (%s)" % [got, Boss.TIER_NAMES[Boss.tier()]], Story.LOG)
+	_net_velle_now()
 	_set_state("chase")
 	_start_chase(velle.eye_pos())
 
@@ -312,10 +365,35 @@ func _start_chase(origin: Vector2) -> void:
 	InputSystem.shake(18.0, 1.0, 18.0)
 
 
+# Is the team home? Home counts only once a keeper has been out of the dome:
+# the dev command starts the chase the moment the keeper is teleported away,
+# while the dome still counts the keeper as inside (#176). The flag alone is
+# not enough either: it can flip on a moment after a teleport out, so each
+# keeper must also be at the dome. With a team (#230) every keeper must be
+# home; one who never left the dome is home already.
+func _all_home() -> bool:
+	var dome = Level.getDome("team1")
+	if dome == null:
+		return false
+	var home: bool = true
+	for k in Keepers.getAll():
+		if k == null or not is_instance_valid(k):
+			continue
+		if not Chase.in_dome(k):
+			_chase_left_dome = true
+			home = false
+		elif k.global_position.distance_to(dome.global_position) >= 240.0:
+			home = false
+	return home and _chase_left_dome
+
+
 # The keeper made it into the dome.
 func _chase_done() -> void:
 	if chase != null and is_instance_valid(chase):
 		chase.running = false
+		# Where the tentacles stopped, for the clients' copies.
+		if StoryNet.online():
+			_to_clients(_net_chase.bind(chase.net_state()))
 	_set_state("finale")
 	_start_finale()
 
@@ -346,6 +424,14 @@ func dome_lost() -> void:
 		music.stop()
 
 
+# A client: the host won the finale; the saved ending plays here too.
+func _client_won() -> void:
+	music.stop()
+	await get_tree().create_timer(1.0, false).timeout
+	if Level.mode != null and Level.mode.has_method("horror_defeated_here"):
+		Level.mode.horror_defeated_here()
+
+
 func _finish_won() -> void:
 	music.stop()
 	await get_tree().create_timer(1.0, false).timeout
@@ -359,17 +445,271 @@ func _keeper_died(cause: String) -> void:
 	_set_state("lost")
 	music.stop()
 	ModLoaderLog.info("Boss: the keeper is dead (%s)" % cause, Story.LOG)
-	var keeper = Keepers.first()
-	if keeper != null and is_instance_valid(keeper):
-		Sfx.play("keeper_down", 0.0, 0.7)
-		keeper.visible = false
+	_team_down()
 	if velle != null and is_instance_valid(velle):
 		velle.attack_enabled = false
 		velle.spawn_bombs = false
 		velle.orbs.clear()
 		velle.attacks.clear()
+		_net_velle_now()
 	if Level.mode != null and Level.mode.has_method("keeper_lost"):
 		Level.mode.keeper_lost()
+
+
+# The hearts are the team's: at zero every keeper is gone.
+func _team_down() -> void:
+	Sfx.play("keeper_down", 0.0, 0.7)
+	for k in Keepers.getAll():
+		if k != null and is_instance_valid(k):
+			k.visible = false
+
+
+func _overheat(keeper) -> void:
+	if health == null or not is_instance_valid(health) or not active():
+		return
+	health.set_safe(keeper, 0.0)
+	health.hurt(health.to_local(keeper.global_position) + Vector2(0, 10), "overheat", keeper)
+
+
+# ---------------------------------------------------------------- online (#230)
+
+func _to_clients(call: Callable) -> void:
+	Network.rpc_if_state(call, Network.ConnectionState.LEVEL_STAGE_SYNC)
+
+
+# The host's side, every physics frame of a run.
+func _net_host(delta: float) -> void:
+	var has_velle: bool = velle != null and is_instance_valid(velle)
+	if not StoryNet.online() or Network.clients.is_empty():
+		if has_velle:
+			velle.collect_events = false
+		return
+	var st: String = current()
+	_net_repeat -= delta
+	if _net_repeat <= 0.0 and (st != "" or _client_state != ""):
+		_net_repeat = NET_REPEAT
+		_client_state = st     # on the host: the state last sent
+		_to_clients(_net_boss.bind(st, int(Data.ofOr(KeeperHealth.KEY, Boss.HEARTS))))
+	_net_t -= delta
+	var tick: bool = _net_t <= 0.0
+	if tick:
+		_net_t = 1.0 / NET_HZ
+	if st == "chase" and tick and chase != null and is_instance_valid(chase):
+		_to_clients(_net_chase.bind(chase.net_state()))
+	if st == "finale" and tick and finale != null and is_instance_valid(finale):
+		_to_clients(_net_finale.bind(finale.net_state(), finale.net_monsters()))
+	if not has_velle:
+		return
+	velle.collect_events = true
+	var ev: Array = velle.take_events()
+	if not ev.is_empty():
+		_to_clients(_net_events.bind(ev))
+	if st == "fight" and tick:
+		_to_clients(_net_velle.bind(velle.net_state()))
+
+
+# Velle's state for certain (its death, the team's): the stream may drop one.
+func _net_velle_now() -> void:
+	if StoryNet.online() and velle != null and is_instance_valid(velle):
+		_to_clients(_net_velle_sure.bind(velle.net_state()))
+
+
+func _keeper_hit(keeper, push: Vector2) -> void:
+	if StoryNet.online():
+		_to_clients(_net_hurt.bind(keeper.playerId, push))
+
+
+func _puppet():
+	return velle if velle != null and is_instance_valid(velle) and velle.puppet else null
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _net_velle(data: PackedFloat32Array) -> void:
+	if _puppet() != null:
+		velle.net_apply(data)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_velle_sure(data: PackedFloat32Array) -> void:
+	if _puppet() != null:
+		velle.net_apply(data)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_events(ev: Array) -> void:
+	if _puppet() != null:
+		velle.play_events(ev)
+
+
+# The state and the hearts, repeated: see the note at the top.
+@rpc("authority", "call_remote", "reliable")
+func _net_boss(st: String, hearts: int) -> void:
+	if not StoryNet.is_client():
+		return
+	if current() != st:
+		Data.server_apply(STATE, st)
+	if int(Data.ofOr(KeeperHealth.KEY, -1)) != hearts:
+		Data.server_apply(KeeperHealth.KEY, hearts)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_hurt(player_id: String, push: Vector2) -> void:
+	if health != null and is_instance_valid(health):
+		health.net_hit(player_id, push)
+
+
+# The host's chase (boss/chase.gd net_state()); reliable, as the trail comes in parts.
+@rpc("authority", "call_remote", "reliable")
+func _net_chase(data: Array) -> void:
+	if chase == null or not is_instance_valid(chase) or not chase.puppet:
+		return
+	if not chase.net_apply(data):
+		_ask_chase()
+
+
+# A client: the whole trail again, please (a new copy, or it missed a part).
+func _ask_chase() -> void:
+	var now: float = Time.get_ticks_msec() / 1000.0
+	if now - _chase_asked < 1.0:
+		return
+	_chase_asked = now
+	rpc_id(1, "_net_chase_resend")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_chase_resend() -> void:
+	if multiplayer.is_server() and chase != null and is_instance_valid(chase):
+		chase.resend()
+
+
+# The host's finale: its step and its monsters (boss/finale.gd). Unreliable:
+# every message carries all of it.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _net_finale(state: Array, monsters: Array) -> void:
+	if finale == null or not is_instance_valid(finale) or not finale.puppet:
+		return
+	finale.net_apply(state)
+	finale.apply_monsters(monsters)
+
+
+# Client -> host: my keeper took the dome's weapon; the breath is over.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_battle() -> void:
+	if multiplayer.is_server() and current() == "finale" and finale != null and is_instance_valid(finale) and finale.step == "breath":
+		finale._start_bells("battle")
+
+
+# Client -> host: my keeper overheated in the boss sequence.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_overheated(player_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var k = Keepers.getKeeper(player_id) if Keepers.hasKeeper(player_id) else null
+	if k != null and is_instance_valid(k) and k.peerId == multiplayer.get_remote_sender_id():
+		_overheat(k)
+
+
+# A client's side: follow the host's state, draw its Velle, hold our own
+# keeper in the chamber.
+func _client_process(delta: float) -> void:
+	if not enabled or not Story.is_story() or GameWorld.paused:
+		return
+	var stage = Level.stage
+	if stage == null or not (stage is LevelStage) or not stage.keeperInputStarted:
+		return
+	if Level.map == null or not is_instance_valid(Level.map) or not Level.map.isMapReady() or not StoryNet.map_meta_ready(Level.map):
+		return
+	if me() == null:
+		return
+	var st: String = current()
+	if st != _client_state:
+		var was: String = _client_state
+		_client_state = st
+		ModLoaderLog.info("Boss (client): " + (st if st != "" else "(reset)"), Story.LOG)
+		state_changed.emit(st)
+		if st == "" or st == "won" or st == "lost":
+			music.stop()
+		if st == "lost" and was in ["fight", "chase"]:
+			_team_down()
+			# The host ran out of hearts: the lost ending here too.
+			if Level.mode != null and Level.mode.has_method("keeper_lost"):
+				Level.mode.keeper_lost()
+		if st == "won":
+			_client_won()
+		if st == "" and _puppet() != null:
+			# The fight starts over (the host loaded a save).
+			velle.queue_free()
+			velle = null
+		if st == "" and chase != null and is_instance_valid(chase):
+			chase.queue_free()
+			chase = null
+	match st:
+		"fight":
+			if not _ensure_layer():
+				return
+			if velle == null or not is_instance_valid(velle):
+				velle = load(Story.MOD_DIR + "boss/velle.gd").new()
+				velle.name = "Velle"
+				velle.puppet = true
+				layer.add_child(velle)
+				layer.move_child(velle, 0)
+				velle.setup(arena, health, _chamber())
+				_reveal_chamber()
+				_fight_opens()
+			_seal(delta)
+			music.fight(velle.phase)
+		"chase":
+			_held.clear()
+			if not _ensure_layer():
+				return
+			if chase == null or not is_instance_valid(chase):
+				chase = load(Story.MOD_DIR + "boss/chase.gd").new()
+				chase.name = "Chase"
+				chase.puppet = true
+				layer.add_child(chase)
+				chase.setup(health, arena.get_center())
+				_reveal_chamber()
+				_chase_asked = -10.0
+				_ask_chase()
+				Sfx.play("roar", -2.0, 1.2)
+				InputSystem.shake(18.0, 1.0, 18.0)
+			music.chase(1.0 - chase.my_gap() / 260.0)
+		"finale":
+			if chase != null and is_instance_valid(chase):
+				chase.running = false
+			if not _ensure_layer():
+				return
+			if finale == null or not is_instance_valid(finale):
+				finale = load(Story.MOD_DIR + "boss/finale.gd").new()
+				finale.name = "Finale"
+				finale.puppet = true
+				layer.add_child(finale)
+				finale.setup()
+				health.visible = false
+			if finale.step == "breath":
+				music.hush()
+				# This keeper took the dome's weapon: tell the host.
+				var now: float = Time.get_ticks_msec() / 1000.0
+				if finale.activity() == "battle" and now - _battle_told > 0.5:
+					_battle_told = now
+					rpc_id(1, "_net_battle")
+			else:
+				music.finale()
+		_:
+			_held.clear()
+
+
+# A client's view of the chamber. Rock broken in real play is revealed on
+# every peer, but a chamber the host opened alone (the dev command, a
+# playtest) is still dark here.
+func _reveal_chamber() -> void:
+	var ch: Rect2i = _chamber()
+	var cells: Array = []
+	for y in range(ch.position.y - 1, ch.end.y + 1):
+		for x in range(ch.position.x - 1, ch.end.x + 1):
+			cells.append(Vector2(x, y))
+	Level.map.tileCoordsToReveal.append_array(cells)
+	Level.map.floodRevealTiles()
 
 
 # Dev command (editor only): `-- --story --boss` drops the keeper into Velle's
