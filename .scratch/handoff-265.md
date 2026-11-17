@@ -1,4 +1,4 @@
-# Handoff #265: Heat Shielding per keeper
+﻿# Handoff #265: Heat Shielding per keeper
 
 Branch `ticket/265-heat-shield-per-keeper` in `wt-mp-242`, stacked on `ticket/263-split-views` (PR #266).
 
@@ -26,4 +26,4 @@ Branch `ticket/265-heat-shield-per-keeper` in `wt-mp-242`, stacked on `ticket/26
   t265_mp_oldsave pair + `t232_mp_load_* -Extra "--slot=32 --notes=user://t265_saved.json"` PASS, t44 PASS
 
 ## Left
-- regressions (scratchpad regress.ps1), PR
+- regressions done (all PASS but #255 known: t170, t99, t82); PR open

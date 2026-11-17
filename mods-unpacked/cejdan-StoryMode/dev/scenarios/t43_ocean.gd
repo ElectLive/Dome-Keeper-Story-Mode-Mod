@@ -140,7 +140,7 @@ func run(h) -> void:
 	h.check("the ocean's top row is still full", field.mass.get(Vector2i(0, int(o["top"])), 0.0) >= 0.9, field.mass.get(Vector2i(0, int(o["top"])), 0.0))
 
 	# ---- mine unobtainium in the ocean and carry it home (Heat Shielding IV so the trip fits)
-	Data.apply("team1." + LavaData.HEAT_SHIELD_KEY, 4)
+	Data.apply(LavaData.shield_key(), 4)
 	var unob: int = int(Minerals.TABLE["unobtainium"]["tile_id"])
 	var best: Vector2i = Vector2i(9999, 0)
 	for c: Vector2i in td.get_resource_cells_by_id(unob):
@@ -217,11 +217,11 @@ func run(h) -> void:
 	var dt: Array = await _dive(h, clear[0], true)
 	h.note("dive time with heat held at 0 [game s, reached]", dt)
 	await h.wait(1.0)
-	Data.apply("team1." + LavaData.HEAT_SHIELD_KEY, 3)
+	Data.apply(LavaData.shield_key(), 3)
 	var d3: Array = await _dive(h, clear[1])
 	h.note("dive at tier III [game s, reached, heat, overheated]", d3)
 	await h.wait(1.0)
-	Data.apply("team1." + LavaData.HEAT_SHIELD_KEY, 4)
+	Data.apply(LavaData.shield_key(), 4)
 	var d4: Array = await _dive(h, clear[2])
 	h.note("dive at tier IV [game s, reached, heat, overheated]", d4)
 	h.note("tier IV lava multiplier", LavaData.HEAT_SHIELD_LAVA_MULT[4])

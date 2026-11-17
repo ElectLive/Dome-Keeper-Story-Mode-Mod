@@ -51,7 +51,7 @@ func _room_in_biome(h, b: int) -> Vector2i:
 
 
 func _tier(t: int) -> void:
-	Data.apply("team1." + LavaData.HEAT_SHIELD_KEY, t)
+	Data.apply(LavaData.shield_key(), t)   # the keeper's own tier (#265)
 
 
 # Puts the keeper in room `c` with heat `h0` and runs `secs` game seconds (the
