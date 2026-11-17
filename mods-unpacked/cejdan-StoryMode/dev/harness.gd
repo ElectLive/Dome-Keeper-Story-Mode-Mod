@@ -46,6 +46,13 @@ func _process(_delta: float) -> void:
 		return
 	if scenario.boot().get("netjoin", false):
 		_client_choose_keeper()
+	if scenario.boot().get("title", false):
+		# The title screen (#231): the scenario presses its buttons.
+		var ts = StageManager.currentStage
+		if is_instance_valid(ts) and ts.has_method("_on_splitscreen_button_pressed") and not StageManager.isSwitchingStage():
+			_started = true
+			_run()
+		return
 	if scenario.boot().get("loadout", false):
 		if is_instance_valid(Level.stage) and Level.stage.get("initialized") == true:
 			_started = true

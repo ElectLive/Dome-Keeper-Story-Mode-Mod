@@ -44,6 +44,7 @@ func run(h) -> void:
 	# ---- 1. keeper 2 in lava: its heat, its bar; then it overheats and is recalled
 	var room := _find_biome_row(1, 8)
 	await h.dig_room(room + Vector2i(-2, -1), room + Vector2i(2, 1))
+	_clear_drops()
 	await h.teleport_tile(room, k2)
 	k2.set("gravity_scale", 0.0)
 	await h.wait(0.5)
@@ -84,8 +85,9 @@ func run(h) -> void:
 	lava.wake_all()
 
 	# ---- 2. keeper 2 in gas: its toxin, its bar, a vignette in its view only
-	var groom := room + Vector2i(8, 0)
+	var groom := _find_biome_row(1, room.y + 6)
 	await h.dig_room(groom + Vector2i(-2, -1), groom + Vector2i(2, 1))
+	_clear_drops()
 	await h.teleport_tile(groom, k2)
 	k2.set("gravity_scale", 0.0)
 	var cells: Array = []
@@ -100,9 +102,12 @@ func run(h) -> void:
 	h.note("toxin", {"player1": gas.toxin_of(k1), "player2": gas.toxin_of(k2), "views": fx.views.keys()})
 	h.check("keeper 2's toxin fills", gas.toxin_of(k2) >= 80.0, gas.toxin_of(k2))
 	h.check("keeper 1's stays clean", gas.toxin_of(k1) == 0.0, gas.toxin_of(k1))
-	h.check("the vignette is in keeper 2's view, not keeper 1's", fx.views["player2"]["rect"].visible and not fx.views["player1"]["rect"].visible
-		and fx.views["player2"]["layer"].custom_viewport == Level.viewports.getViewportContainer(k2).viewport,
-		[fx.views["player1"]["vignette"], fx.views["player2"]["vignette"]])
+	var bit2: int = 1 << ViewportContainer.PLAYER_IDX_TO_CANVAS_LAYER_BIT[1]
+	var bit1: int = 1 << ViewportContainer.PLAYER_IDX_TO_CANVAS_LAYER_BIT[0]
+	var r2: ColorRect = fx.views["player2"]["rect"]
+	h.check("the vignette is in keeper 2's view, not keeper 1's", r2.visible and not fx.views["player1"]["rect"].visible
+		and (r2.visibility_layer & bit2) != 0 and (r2.visibility_layer & bit1) == 0,
+		[fx.views["player1"]["vignette"], fx.views["player2"]["vignette"], r2.visibility_layer])
 	h.check("a gas look per view", gas.looks.size() == 2, gas.looks.keys())
 	h.check("keeper 2's gas look follows keeper 2", gas.looks.has("player2") and Rect2i(gas.looks["player2"].c0, gas.looks["player2"].WIN).has_point(groom), gas.looks["player2"].c0 if gas.looks.has("player2") else null)
 	h.snap_camera(k2)
@@ -126,7 +131,7 @@ func run(h) -> void:
 			played.erase(id)
 	Data.apply("team1.story.beatsplayed", ",".join(PackedStringArray(played)))
 	var hot := _find_biome_row(LavaData.PASSIVE_HEAT_START_BIOME, 4)
-	await h.dig_room(hot + Vector2i(-2, -1), hot + Vector2i(2, 1))
+	await h.dig_room(hot + Vector2i(-4, -1), hot + Vector2i(4, 1))
 	await h.teleport_tile(hot, k2)
 	k2.set("gravity_scale", 0.0)
 	var id: String = await h.read_beat("depth_beat", 10.0)
@@ -147,19 +152,35 @@ func run(h) -> void:
 	h.note("final", {"heats": lava.heats, "toxins": gas.toxins, "recalls": lava.recalls, "gassed": gas.gassed, "talk": talk.shown})
 
 	# ---- 4. keeper 2 walks with its own gamepad
-	await h.teleport_tile(hot, k2)
+	await h.teleport_tile(hot + Vector2i(-3, 0), k2)
 	k2.set("gravity_scale", 1.0)
 	var before: Vector2 = k2.global_position
 	await h.pad_stick(1, Vector2(1, 0), 1.0)
 	h.check("keeper 2 moves with the gamepad's stick", k2.global_position.distance_to(before) > 10.0, k2.global_position.distance_to(before))
 
 
-# A tile in the first row at or below `from_y` whose biome is `biome`, a few
-# columns left of the shaft.
+# What the dug rooms dropped (water would harden the lava, #47).
+func _clear_drops() -> void:
+	for d in Level.drops.get_children():
+		d.queue_free()
+
+
+# The middle of a solid block of rock (9 x 5 tiles, a tile of wall
+# around) in biome `biome`, at or below row `from_y`: a room dug there is
+# sealed, so a keeper in it stays put.
 func _find_biome_row(biome: int, from_y: int) -> Vector2i:
 	var td = Level.map.tileData
 	for y in range(from_y, 400):
-		var c := Vector2i(-6, y)
-		if td.get_biomev(c) == biome and td.get_biomev(c + Vector2i(0, 2)) == biome:
-			return c + Vector2i(0, 1)
+		for x in [-8, 8, -12, 12, -4, 4, -16, 16]:
+			var ok := true
+			for dy in range(-3, 4):
+				for dx in range(-5, 6):
+					var c := Vector2i(x + dx, y + dy)
+					if td.get_biomev(c) != biome or Level.map.is_tile_empty(c) or td.get_hardnessv(c) >= Data.HARDNESS_INDESTRUCTIBLE or lava.magma.has(c) or lava.mass.has(c) or gas.rock.has(c) or gas.mass.has(c):
+						ok = false
+						break
+				if not ok:
+					break
+			if ok:
+				return Vector2i(x, y)
 	return Vector2i(-6, from_y)

@@ -76,12 +76,13 @@ func _first() -> Dictionary:
 	return views.values()[0] if not views.is_empty() else {}
 
 
-func _make_view(keeper) -> Dictionary:
-	var layer := CanvasLayer.new()
-	layer.layer = 3
-	add_child(layer)
+# One local keeper: a CanvasLayer over the screen, as before. Several (split
+# views): a rect in the world over that keeper's camera view, drawn in that
+# keeper's view only (its canvas bit). A CanvasLayer can't be pointed at a
+# split view: one with custom_viewport set errors when the level is freed.
+func _make_view(keeper, split: bool) -> Dictionary:
+	var layer: CanvasLayer = null
 	var rect := ColorRect.new()
-	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sh := Shader.new()
 	sh.code = VIGNETTE
@@ -91,30 +92,52 @@ func _make_view(keeper) -> Dictionary:
 	mat.set_shader_parameter("pulse", 0.0)
 	rect.material = mat
 	rect.visible = false
-	layer.add_child(rect)
-	return {"layer": layer, "rect": rect, "mat": mat, "share": 0.0, "vignette": 0.0, "vp": null}
+	if split:
+		rect.z_as_relative = false
+		rect.z_index = 200
+		add_child(rect)
+		rect.visibility_layer = 0
+		Level.viewports.showForLocalKeeper(keeper, rect)
+	else:
+		layer = CanvasLayer.new()
+		layer.layer = 3
+		add_child(layer)
+		rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		layer.add_child(rect)
+	return {"layer": layer, "rect": rect, "mat": mat, "share": 0.0, "vignette": 0.0, "split": split}
+
+
+func _free_view(v: Dictionary) -> void:
+	if v["layer"] != null and is_instance_valid(v["layer"]):
+		v["layer"].queue_free()
+	elif is_instance_valid(v["rect"]):
+		v["rect"].queue_free()
 
 
 # Each local keeper's vignette sits in that keeper's split view.
 func _sync_views() -> Array:
 	var ks: Array = Story.local_keepers()
+	var split: bool = ks.size() > 1 and Level.viewports != null
 	var ids: Dictionary = {}
 	for k in ks:
 		ids[k.playerId] = true
+		if views.has(k.playerId) and views[k.playerId]["split"] != split:
+			_free_view(views[k.playerId])
+			views.erase(k.playerId)
 		if not views.has(k.playerId):
-			views[k.playerId] = _make_view(k)
-		var v: Dictionary = views[k.playerId]
-		var vp = null
-		if ks.size() > 1 and Level.viewports != null:
-			var vc = Level.viewports.getViewportContainer(k)
-			if vc != null and is_instance_valid(vc):
-				vp = vc.viewport
-		if v["vp"] != vp:
-			v["vp"] = vp
-			v["layer"].custom_viewport = vp
+			views[k.playerId] = _make_view(k, split)
+		if split:
+			# Over the keeper's camera view, a margin past its edges.
+			var cam = Level.viewports.getPlayerCam(k.playerId)
+			if cam != null and is_instance_valid(cam):
+				var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
+				var r := Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(8.0)
+				var rect: ColorRect = views[k.playerId]["rect"]
+				rect.position = to_local(r.position)
+				rect.size = r.size
 	for pid in views.keys():
 		if not ids.has(pid):
-			views[pid]["layer"].queue_free()
+			_free_view(views[pid])
 			views.erase(pid)
 	return ks
 

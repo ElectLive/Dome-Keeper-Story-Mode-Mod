@@ -113,6 +113,9 @@ var legacy_cooling := false
 var freeze_flow := false
 # Dev only: outline the keeper's lava-contact box.
 var debug_boxes := false
+# Dev only (#231): cull to the first split view only, as before #231 (lava
+# popped in late on player 2's view); t231_split_lava -Extra "--oldcull".
+var single_view_cull := false
 var pools: Array = []              # Array of Array[Vector2i]: open pools filled at run start
 var pools_skipped := 0             # pools left empty because something opened their wall
 # Sleeping: only cells in _awake run the flow math. A cell wakes when its mass or
@@ -969,7 +972,7 @@ func _visible_cells_now() -> Array:
 	# camera is far away (it was culled to player 1's view only, so lava
 	# popped in late on player 2's screen).
 	var boxes: Array = []
-	for r: Rect2 in (Story.view_rects() if Keepers.local.getCount() > 1 else []):
+	for r: Rect2 in (Story.view_rects() if Keepers.local.getCount() > 1 and not single_view_cull else []):
 		boxes.append([map.getTileCoord(r.position) - Vector2i(2, 2), map.getTileCoord(r.end) + Vector2i(2, 2)])
 	if boxes.is_empty():
 		var vp := get_viewport()

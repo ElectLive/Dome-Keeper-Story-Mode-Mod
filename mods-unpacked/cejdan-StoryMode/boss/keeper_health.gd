@@ -54,26 +54,36 @@ func _ready() -> void:
 
 
 # The red wash for `keeper`'s view: the one above with one local keeper; with
-# several, each keeper's own, on its split view's viewport.
+# several, each keeper's own: a rect in the world over that keeper's camera,
+# drawn in its split view only (a CanvasLayer can't be pointed at a split view
+# safely: custom_viewport errors when the level is freed).
 func _flash_for(keeper) -> ColorRect:
 	if Keepers.local.getCount() <= 1 or Level.viewports == null:
 		return _flash
 	if _flashes.has(keeper.playerId) and is_instance_valid(_flashes[keeper.playerId]):
 		return _flashes[keeper.playerId]
-	var vc = Level.viewports.getViewportContainer(keeper)
-	if vc == null or not is_instance_valid(vc):
-		return _flash
-	var layer := CanvasLayer.new()
-	layer.layer = 5
-	layer.custom_viewport = vc.viewport
-	add_child(layer)
 	var f := ColorRect.new()
 	f.color = Color(1.0, 0.1, 0.12, 0.0)
 	f.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	f.set_anchors_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(f)
+	f.z_as_relative = false
+	f.z_index = 200
+	add_child(f)
+	f.visibility_layer = 0
+	Level.viewports.showForLocalKeeper(keeper, f)
 	_flashes[keeper.playerId] = f
 	return f
+
+
+func _place_flashes() -> void:
+	for pid in _flashes:
+		var f = _flashes[pid]
+		var cam = Level.viewports.getPlayerCam(pid) if Level.viewports != null else null
+		if not is_instance_valid(f) or cam == null or not is_instance_valid(cam):
+			continue
+		var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
+		var r := Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(8.0)
+		f.position = to_local(r.position)
+		f.size = r.size
 
 
 func hearts() -> int:
@@ -178,6 +188,7 @@ func _physics_process(delta: float) -> void:
 	for f in _flashes.values():
 		if is_instance_valid(f):
 			f.color.a = maxf(0.0, f.color.a - delta * 0.9)
+	_place_flashes()
 	for keeper in Keepers.getAll():
 		if keeper == null or not is_instance_valid(keeper):
 			continue

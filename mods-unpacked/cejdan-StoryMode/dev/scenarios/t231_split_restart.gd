@@ -6,12 +6,14 @@ const TIMEOUT := 360
 
 
 func boot() -> Dictionary:
-	return {"loadout": true, "splitscreen": true}
+	return {"loadout": true, "splitscreen": true, "welcome": welcome()}
 
 
 func run(h) -> void:
 	if not await start_split(h):
 		return
+	if welcome():
+		h.check("welcome log in the first run", await h.read_beat("welcome_run1", 10.0) != "")
 	await h.hold("ui_down", 2.0)
 	await h.pad_stick(1, Vector2(0.4, 1), 2.0)
 	await h.shot("before")

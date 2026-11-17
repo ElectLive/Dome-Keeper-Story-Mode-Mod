@@ -6,13 +6,21 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 
+# `-Extra "--welcome"`: the keeper's welcome log opens as in a real run (it
+# opens again on the restarted run), and is read each time.
+static func welcome() -> bool:
+	return "--welcome" in OS.get_cmdline_user_args()
+
+
 func boot() -> Dictionary:
-	return {}
+	return {"welcome": welcome()}
 
 
 func run(h) -> void:
 	h.disable_waves()
 	await h.wait(2.0)
+	if welcome():
+		h.check("welcome log in the first run", await h.read_beat("welcome_run1", 10.0) != "")
 	await h.hold("ui_down", 2.0)
 	await h.shot("before")
 	await restart(h)
@@ -36,9 +44,16 @@ func restart(h) -> void:
 	h.check("new run started", started, {"stage": str(Level.stage), "seed": Level.levelSeed})
 	h.mute_beats()
 	h.disable_waves()
+	if welcome():
+		await h.wait(0.5)
+		await h.shot("welcome_after_restart")
+		h.check("welcome log after the restart", await h.read_beat("welcome_run2", 10.0) != "")
 	await h.wait(3.0)
 	h.check("new map", Level.levelSeed != seed0, [seed0, Level.levelSeed])
 	h.check("story mode", Story.is_story())
+	var nk: int = Keepers.getAllOfTeam("team1").size()
+	h.check("second laser only with a second keeper", GameWorld.boughtUpgrades.has("team1.domesecondweapon") == (nk > 1) and Level.getDome("team1").stations[1].getControlledWeapons().size() == (1 if nk > 1 else 0),
+		{"keepers": nk, "station 2 lasers": Level.getDome("team1").stations[1].getControlledWeapons().size()})
 	var ks: Array = h.local_keepers()
 	h.note("keepers after", ks.map(func(k): return [k.playerId, k.deviceId, Level.map.getTileCoord(k.global_position)]))
 	if Level.viewports != null:
