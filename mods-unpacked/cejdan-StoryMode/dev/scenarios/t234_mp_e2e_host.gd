@@ -62,6 +62,16 @@ static func shop_facts() -> Dictionary:
 	return f
 
 
+# Map children with a Synchronizer child, by name and script (an RPC path
+# names them, so host and client must agree).
+static func synced_map_nodes() -> Array:
+	var out: Array = []
+	for c in Level.map.get_children():
+		if c.has_node("Synchronizer"):
+			out.append([str(c.name), str(c.get_script().resource_path) if c.get_script() else c.get_class(), Level.map.getTileCoord(c.global_position) if c is Node2D else null])
+	return out
+
+
 static func station(dome, i: int):
 	return dome.stations[i] if dome.stations.size() > i else null
 
@@ -377,6 +387,7 @@ func run(h) -> void:
 		var broke: bool = await h.until(func(): return td.get_resourcev(gate) != Metal.GATE_ID, 40.0)
 		h.check("the client's Suit Blaster breaks the gate tile on the host", broke, td.get_resourcev(gate))
 		await h.wait(1.0)
+		h.note("map nodes with a Synchronizer (host)", synced_map_nodes())
 		share("gate_broken", broke)
 	GameWorld.serverAddUpgrade("drill", "team1")
 	await h.wait(3.0)

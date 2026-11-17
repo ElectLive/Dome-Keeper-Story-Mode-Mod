@@ -65,9 +65,10 @@ func _fly_home(h, what: String) -> void:
 	await shared(h, "fly_" + what, 40.0)
 	await h.wait(0.5)
 	h.note("%s: carried under the dome" % what, Keepers.first().carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
-	for i in 5:
+	# Up through the cellar (the Teleporter's) into the dome's main room.
+	for i in 6:
 		await h.hold("ui_up", 1.5)
-		if Keepers.first().isInsideDome:
+		if Keepers.first().isInsideDome and Level.map.getTileCoord(Keepers.first().global_position).y <= -5:
 			break
 	await h.wait(1.0)
 	h.check("%s: the client's keeper flew into the dome" % what, Keepers.first().isInsideDome, Level.map.getTileCoord(Keepers.first().global_position))
@@ -169,9 +170,12 @@ func run(h) -> void:
 	var hf = await shared(h, "shop_go", 60.0)
 	await h.wait(1.0)
 	h.check("the host's drill upgrade as the host saw it", _same(Host.shop_facts(), hf), [Host.shop_facts(), hf])
-	for id in ["player2.drill1", "player2.storyheatshield1", "player2.storyheatshield2", "player2.storyheatshield3", "player2.storyheatshield4", "player2.storysuitblaster", "team1.domehealthmeter", "team1.domesandrepair", "team1.domesecondweapon"]:
+	for id in ["player2.drill1", "player2.storyheatshield1", "player2.storyheatshield2", "player2.storyheatshield3", "player2.storyheatshield4", "player2.storysuitblaster", "team1.domehealthmeter", "team1.domesecondweapon"]:
 		await h.wait(1.0)
 		await _buy(h, id, me)
+	# Sand Repair, Second Weapon's predecessor, counts while it can be bought;
+	# at full health vanilla refuses it (nothing to repair).
+	h.check("Sand Repair is in the shop on the way to Second Weapon", GameWorld.upgrades.has("team1.domesandrepair"))
 	var f = await shared(h, "shop_facts", 60.0)
 	await h.wait(1.0)
 	h.note("shop facts on the client", Host.shop_facts())
@@ -243,6 +247,7 @@ func run(h) -> void:
 		var broke: bool = await h.until(func(): return td.get_resourcev(gate) != Metal.GATE_ID, 15.0)
 		h.check("the client's Suit Blaster breaks the gate tile here", broke, td.get_resourcev(gate))
 		await shared(h, "gate_broken", 30.0)
+		h.note("map nodes with a Synchronizer (client)", Host.synced_map_nodes())
 		await h.shot("client_gate_broken")
 	await shared(h, "metalbit_go", 60.0)
 	await _buy(h, "team1." + Metal.DRILL_UPGRADE, me)
