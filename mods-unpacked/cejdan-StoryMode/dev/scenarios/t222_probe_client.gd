@@ -76,10 +76,10 @@ func run(h) -> void:
 	h.note("client closed its beat box", h.beat_box() == null)
 	# A plain shop buy.
 	var m0: int = int(Data.ofOr("team1.inventory.money", 0))
-	GameWorld.buyUpgrade("team1.storyheatshield1", "team1", me)
+	GameWorld.buyUpgrade(me + ".storyheatshield1", "team1", me)   # its own entry (#265)
 	await h.wait(2.0)
 	var m1: int = int(Data.ofOr("team1.inventory.money", 0))
-	h.check("client buys Heat Shielding I", GameWorld.boughtUpgrades.has("team1.storyheatshield1") and m0 - m1 == _cost("team1.storyheatshield1"), {"paid": m0 - m1, "price": _cost("team1.storyheatshield1")})
+	h.check("client buys Heat Shielding I", GameWorld.boughtUpgrades.has(me + ".storyheatshield1") and m0 - m1 == _cost(me + ".storyheatshield1"), {"paid": m0 - m1, "price": _cost(me + ".storyheatshield1")})
 	# The gadget shop (#236): the host opens the choice, draws the offers and
 	# does the paying; this client shows the popup and sends its choices.
 	var entries: Array = GadgetShop.entries("team1")

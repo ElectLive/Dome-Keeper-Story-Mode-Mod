@@ -14,7 +14,8 @@ func boot() -> Dictionary:
 func run(h) -> void:
 	h.disable_waves()
 	h.note("loadout", {"primary gadget": Level.loadout.domes[0].primaryGadgetId if Level.loadout.domes.size() > 0 else "?"})
-	var entry: Dictionary = GameWorld.upgrades.get("team1.storysuitblaster", {})
+	# The keeper's own entry, in its keeper track (#265).
+	var entry: Dictionary = GameWorld.upgrades.get(h.keeper().playerId + ".storysuitblaster", {})
 	h.check("the shop has the Suit Blaster entry", not entry.is_empty(), GameWorld.upgrades.keys().filter(func(k): return "story" in k))
 	h.check("it costs $200 and nothing else", entry.get("cost", {}) == {"money": 200}, entry.get("cost", {}))
 	h.check("the run starts without the Suit Blaster", not GameWorld.boughtUpgrades.has("player1.suitblaster"))

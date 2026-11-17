@@ -9,6 +9,7 @@ const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd"
 const Runes = preload("res://mods-unpacked/cejdan-StoryMode/pleas/runes.gd")
 const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd")
 const SalePops = preload("res://mods-unpacked/cejdan-StoryMode/hud/sale_pops.gd")
+const KeeperUpgrades = preload("res://mods-unpacked/cejdan-StoryMode/gamemode/keeper_upgrades.gd")
 
 const MONEY := "team1.inventory.money"
 
@@ -37,6 +38,11 @@ func init() -> void:
 	# upgradeAdded, so Retire Rich or the Suit Blaster bought by a client count.
 	if StoryBeats._online() and multiplayer.is_server():
 		GameWorld.upgradeAdded.connect(_on_upgrade_bought.bind(""))
+	# Per-keeper shop entries (#265): a loaded save gets its keepers' limits, and
+	# one from before #265 has the team's Heat Shielding tier moved to every
+	# keeper, once vanilla has restored the upgrades and Data.
+	if SaveGame.currentLoadingSavegame and multiplayer.is_server():
+		GameWorld.savegame_loaded.connect(KeeperUpgrades.after_load, CONNECT_ONE_SHOT)
 	ModLoaderLog.info("Story Mode run started (seed %d)" % Level.levelSeed, Story.LOG)
 
 
@@ -96,7 +102,11 @@ func _welcome() -> void:
 
 
 # The shop's Suit Blaster entry is a stand-in: buying it grants the real gadget
-# to the team's keepers the way a gadget chest does (research on #18).
+# the way a gadget chest does (research on #18). Since #265 the entry is per
+# keeper, in each player's own keeper track (player2.storysuitblaster), and
+# grants player2.suitblaster to that keeper only: vanilla gives a keepersuit
+# gadget picked in a run to the keeper who picked it
+# (LevelStage.addGadgetUpgrade, "keeper exclusive gadget").
 const SUITBLASTER_ENTRY := "storysuitblaster"
 # Retire Rich (#31, #54): the only way to win a Story Mode run until the boss.
 const RETIRE_ENTRY := "storyretirerich"
@@ -110,13 +120,13 @@ func _on_upgrade_bought(id: String, teamId: String, _playerId: String) -> void:
 	if id == teamId + "." + RETIRE_ENTRY:
 		_win()
 		return
-	if id != teamId + "." + SUITBLASTER_ENTRY:
+	if not id.begins_with("player") or not id.ends_with("." + SUITBLASTER_ENTRY):
 		return
-	for keeper in Keepers.getAllOfTeam(teamId):
-		var gid: String = keeper.playerId + ".suitblaster"
-		if not GameWorld.boughtUpgrades.has(gid):
-			GameWorld.serverAddUpgrade(gid, teamId)
-			ModLoaderLog.info("Suit Blaster granted to " + keeper.playerId, Story.LOG)
+	var pid: String = id.substr(0, id.find("."))
+	var gid: String = pid + ".suitblaster"
+	if not GameWorld.boughtUpgrades.has(gid):
+		GameWorld.serverAddUpgrade(gid, teamId)
+		ModLoaderLog.info("Suit Blaster granted to " + pid, Story.LOG)
 
 
 func propertyChanged(property: String, oldValue, newValue) -> void:

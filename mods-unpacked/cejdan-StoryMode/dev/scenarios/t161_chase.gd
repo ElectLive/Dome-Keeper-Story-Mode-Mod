@@ -22,7 +22,7 @@ func run(h) -> void:
 	var field = Level.map.get_node("StoryLavaField")
 	# The lava ocean would cook this keeper (no Heat Shielding); the heat test
 	# below is separate.
-	Data.apply("team1.suit.heatshield", 4)
+	load("res://mods-unpacked/cejdan-StoryMode/gamemode/keeper_upgrades.gd").give_heat_shield(h.keeper().playerId)
 	var area: Array = []
 	for y in range(ch.position.y - 3, ch.end.y + 2):
 		for x in range(ch.position.x - 2, ch.end.x + 2):

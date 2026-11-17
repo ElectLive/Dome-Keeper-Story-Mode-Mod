@@ -8,11 +8,23 @@ storymode:
 storyWin:
   type: gamemode
 
+# Per-keeper entries (#265): vanilla's keeper tree. They hang off the keeper
+# root (keeper1, the only Story Mode keeper), which vanilla adds per player, so
+# each player gets its own copy in its own keeper track (player2.storyheatshield1,
+# property player2.suit.heatshield), the way drill1 is player2.drill1. The
+# storykeeper limit is per player too (mod_main.gd prepareGameMode sets
+# <playerId>.storykeeper in Story Mode runs only, as vanilla sets
+# <playerId>.mining), so vanilla runs never show them.
+#
+# The Suit Blaster entry grants the real gadget to the keeper who bought it
+# (gamemode/Storymode.gd), as vanilla gives a keepersuit gadget picked in a
+# run to the picker only.
 storySuitblaster:
+  limit: [storykeeper]
   cost: money=200
   shadowing: suitblaster
   shadowing-desc: storysuitblaster
-  predecessors: [storymode]
+  predecessors: [keeper1]
 
 # New Gadget I-IV (#132): each opens vanilla's gadget choice; paid on pick
 # (gamemode/gadget_shop.gd). Prices are starting values for the user to tune.
@@ -37,8 +49,9 @@ storyRetireRich:
   predecessors: [storyWin]
 
 storyHeatShield1:
+  limit: [storykeeper]
   cost: money=0
-  predecessors: [storymode]
+  predecessors: [keeper1]
   propertyChanges:
     - suit.heatshield = 1
 

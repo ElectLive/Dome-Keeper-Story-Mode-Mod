@@ -110,29 +110,49 @@ const STEAM_SECONDS := 0.7
 # 100% heat and tier III (9 s) doesn't.
 const HEAT_SHIELD_LAVA_MULT := [1.0, 0.6, 0.35, 0.2, 0.06]
 const HEAT_SHIELD_PRICES := [200, 1000, 4000, 25000]
-# The keeper's tier lives in Data under <team>.suit.heatshield (set by the upgrades).
+# Each keeper has its own tier (#265), the way vanilla's keeper-tree upgrades
+# are per player: Data <playerId>.suit.heatshield, set by that player's
+# storyHeatShield upgrades (player2.storyheatshield1 sets player2.suit.heatshield).
+# Before #265 it was the team's (team1.suit.heatshield); a save from then gives
+# that tier to every keeper on load (gamemode/keeper_upgrades.gd).
 const HEAT_SHIELD_KEY := "suit.heatshield"
 
 
-static func shield_tier(teamId: String = "team1") -> int:
-	return clampi(int(Data.ofOr(teamId + "." + HEAT_SHIELD_KEY, 0)), 0, HEAT_SHIELD_LAVA_MULT.size() - 1)
+# `who` is a keeper, a playerId ("player2"), or null for this instance's first
+# keeper ("player1" while it has none).
+static func shield_tier(who = null) -> int:
+	return clampi(int(Data.ofOr(shield_key(who), 0)), 0, HEAT_SHIELD_LAVA_MULT.size() - 1)
 
 
-static func lava_heat_mult(teamId: String = "team1") -> float:
-	return float(HEAT_SHIELD_LAVA_MULT[shield_tier(teamId)])
+# The Data key holding `who`'s tier.
+static func shield_key(who = null) -> String:
+	return player_id(who) + "." + HEAT_SHIELD_KEY
 
 
-# The heat level of biome index `biome` for this team's suit (see above);
+static func player_id(who = null) -> String:
+	if who is String and who.begins_with("player"):
+		return who
+	if who is Object and is_instance_valid(who) and "playerId" in who:
+		return str(who.playerId)
+	var k = Keepers.local.keepers[0] if Keepers.local != null and not Keepers.local.keepers.is_empty() else null
+	return str(k.playerId) if k != null and is_instance_valid(k) else "player1"
+
+
+static func lava_heat_mult(who = null) -> float:
+	return float(HEAT_SHIELD_LAVA_MULT[shield_tier(who)])
+
+
+# The heat level of biome index `biome` for `who`'s suit (see above);
 # below 0 is cool.
-static func passive_level(biome: int, teamId: String = "team1") -> int:
-	return mini(biome, PASSIVE_HEAT_LAST_BIOME) - PASSIVE_HEAT_START_BIOME - shield_tier(teamId)
+static func passive_level(biome: int, who = null) -> int:
+	return mini(biome, PASSIVE_HEAT_LAST_BIOME) - PASSIVE_HEAT_START_BIOME - shield_tier(who)
 
 
-# Passive heat per second in biome index `biome` for this team's suit.
-static func passive_rate(biome: int, teamId: String = "team1") -> float:
+# Passive heat per second in biome index `biome` for `who`'s suit.
+static func passive_rate(biome: int, who = null) -> float:
 	if biome < PASSIVE_HEAT_START_BIOME:
 		return 0.0
-	var level: int = passive_level(biome, teamId)
+	var level: int = passive_level(biome, who)
 	if level < 0:
 		return 0.0
 	return float(PASSIVE_HEAT_BY_LEVEL[mini(level, PASSIVE_HEAT_BY_LEVEL.size() - 1)])
