@@ -26,6 +26,13 @@ func run(h) -> void:
 	check_facts(h, mine, live, "loaded run")
 	h.check("loaded run: the beats played are the host's", str(Data.ofOr("team1.story.beatsplayed", "")) == live["saved"]["beatsplayed"])
 	h.check("loaded run: the map facts reached this client", mine["map meta"] == true)
+	# #265: this keeper's own shop entries came with the loaded run, bought up
+	# to its tier (the tree each player sees is built from them).
+	var pid: String = h.keeper().playerId
+	var tier: int = int(Data.ofOr(pid + ".suit.heatshield", 0))
+	var entries: Array = range(1, 5).map(func(n): return [GameWorld.upgrades.has("%s.storyheatshield%d" % [pid, n]), GameWorld.boughtUpgrades.has("%s.storyheatshield%d" % [pid, n])])
+	h.check("loaded run: this keeper's Heat Shielding entries are here, bought up to its tier %d" % tier,
+		range(4).all(func(i): return entries[i][0] and entries[i][1] == (i < tier)) and GameWorld.isUpgradeLimitAvailable(pid + ".storykeeper"), entries)
 	await look_at_rooms(h, rooms)
 	await h.wait(1.0)
 	await h.shot("client_loaded")
