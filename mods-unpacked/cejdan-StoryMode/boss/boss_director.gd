@@ -72,7 +72,7 @@ var music: Node = null
 var arena: Rect2 = Rect2()
 var _booted: bool = false
 var _seal_flash: float = 0.0
-var _cam_blend: float = 0.0
+var _cam_blends: Dictionary = {}   # playerId -> 0..1, each local keeper's camera hold (#231)
 var _chase_left_dome: bool = false
 var dev_path: Array = []      # the shaft `--boss=chase` drilled (tile cells, bottom to top)
 var _held: Dictionary = {}    # this instance's keepers the chamber has sealed in (playerId -> true)
@@ -102,11 +102,12 @@ static func jams_recall() -> bool:
 	return instance() != null and active()
 
 
-# This instance's keeper overheated during the boss sequence: a heart, not a
-# recall. The hearts are the host's: a client asks it.
-static func overheated() -> void:
+# A keeper of this instance overheated during the boss sequence: a heart, not a
+# recall. The hearts are the host's: a client asks it. `keeper` defaults to the
+# first local one (splitscreen passes the one that overheated, #231).
+static func overheated(keeper = null) -> void:
 	var n = instance()
-	var k = me()
+	var k = keeper if keeper != null and is_instance_valid(keeper) else me()
 	if n == null or k == null:
 		return
 	if StoryNet.is_client():
@@ -231,19 +232,22 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	# The camera holds the whole chamber during the fight, for a keeper in it.
-	var keeper = me()
-	if keeper == null or not is_instance_valid(keeper) or Level.viewports == null or layer == null or not is_instance_valid(layer):
+	# The camera holds the whole chamber during the fight, for a keeper in it
+	# (each local keeper's own camera, #231).
+	if Level.viewports == null or layer == null or not is_instance_valid(layer):
 		return
-	var cam = Level.viewports.getPlayerCam(keeper.playerId)
-	if cam == null or not ("targetOffset" in cam):
-		return
-	var want: float = 1.0 if current() == "fight" and _held.has(keeper.playerId) else 0.0
-	if _cam_blend == want and want == 0.0:
-		return
-	_cam_blend = move_toward(_cam_blend, want, delta * 1.5)
-	var centre: Vector2 = layer.to_global(arena.get_center() + Vector2(0, -10))
-	cam.targetOffset = (centre - keeper.global_position) * _cam_blend
+	for keeper in Story.local_keepers():
+		var cam = Level.viewports.getPlayerCam(keeper.playerId)
+		if cam == null or not ("targetOffset" in cam):
+			continue
+		var want: float = 1.0 if current() == "fight" and _held.has(keeper.playerId) else 0.0
+		var blend: float = _cam_blends.get(keeper.playerId, 0.0)
+		if blend == want and want == 0.0:
+			continue
+		blend = move_toward(blend, want, delta * 1.5)
+		_cam_blends[keeper.playerId] = blend
+		var centre: Vector2 = layer.to_global(arena.get_center() + Vector2(0, -10))
+		cam.targetOffset = (centre - keeper.global_position) * blend
 
 
 # A save made mid-fight starts the fight over; the keeper's hearts refill.
@@ -286,8 +290,7 @@ func _start_fight() -> void:
 # The chamber seals and Velle roars, for a keeper who is there.
 func _fight_opens() -> void:
 	_seal_flash = 1.0
-	var k = me()
-	if k == null or not arena.grow(220.0).has_point(layer.to_local(k.global_position)):
+	if not Story.local_keepers().any(func(k): return arena.grow(220.0).has_point(layer.to_local(k.global_position))):
 		return
 	Sfx.play("seal", -4.0, 0.7)
 	Sfx.play("roar", -3.0, 0.7)

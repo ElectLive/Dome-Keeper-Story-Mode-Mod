@@ -68,7 +68,15 @@ var shown: Dictionary = {}         # Vector2i -> float, smoothed mass for drawin
 var magma: Dictionary = {}         # Vector2i -> true, magma rock still solid
 var sources: Dictionary = {}       # Vector2i -> float, lava a breached cell still holds
 var melt_timers: Dictionary = {}   # Vector2i -> seconds of lava contact
-var heat := 0.0
+# Suit heat, per local keeper (#231): playerId -> heat. Each instance keeps its
+# own keepers' (one in single player and online, one per device in
+# splitscreen). `heat` is the first local keeper's, as before.
+var heats: Dictionary = {}
+var heat: float:
+	get:
+		return heats.get(_pid0(), 0.0)
+	set(v):
+		heats[_pid0()] = v
 var recalls := 0
 var last_penalty := 0
 var hardened := 0                 # lava cells water turned to rock this run
@@ -81,8 +89,19 @@ var _stream_memo: Dictionary = {}  # stream cell -> _stream_params(), for one ph
 var _housekeep := 0
 var _view_c0 := Vector2i.ZERO      # the cells on screen at the last draw (steam only rises there)
 var _view_c1 := Vector2i.ZERO
+var _view_boxes: Array = []      # [c0, c1] per split view at the last draw (#231)
 var breaches := 0
-var recall_pos = null
+# Where each local keeper's recall sends it: where it stood when the run's
+# input started (playerId -> Vector2). `recall_pos` is the first keeper's.
+var recall_spots: Dictionary = {}
+var recall_pos:
+	get:
+		return recall_spots.get(_pid0(), null)
+	set(v):
+		if v == null:
+			recall_spots.erase(_pid0())
+		else:
+			recall_spots[_pid0()] = v
 var _acc := 0.0
 var _time := 0.0
 var _glow: Node2D
@@ -543,7 +562,7 @@ func serialize() -> Dictionary:
 	for c in magma:
 		rock.append([c.x, c.y])
 	StoryNet.save_blob(SAVE_KEY, JSON.stringify({"seed": Level.levelSeed, "mass": cells, "sources": src, "magma": rock,
-		"heat": heat, "breaches": breaches, "recalls": recalls, "ocean_cells": ocean_cells, "boss_chamber_reached": boss_chamber_reached}))
+		"heat": heat, "heats": heats, "breaches": breaches, "recalls": recalls, "ocean_cells": ocean_cells, "boss_chamber_reached": boss_chamber_reached}))
 	return {"meta.priority": 9000, "meta.kind": "storylava"}
 
 
@@ -564,7 +583,13 @@ func _restore(blob: String) -> bool:
 		magma[Vector2i(int(e[0]), int(e[1]))] = true
 	shown = mass.duplicate()
 	wake_all()
-	heat = float(d.get("heat", 0.0))
+	heats.clear()
+	var hs = d.get("heats", {})
+	if hs is Dictionary and not hs.is_empty():
+		for pid in hs:
+			heats[str(pid)] = float(hs[pid])
+	else:
+		heat = float(d.get("heat", 0.0))
 	breaches = int(d.get("breaches", 0))
 	recalls = int(d.get("recalls", 0))
 	ocean_cells = int(d.get("ocean_cells", 0))
@@ -682,7 +707,31 @@ func lava_at(world_pos: Vector2) -> float:
 	return mass.get(map.getTileCoord(world_pos), 0.0)
 
 
-var passive_rate := 0.0            # passive heat per second right now (after Heat Shielding)
+# Passive heat per second right now (after Heat Shielding), per local keeper
+# (#231); `passive_rate` is the first keeper's.
+var passive_rates: Dictionary = {}
+var passive_rate: float:
+	get:
+		return passive_rates.get(_pid0(), 0.0)
+
+
+# The first local keeper's playerId: the one the single-keeper fields
+# (heat, recall_pos, passive_rate) stand for. "player1" while there is none.
+func _pid0() -> String:
+	var k = Story.local_keeper()
+	return k.playerId if k != null and is_instance_valid(k) else "player1"
+
+
+func heat_of(keeper) -> float:
+	return heats.get(keeper.playerId, 0.0)
+
+
+func set_heat_of(keeper, v: float) -> void:
+	heats[keeper.playerId] = v
+
+
+func passive_rate_of(keeper) -> float:
+	return passive_rates.get(keeper.playerId, 0.0)
 
 
 # Passive heat per second at a tile for this team's suit (#187): by biome, the
@@ -695,36 +744,45 @@ func passive_rate_at(tile: Vector2i, teamId: String = "team1") -> float:
 
 
 func _update_heat(delta: float) -> void:
-	var keeper = Story.local_keeper()
-	if keeper == null or not is_instance_valid(keeper) or keeper.killed:
+	# Every keeper this instance plays heats on its own (#231).
+	for keeper in Story.local_keepers():
+		_update_keeper_heat(keeper, delta)
+
+
+func _update_keeper_heat(keeper, delta: float) -> void:
+	if keeper.killed:
 		return
-	if recall_pos == null and Level.stage is LevelStage and Level.stage.keeperInputStarted:
-		recall_pos = keeper.global_position
+	var pid: String = keeper.playerId
+	if not recall_spots.has(pid) and Level.stage is LevelStage and Level.stage.keeperInputStarted:
+		recall_spots[pid] = keeper.global_position
 	# Passive heat from depth (#46), out of the dome, scaled by Heat Shielding.
-	passive_rate = 0.0
+	var rate := 0.0
 	# The boss sequence keeps the depth's heat out (#160; #187: the chase and
 	# finale play as they did when only Heat Shielding IV reached them).
 	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 	var sealed: bool = str(Data.ofOr("team1.story.boss", "")) == "fight" or BossDirector.jams_recall()
 	if not keeper.isInsideDome and not keeper.disabled and not sealed:
-		passive_rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper.teamId)
+		rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper.teamId)
+	passive_rates[pid] = rate
+	var h: float = heats.get(pid, 0.0)
 	if keeper_in_lava(keeper) and not keeper.disabled:
 		# Heat Shielding (#44) slows lava heat but never stops it; deep enough,
 		# the depth itself is hotter than the lava (#187).
-		heat = min(HEAT_MAX, heat + maxf(HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId), passive_rate) * delta)
+		h = min(HEAT_MAX, h + maxf(HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId), rate) * delta)
 	elif keeper.isInsideDome:
-		heat = max(0.0, heat - COOL_DOME_PER_SECOND * delta)
-	elif passive_rate > 0.0:
+		h = max(0.0, h - COOL_DOME_PER_SECOND * delta)
+	elif rate > 0.0:
 		# Deep and out of lava: heat only rises.
-		heat = min(HEAT_MAX, heat + passive_rate * delta)
+		h = min(HEAT_MAX, h + rate * delta)
 	else:
-		heat = max(0.0, heat - COOL_MINE_PER_SECOND * delta)
-	if heat >= HEAT_MAX:
+		h = max(0.0, h - COOL_MINE_PER_SECOND * delta)
+	heats[pid] = h
+	if h >= HEAT_MAX:
 		# Velle jams the suit's recall through the boss sequence (#160):
 		# overheating costs a heart there, not a trip home.
 		if BossDirector.jams_recall():
-			heat = HEAT_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
-			BossDirector.overheated()
+			heats[pid] = HEAT_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
+			BossDirector.overheated(keeper)
 		else:
 			_recall(keeper)
 	if not boss_chamber_reached and _chamber.size != Vector2i.ZERO:
@@ -739,17 +797,19 @@ func _update_heat(delta: float) -> void:
 					load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
-func _recall(keeper) -> void:
+# `teleport` false: a death where the keeper stands (gassed in the dome, #213).
+func _recall(keeper, teleport: bool = true) -> void:
 	# Placeholder for "the keeper dies in the mine": the suit dumps its cargo where
 	# it stands and yanks the keeper back to the dome. This runs on the keeper's
 	# own instance (#227); the team's side (team_death) on the host.
-	heat = 0.0
+	heats[keeper.playerId] = 0.0
 	for c in keeper.carriedCarryables.duplicate():
 		if is_instance_valid(c):
 			keeper.dropCarry(c)
 	InputSystem.shake(10.0, 0.4, 24.0)
-	if recall_pos != null:
-		keeper.teleport(recall_pos)
+	var spot = recall_spots.get(keeper.playerId, null)
+	if teleport and spot != null:
+		keeper.teleport(spot)
 	if net_client:
 		# The money is the host's to take; the loss shows here right away.
 		if Story.is_story():
@@ -904,27 +964,41 @@ func _visible_cells() -> Array:
 
 
 func _visible_cells_now() -> Array:
-	var vp := get_viewport()
-	if vp == null:
-		return shown.keys()
-	var inv: Transform2D = get_global_transform_with_canvas().affine_inverse()
-	var vr: Rect2 = vp.get_visible_rect()
-	var a: Vector2 = inv * vr.position
-	var b: Vector2 = inv * vr.end
-	var lo: Vector2 = Vector2(minf(a.x, b.x), minf(a.y, b.y))
-	var hi: Vector2 = Vector2(maxf(a.x, b.x), maxf(a.y, b.y))
-	var c0: Vector2i = map.getTileCoord(to_global(lo)) - Vector2i(2, 2)
-	var c1: Vector2i = map.getTileCoord(to_global(hi)) + Vector2i(2, 2)
-	_view_c0 = c0
-	_view_c1 = c1
-	if (c1.x - c0.x) * (c1.y - c0.y) > shown.size():
+	# Every split view's cells (#231): this node draws once for all the views,
+	# so a cell on player 2's screen must be in the list even when player 1's
+	# camera is far away (it was culled to player 1's view only, so lava
+	# popped in late on player 2's screen).
+	var boxes: Array = []
+	for r: Rect2 in (Story.view_rects() if Keepers.local.getCount() > 1 else []):
+		boxes.append([map.getTileCoord(r.position) - Vector2i(2, 2), map.getTileCoord(r.end) + Vector2i(2, 2)])
+	if boxes.is_empty():
+		var vp := get_viewport()
+		if vp == null:
+			return shown.keys()
+		var inv: Transform2D = get_global_transform_with_canvas().affine_inverse()
+		var vr: Rect2 = vp.get_visible_rect()
+		var a: Vector2 = inv * vr.position
+		var b: Vector2 = inv * vr.end
+		var lo: Vector2 = Vector2(minf(a.x, b.x), minf(a.y, b.y))
+		var hi: Vector2 = Vector2(maxf(a.x, b.x), maxf(a.y, b.y))
+		boxes.append([map.getTileCoord(to_global(lo)) - Vector2i(2, 2), map.getTileCoord(to_global(hi)) + Vector2i(2, 2)])
+	_view_boxes = boxes
+	_view_c0 = boxes[0][0]
+	_view_c1 = boxes[0][1]
+	var area := 0
+	for bx in boxes:
+		area += (bx[1].x - bx[0].x) * (bx[1].y - bx[0].y)
+	if area > shown.size():
 		return shown.keys()
 	var out: Array = []
-	for y in range(c0.y, c1.y + 1):
-		for x in range(c0.x, c1.x + 1):
-			var c := Vector2i(x, y)
-			if shown.has(c):
-				out.append(c)
+	var seen := {}
+	for bx in boxes:
+		for y in range(bx[0].y, bx[1].y + 1):
+			for x in range(bx[0].x, bx[1].x + 1):
+				var c := Vector2i(x, y)
+				if shown.has(c) and not seen.has(c):
+					seen[c] = true
+					out.append(c)
 	return out
 
 
@@ -1268,7 +1342,12 @@ func _draw_stream(c: Vector2i, o: Vector2) -> void:
 # --- steam (#135) -------------------------------------------------------------
 
 func _on_screen(c: Vector2i) -> bool:
-	return c.x >= _view_c0.x and c.x <= _view_c1.x and c.y >= _view_c0.y and c.y <= _view_c1.y and _seen(c)
+	if not _seen(c):
+		return false
+	for bx in _view_boxes:
+		if c.x >= bx[0].x and c.x <= bx[1].x and c.y >= bx[0].y and c.y <= bx[1].y:
+			return true
+	return false
 
 
 # `n` puffs of steam off the lava in cell `c` (`whole`: from anywhere in the
@@ -1349,20 +1428,20 @@ func _draw_barrier() -> void:
 
 
 func _draw_heat_bar() -> void:
-	# Shown whenever there is heat, and while passive heat is building.
-	if heat <= 0.5 and passive_rate <= 0.0:
-		return
-	var keeper = Story.local_keeper()
-	if keeper == null or not is_instance_valid(keeper):
-		return
-	var p: Vector2 = to_local(keeper.global_position) + Vector2(-9, -20)
-	p = p.round()
-	draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
-	var frac: float = heat / HEAT_MAX
-	var col: Color = COL_CORE.lerp(Color("ff2a1a"), frac)
-	if frac > 0.7 and fposmod(_time * 8.0, 1.0) < 0.5:
-		col = Color.WHITE
-	draw_rect(Rect2(p, Vector2(round(18.0 * frac), 3)), col)
+	# A bar over each local keeper (#231): shown whenever there is heat, and
+	# while passive heat is building.
+	for keeper in Story.local_keepers():
+		var h: float = heat_of(keeper)
+		if h <= 0.5 and passive_rate_of(keeper) <= 0.0:
+			continue
+		var p: Vector2 = to_local(keeper.global_position) + Vector2(-9, -20)
+		p = p.round()
+		draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
+		var frac: float = h / HEAT_MAX
+		var col: Color = COL_CORE.lerp(Color("ff2a1a"), frac)
+		if frac > 0.7 and fposmod(_time * 8.0, 1.0) < 0.5:
+			col = Color.WHITE
+		draw_rect(Rect2(p, Vector2(round(18.0 * frac), 3)), col)
 
 
 func _draw_glow() -> void:
@@ -1398,5 +1477,5 @@ func stats() -> Dictionary:
 	for p in pools:
 		pool_cells += p.size()
 	return {"cells": mass.size(), "total": total, "magma": magma.size(), "sources": sources.size(),
-		"heat": heat, "recalls": recalls, "breaches": breaches, "pools": pools.size(), "pool_cells": pool_cells,
+		"heat": heat, "heats": heats.duplicate(), "recalls": recalls, "breaches": breaches, "pools": pools.size(), "pool_cells": pool_cells,
 		"pools_skipped": pools_skipped, "awake": _awake.size(), "ocean_cells": ocean_cells}

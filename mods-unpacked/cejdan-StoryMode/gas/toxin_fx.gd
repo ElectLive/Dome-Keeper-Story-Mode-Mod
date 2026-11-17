@@ -15,14 +15,24 @@ const MUFFLE_FROM := 0.35                 # share of the bar where the sound sta
 const MUFFLE_HZ := 700.0                  # cutoff at a full bar
 
 var field
-var share := 0.0                          # the bar, 0..1, as shown
-var vignette := 0.0                       # 0..1, as shown
 var muffle := 0.0                         # 0..1, as applied
 
+# One screen-edge vignette per local keeper, in that keeper's split view (#231):
+# playerId -> {"layer", "rect", "mat", "share", "vignette"}. A CanvasLayer under
+# the map draws in the first view only, so each gets its view's viewport.
+var views: Dictionary = {}
+# The first local keeper's, as before (playtests read these).
+var share: float:
+	get:
+		return _first().get("share", 0.0)
+var vignette: float:
+	get:
+		return _first().get("vignette", 0.0)
+var _rect: ColorRect:
+	get:
+		return _first().get("rect", null)
+
 var _time := 0.0
-var _layer: CanvasLayer
-var _rect: ColorRect
-var _mat: ShaderMaterial
 var _lowpass: AudioEffectLowPassFilter
 var _choke_t := 0.0
 
@@ -57,21 +67,56 @@ void fragment() {
 func setup(p_field) -> void:
 	field = p_field
 	z_index = 20
-	_layer = CanvasLayer.new()
-	_layer.layer = 3
-	add_child(_layer)
-	_rect = ColorRect.new()
-	_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _first() -> Dictionary:
+	var k = Story.local_keeper()
+	if k != null and is_instance_valid(k) and views.has(k.playerId):
+		return views[k.playerId]
+	return views.values()[0] if not views.is_empty() else {}
+
+
+func _make_view(keeper) -> Dictionary:
+	var layer := CanvasLayer.new()
+	layer.layer = 3
+	add_child(layer)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sh := Shader.new()
 	sh.code = VIGNETTE
-	_mat = ShaderMaterial.new()
-	_mat.shader = sh
-	_mat.set_shader_parameter("amount", 0.0)
-	_mat.set_shader_parameter("pulse", 0.0)
-	_rect.material = _mat
-	_rect.visible = false
-	_layer.add_child(_rect)
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	mat.set_shader_parameter("amount", 0.0)
+	mat.set_shader_parameter("pulse", 0.0)
+	rect.material = mat
+	rect.visible = false
+	layer.add_child(rect)
+	return {"layer": layer, "rect": rect, "mat": mat, "share": 0.0, "vignette": 0.0, "vp": null}
+
+
+# Each local keeper's vignette sits in that keeper's split view.
+func _sync_views() -> Array:
+	var ks: Array = Story.local_keepers()
+	var ids: Dictionary = {}
+	for k in ks:
+		ids[k.playerId] = true
+		if not views.has(k.playerId):
+			views[k.playerId] = _make_view(k)
+		var v: Dictionary = views[k.playerId]
+		var vp = null
+		if ks.size() > 1 and Level.viewports != null:
+			var vc = Level.viewports.getViewportContainer(k)
+			if vc != null and is_instance_valid(vc):
+				vp = vc.viewport
+		if v["vp"] != vp:
+			v["vp"] = vp
+			v["layer"].custom_viewport = vp
+	for pid in views.keys():
+		if not ids.has(pid):
+			views[pid]["layer"].queue_free()
+			views.erase(pid)
+	return ks
 
 
 func _process(delta: float) -> void:
@@ -79,15 +124,21 @@ func _process(delta: float) -> void:
 		return
 	if not GameWorld.paused:
 		_time += delta
-	share = clampf(field.toxin / GasData.TOXIN_MAX, 0.0, 1.0)
-	var warn: bool = share >= GasData.WARN_SHARE
-	# The vignette eases toward the bar, so it creeps in and drains away.
-	var want: float = smoothstep(0.15, 1.0, share)
-	vignette = move_toward(vignette, want, delta * (1.6 if want > vignette else 0.9))
-	_rect.visible = vignette > 0.003
-	_mat.set_shader_parameter("amount", vignette)
-	_mat.set_shader_parameter("pulse", (0.5 + 0.5 * sin(_time * 12.0)) if warn else 0.0)
-	_set_muffle(smoothstep(MUFFLE_FROM, 1.0, share), delta)
+	var worst := 0.0
+	for k in _sync_views():
+		var v: Dictionary = views[k.playerId]
+		v["share"] = clampf(field.toxin_of(k) / GasData.TOXIN_MAX, 0.0, 1.0)
+		worst = maxf(worst, v["share"])
+		var warn_k: bool = v["share"] >= GasData.WARN_SHARE
+		# The vignette eases toward the bar, so it creeps in and drains away.
+		var want: float = smoothstep(0.15, 1.0, v["share"])
+		v["vignette"] = move_toward(v["vignette"], want, delta * (1.6 if want > v["vignette"] else 0.9))
+		v["rect"].visible = v["vignette"] > 0.003
+		v["mat"].set_shader_parameter("amount", v["vignette"])
+		v["mat"].set_shader_parameter("pulse", (0.5 + 0.5 * sin(_time * 12.0)) if warn_k else 0.0)
+	# One sound for the room: it dulls for the worst-off local keeper.
+	var warn: bool = worst >= GasData.WARN_SHARE
+	_set_muffle(smoothstep(MUFFLE_FROM, 1.0, worst), delta)
 	if warn and not GameWorld.paused:
 		_choke_t -= delta
 		if _choke_t <= 0.0:
@@ -127,14 +178,17 @@ func _exit_tree() -> void:
 
 
 func _draw() -> void:
-	if field == null or field.toxin <= 0.5:
+	if field == null:
 		return
-	var keeper = Story.local_keeper()
-	if keeper == null or not is_instance_valid(keeper):
-		return
-	var p: Vector2 = (to_local(keeper.global_position) + BAR_OFFSET).round()
-	draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
-	var col: Color = COL_BAR.lerp(COL_BAR_FULL, share)
-	if share >= GasData.WARN_SHARE and fposmod(_time * 8.0, 1.0) < 0.5:
-		col = Color.WHITE
-	draw_rect(Rect2(p, Vector2(round(18.0 * share), 3)), col)
+	# A bar over each local keeper (#231).
+	for keeper in Story.local_keepers():
+		var t: float = field.toxin_of(keeper)
+		if t <= 0.5:
+			continue
+		var sh: float = clampf(t / GasData.TOXIN_MAX, 0.0, 1.0)
+		var p: Vector2 = (to_local(keeper.global_position) + BAR_OFFSET).round()
+		draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
+		var col: Color = COL_BAR.lerp(COL_BAR_FULL, sh)
+		if sh >= GasData.WARN_SHARE and fposmod(_time * 8.0, 1.0) < 0.5:
+			col = Color.WHITE
+		draw_rect(Rect2(p, Vector2(round(18.0 * sh), 3)), col)

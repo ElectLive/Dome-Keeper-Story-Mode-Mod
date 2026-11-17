@@ -167,15 +167,9 @@ func render(line: String) -> String:
 	return Runes.render(line, Runes.stage(), true)
 
 
+# On any local keeper's split view (#231), 24 px in from its edge.
 func _on_screen(world_pos: Vector2) -> bool:
-	var k = Story.local_keeper()
-	if k == null or Level.viewports == null:
-		return true
-	var cam = Level.viewports.getPlayerCam(k.playerId)
-	if cam == null:
-		return true
-	var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-	return Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(-24).has_point(world_pos)
+	return Story.on_any_view(world_pos, -24)
 
 
 func _make(line: String, st: String, kind: String, pos: Vector2, where: String, life_override: float = -1.0) -> Node:

@@ -301,11 +301,12 @@ func _process(delta: float) -> void:
 		return
 	_acc = 0.0
 	draw_count = 0
-	var view: Rect2 = _view()
-	if view.size == Vector2.ZERO:
+	# Every local keeper's split view (#231).
+	var views: Array = _views()
+	if views.is_empty():
 		return
 	for ch in _all:
-		if not ch["seen"] or not view.intersects(ch["box"]):
+		if not ch["seen"] or not views.any(func(v): return v.intersects(ch["box"])):
 			continue
 		if not ch["broken"]:
 			ch["line"].points = _points(ch["a"], ch["b"], ch["bow"], ch["phase"], 0.0)
@@ -325,15 +326,8 @@ func _process(delta: float) -> void:
 						m["line"].modulate.a = 1.0 - t * t
 
 
-func _view() -> Rect2:
-	var k = Story.local_keeper()
-	if k == null or Level.viewports == null:
-		return Rect2()
-	var cam = Level.viewports.getPlayerCam(k.playerId)
-	if cam == null:
-		return Rect2()
-	var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-	return Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(48)
+func _views() -> Array:
+	return Story.view_rects(48)
 
 
 # The chain's points (this node's space) from `a` to `b`: a resting bow plus a

@@ -33,8 +33,18 @@ var sources: Dictionary = {}       # Vector2i -> float, gas a breached cell stil
 var breaches := 0
 var caverns: Array = []            # Array of Array[Vector2i]: sealed caverns filled at run start (#201)
 var caverns_skipped := 0           # caverns left empty because something opened their wall
-var toxin := 0.0                   # the keeper's toxin bar, 0..TOXIN_MAX (#202)
-var breathing := 0.0               # the densest gas the keeper is in right now
+# The toxin bar, 0..TOXIN_MAX (#202), per local keeper (#231): playerId -> toxin.
+# `toxin` is the first local keeper's, as before.
+var toxins: Dictionary = {}
+var toxin: float:
+	get:
+		return toxins.get(_pid0(), 0.0)
+	set(v):
+		toxins[_pid0()] = v
+var breaths: Dictionary = {}       # playerId -> the densest gas that keeper is in right now
+var breathing: float:
+	get:
+		return breaths.get(_pid0(), 0.0)
 var gassed := 0                    # times the bar filled this run
 var fx = null                      # the ToxinFx child: bar, vignette, muffled sound
 var _cracks: Dictionary = {}       # gas rock about to burst -> seconds left
@@ -42,7 +52,8 @@ var vented := 0.0                  # gas that left through the surface this run
 var faded := 0.0                   # gas that thinned away this run
 var vent_marks: Dictionary = {}    # top-row cell -> the time gas last left through it
 var flux: Dictionary = {}          # cell -> [Vector2 gas moved through it lately, the time it last moved] (for the look)
-var look = null                    # the GasLook child that draws the gas (#203)
+var look = null                    # the first GasLook (the first local keeper's view) (#203)
+var looks: Dictionary = {}         # playerId -> the GasLook drawing that keeper's split view (#231)
 var dome = null                    # the DomeGas child: gas vented into the dome (#213)
 var revision := 0                  # goes up whenever any cell's gas changes (for the look)
 # Dev only: hold the gas still.
@@ -104,10 +115,7 @@ func setup(p_map) -> void:
 	map.tile_destroyed.connect(_on_tile_destroyed)
 	add_to_group("saveable")
 	if DisplayServer.get_name() != "headless":
-		look = load("res://mods-unpacked/cejdan-StoryMode/gas/gas_look.gd").new()
-		look.name = "GasLook"
-		add_child(look)
-		look.setup(self)
+		_sync_looks()
 		fx = load("res://mods-unpacked/cejdan-StoryMode/gas/toxin_fx.gd").new()
 		fx.name = "ToxinFx"
 		add_child(fx)
@@ -272,6 +280,8 @@ func _physics_process(delta: float) -> void:
 	_update_fire(delta)
 	_update_toxin(delta)
 	_update_puffs(delta)
+	if fx != null:
+		_sync_looks()
 	phys_us += Time.get_ticks_usec() - t0
 	phys_frames += 1
 	queue_redraw()
@@ -661,24 +671,33 @@ func _update_fire(delta: float) -> void:
 		_roar_t = 0.35
 		GasSfx.play("ignite", clampf(-10.0 + burning * 0.6, -10.0, 2.0))
 		InputSystem.shake(minf(2.0 + burning * 0.25, 9.0), 0.3, 22.0)
-	# The keeper in the fire: suit heat, as lava gives it.
-	var keeper = Story.local_keeper()
-	if keeper == null or not is_instance_valid(keeper) or keeper.killed or keeper.disabled or _lava == null:
+	# A keeper in the fire: suit heat, as lava gives it (every local keeper, #231).
+	if _lava == null:
 		return
-	var r: Rect2 = keeper_rect(keeper)
-	var a: Vector2i = map.getTileCoord(r.position)
-	var b: Vector2i = map.getTileCoord(r.end)
-	for y in range(a.y, b.y + 1):
-		for x in range(a.x, b.x + 1):
-			if fire.has(Vector2i(x, y)):
-				in_fire = true
-	if in_fire:
-		var LavaData = _lava.LavaData
-		_lava.heat = minf(LavaData.HEAT_MAX, _lava.heat + GasData.FIRE_HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId) * delta)
+	for keeper in Story.local_keepers():
+		if keeper.killed or keeper.disabled:
+			continue
+		var r: Rect2 = keeper_rect(keeper)
+		var a: Vector2i = map.getTileCoord(r.position)
+		var b: Vector2i = map.getTileCoord(r.end)
+		var burning_here := false
+		for y in range(a.y, b.y + 1):
+			for x in range(a.x, b.x + 1):
+				if fire.has(Vector2i(x, y)):
+					burning_here = true
+		if burning_here:
+			in_fire = true
+			var LavaData = _lava.LavaData
+			_lava.set_heat_of(keeper, minf(LavaData.HEAT_MAX, _lava.heat_of(keeper) + GasData.FIRE_HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId) * delta))
 
 
 func _on_screen_cell(c: Vector2i) -> bool:
-	return look != null and c.x >= look.c0.x and c.y >= look.c0.y and c.x < look.c0.x + look.WIN.x and c.y < look.c0.y + look.WIN.y and _seen(c)
+	if not _seen(c):
+		return false
+	for l in looks.values():
+		if is_instance_valid(l) and c.x >= l.c0.x and c.y >= l.c0.y and c.x < l.c0.x + l.WIN.x and c.y < l.c0.y + l.WIN.y:
+			return true
+	return false
 
 
 func _ember(c: Vector2i) -> void:
@@ -691,46 +710,62 @@ func _ember(c: Vector2i) -> void:
 # --- toxin (#202) ----------------------------------------------------------------
 
 func _update_toxin(delta: float) -> void:
-	var keeper = Story.local_keeper()
-	if keeper == null or not is_instance_valid(keeper) or keeper.killed or freeze_toxin:
+	# Every keeper this instance plays breathes on its own (#231).
+	for keeper in Story.local_keepers():
+		_update_keeper_toxin(keeper, delta)
+
+
+func toxin_of(keeper) -> float:
+	return toxins.get(keeper.playerId, 0.0)
+
+
+func set_toxin_of(keeper, v: float) -> void:
+	toxins[keeper.playerId] = v
+
+
+func _update_keeper_toxin(keeper, delta: float) -> void:
+	if keeper.killed or freeze_toxin:
 		return
-	breathing = 0.0
+	var pid: String = keeper.playerId
+	breaths[pid] = 0.0
+	var t: float = toxins.get(pid, 0.0)
 	if keeper.isInsideDome:
 		var rate_in: float = dome.toxin_rate() if dome != null else 0.0
 		if rate_in <= 0.0:
 			# Clean dome air clears the suit at once.
-			toxin = 0.0
+			toxins[pid] = 0.0
 			return
 		# Gas vented into the dome (#213): the bar fills slowly while the keeper
 		# is inside, fighting or not, and never clears there.
-		toxin = minf(GasData.TOXIN_MAX, toxin + rate_in * delta)
-		if toxin >= GasData.TOXIN_MAX:
+		toxins[pid] = minf(GasData.TOXIN_MAX, t + rate_in * delta)
+		if toxins[pid] >= GasData.TOXIN_MAX:
 			_gassed_in_dome(keeper)
 		return
 	if keeper.disabled:
 		return
-	breathing = gas_in(keeper_rect(keeper), true)
-	var rate: float = GasData.toxin_share(breathing)
+	breaths[pid] = gas_in(keeper_rect(keeper), true)
+	var rate: float = GasData.toxin_share(breaths[pid])
 	if rate > 0.0:
-		toxin = minf(GasData.TOXIN_MAX, toxin + GasData.TOXIN_PER_SECOND * rate * delta)
+		t = minf(GasData.TOXIN_MAX, t + GasData.TOXIN_PER_SECOND * rate * delta)
 	else:
-		toxin = maxf(0.0, toxin - GasData.CLEAR_PER_SECOND * delta)
-	if toxin < GasData.TOXIN_MAX:
+		t = maxf(0.0, t - GasData.CLEAR_PER_SECOND * delta)
+	toxins[pid] = t
+	if t < GasData.TOXIN_MAX:
 		return
 	gassed += 1
 	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 	if BossDirector.jams_recall():
 		# Velle jams the suit's recall through the boss sequence (#160): a full
 		# bar costs a heart there, not a trip home.
-		toxin = GasData.TOXIN_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
-		BossDirector.overheated()
+		toxins[pid] = GasData.TOXIN_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
+		BossDirector.overheated(keeper)
 	else:
 		# The same recall as an overheat in lava: cargo dropped, half the money,
 		# and it counts toward the same deaths (until gas deaths get their own lines).
-		toxin = 0.0
+		toxins[pid] = 0.0
 		if _lava != null:
 			_lava._recall(keeper)
-		ModLoaderLog.info("Gassed: recall %d" % gassed, "cejdan-StoryMode")
+		ModLoaderLog.info("Gassed (%s): recall %d" % [pid, gassed], "cejdan-StoryMode")
 
 
 # A full bar in the dome (#213): a gas death like one in the mine (the same
@@ -738,14 +773,58 @@ func _update_toxin(delta: float) -> void:
 # already home, so no trip; the bar starts over.
 func _gassed_in_dome(keeper) -> void:
 	gassed += 1
-	toxin = 0.0
+	toxins[keeper.playerId] = 0.0
 	ModLoaderLog.info("Gassed in the dome: death %d" % gassed, "cejdan-StoryMode")
 	if _lava == null:
 		return
-	var keep_pos = _lava.recall_pos
-	_lava.recall_pos = null          # _recall teleports only when it has somewhere to send the keeper
-	_lava._recall(keeper)
-	_lava.recall_pos = keep_pos
+	_lava._recall(keeper, false)
+
+
+# The first local keeper's playerId ("player1" while there is none).
+func _pid0() -> String:
+	var k = Story.local_keeper()
+	return k.playerId if k != null and is_instance_valid(k) else "player1"
+
+
+# One GasLook per local keeper's split view (#231): a look simulates a window
+# of tiles around one camera, so each view gets its own, shown in that view
+# only. With one local keeper there is one, shown everywhere, as before.
+var _looks_for := -1
+
+
+func _sync_looks() -> void:
+	var ks: Array = Story.local_keepers()
+	var want: Dictionary = {}
+	for k in ks:
+		want[k.playerId] = k
+	if ks.is_empty():
+		if not looks.is_empty():
+			return
+		want["player1"] = null
+	var changed := false
+	for pid in looks.keys():
+		if not want.has(pid) or not is_instance_valid(looks[pid]):
+			if is_instance_valid(looks[pid]):
+				looks[pid].queue_free()
+			looks.erase(pid)
+			changed = true
+	for pid in want:
+		if not looks.has(pid):
+			var l = load("res://mods-unpacked/cejdan-StoryMode/gas/gas_look.gd").new()
+			l.name = "GasLook" if looks.is_empty() else "GasLook_" + pid
+			add_child(l)
+			l.setup(self)
+			looks[pid] = l
+			changed = true
+		looks[pid].keeper = want[pid]
+	var first = Story.local_keeper()
+	look = looks.get(first.playerId, null) if first != null and is_instance_valid(first) else null
+	if look == null and not looks.is_empty():
+		look = looks.values()[0]
+	if changed or ks.size() != _looks_for:
+		_looks_for = ks.size()
+		for pid in looks:
+			looks[pid].show_in_view_of(want[pid] if ks.size() > 1 else null)
 
 
 # The keeper's body for gas contact: the same box the lava uses.
@@ -793,6 +872,7 @@ func serialize() -> Dictionary:
 
 func _save_extra(d: Dictionary) -> Dictionary:
 	d["toxin"] = toxin
+	d["toxins"] = toxins
 	d["gassed"] = gassed
 	if dome != null:
 		d["dome"] = dome.amount
@@ -829,7 +909,13 @@ func _restore(blob: String) -> bool:
 
 
 func _restore_extra(d: Dictionary) -> void:
-	toxin = float(d.get("toxin", 0.0))
+	toxins.clear()
+	var ts = d.get("toxins", {})
+	if ts is Dictionary and not ts.is_empty():
+		for pid in ts:
+			toxins[str(pid)] = float(ts[pid])
+	else:
+		toxin = float(d.get("toxin", 0.0))
 	gassed = int(d.get("gassed", 0))
 	if dome != null:
 		dome.amount = float(d.get("dome", 0.0))
@@ -1083,5 +1169,5 @@ func total() -> float:
 
 func stats() -> Dictionary:
 	return {"cells": mass.size(), "total": total(), "rock": rock.size(), "sources": sources.size(), "breaches": breaches,
-		"vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions, "fire": fire.size(), "awake": _awake.size(), "toxin": toxin, "gassed": gassed,
+		"vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions, "fire": fire.size(), "awake": _awake.size(), "toxin": toxin, "toxins": toxins.duplicate(), "gassed": gassed,
 		"dome_pockets": dome.pockets() if dome != null else 0.0}

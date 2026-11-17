@@ -170,12 +170,10 @@ var _watch_t: float = 0.0
 func _watch_depth() -> void:
 	if not multiplayer.is_server() or Level.map == null or Level.map.tileData == null:
 		return
-	# Online, the host watches every player's keeper (#229).
-	if _online():
-		for k in Keepers.getAll():
-			_watch_keeper(k)
-	else:
-		_watch_keeper(Story.local_keeper())
+	# The host watches every player's keeper: online (#229) and every local
+	# keeper in splitscreen (#231).
+	for k in Keepers.getAll():
+		_watch_keeper(k)
 
 
 func _watch_keeper(keeper) -> void:
