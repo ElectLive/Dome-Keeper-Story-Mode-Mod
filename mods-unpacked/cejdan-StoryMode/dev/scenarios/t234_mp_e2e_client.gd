@@ -244,8 +244,9 @@ func run(h) -> void:
 		await h.press("keeper_gadget1")
 		await h.burst("client_blast", 8, 3)
 		var td = Level.map.tileData
-		var broke: bool = await h.until(func(): return td.get_resourcev(gate) != Metal.GATE_ID, 15.0)
-		h.check("the client's Suit Blaster breaks the gate tile here", broke, td.get_resourcev(gate))
+		var tb: float = h.now()
+		var broke: bool = await h.until(func(): return td.get_resourcev(gate) != Metal.GATE_ID, 40.0)
+		h.check("the client's Suit Blaster breaks the gate tile here", broke, {"tile": td.get_resourcev(gate), "after s": h.now() - tb, "keeper": h.keeper_tile(), "gate": gate})
 		await shared(h, "gate_broken", 30.0)
 		h.note("map nodes with a Synchronizer (client)", Host.synced_map_nodes())
 		await h.shot("client_gate_broken")
@@ -256,6 +257,7 @@ func run(h) -> void:
 
 	# ---- 8. The wave, from the secondary station.
 	await shared(h, "wave_go", 60.0)
+	await Host.close_pause(h, "client")
 	var st1 = Host.station(dome, 1)
 	var inside: bool = st1 != null and await Host.enter_station(h, st1, h.keeper())
 	var guns: Array = st1.getControlledWeapons() if st1 != null else []

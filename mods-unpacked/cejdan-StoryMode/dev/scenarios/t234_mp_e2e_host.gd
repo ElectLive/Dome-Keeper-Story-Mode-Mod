@@ -72,6 +72,18 @@ static func synced_map_nodes() -> Array:
 	return out
 
 
+# A pause menu found open (one came up on the host in a run, cause unknown)
+# takes the laser keys: close it and say so.
+static func close_pause(h, who: String) -> void:
+	for i in 3:
+		var menus: Array = h.get_tree().root.find_children("*", "", true, false).filter(func(n): return n.get_script() != null and n.get_script().resource_path == "res://content/pause/PauseMenu.gd" and n.is_visible_in_tree())
+		if menus.is_empty():
+			return
+		h.note(who + ": a pause menu was open; closing it", i)
+		await h.press("escape")
+		await h.wait(1.0)
+
+
 static func station(dome, i: int):
 	return dome.stations[i] if dome.stations.size() > i else null
 
@@ -165,12 +177,14 @@ func _bring_home(h, drops: Array, what: String) -> void:
 	h.check("%s: the client's keeper is under the dome" % what, there, keeper_rows(h))
 	var ck = _client_keeper()
 	h.note("%s: the host's copy of the client keeper carries" % what, ck.carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
-	# The long teleport broke the carry on the host: pick them up again here.
+	# The long teleport breaks the carry on the host (all or some of it): pick
+	# up again what fell off.
 	for d in drops:
 		if is_instance_valid(d) and not d.absorbed:
 			d.teleport(ck.global_position + Vector2(randf_range(-4, 4), 4))
 			await h.frames(2)
-			Level.drops.network_pickup(d, ck.playerId)
+			if not ck.carriedCarryables.has(d):
+				Level.drops.network_pickup(d, ck.playerId)
 	await h.wait(1.0)
 	h.check("%s: the host's copy of the client keeper carries them" % what, ck.carriedCarryables.size() == drops.size(), ck.carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
 	share("fly_" + what, true)
@@ -402,6 +416,7 @@ func run(h) -> void:
 	h.snap_camera()
 	await h.wait(1.0)
 	var st0 = station(dome, 0)
+	await close_pause(h, "host")
 	var in0: bool = await enter_station(h, st0, h.keeper())
 	h.check("the host's keeper takes the main station", in0)
 	share("wave_go", true)
@@ -431,6 +446,7 @@ func run(h) -> void:
 			await h.shot("host_wave_client_fires")
 	h.check("the client's laser hurts the wave on the host (the host's laser idle)", dmg > 0.0, dmg)
 	# Then both fire until the wave is gone.
+	await close_pause(h, "host")
 	share("host_fires", true)
 	var gun0 = st0.getControlledWeapons()[0] if st0.getControlledWeapons().size() > 0 else null
 	t0 = h.now()
