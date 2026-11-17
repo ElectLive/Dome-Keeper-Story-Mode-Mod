@@ -23,8 +23,17 @@ func run(h) -> void:
 	var old: bool = "--oldcull" in OS.get_cmdline_user_args()
 	var k2 = Keepers.getLocalKeeperByDeviceId(1)
 	var lava = Level.map.get_node("StoryLavaField")
+	# No gas (a gas fire is orange too). The map's own lava stays: the field
+	# culls only while it holds more cells than a view shows (with a handful
+	# it draws them all), and a real map holds hundreds.
 	lava.magma.clear()
 	lava.freeze_flow = true
+	h.note("lava cells on the map", lava.shown.size())
+	var gas = Level.map.get_node("StoryGasField")
+	gas.rock.clear()
+	gas.mass.clear()
+	gas.fire.clear()
+	gas.freeze_flow = true
 	lava.single_view_cull = old
 	h.note("culling", "first view only (old)" if old else "every view")
 	# A shaft at x = -9 from row 14 to 30, with a lava pool at its foot that

@@ -105,7 +105,7 @@ func run(h) -> void:
 	var pd = load("res://mods-unpacked/cejdan-StoryMode/pleas/plea_director.gd").instance()
 	var line: String = pd.say("arrive", null, "", 6.0)
 	var ht = load("res://mods-unpacked/cejdan-StoryMode/hud/heat_talk.gd").instance()
-	ht._say("so hot", Color("ff7a3c"), "hot")
+	ht._say(Keepers.local.keepers[0], "so hot", Color("ff7a3c"), "hot")
 	await h.wait(1.0)
 	await h.shot("host_pops_plea")
 	share("sold", {"money": Data.ofOr("team1.inventory.money", 0), "plea": line, "pops": load("res://mods-unpacked/cejdan-StoryMode/hud/sale_pops.gd").instance().shown.size()})
