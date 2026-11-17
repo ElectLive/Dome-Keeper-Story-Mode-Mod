@@ -20,6 +20,8 @@ extends Node
 #                        save names and opens the keeper choice; the host's scenario
 #                        picks keepers and starts the run there
 #   --netjoin            join the ENet session on 127.0.0.1; the host's stages follow
+#   --splitscreen        with --loadout: open it as the title's Splitscreen button
+#                        does (#231); each device that presses a key joins
 # A playtest scenario's boot() dictionary can give the same keys.
 #
 # How: Game.gd cannot be script-extended safely (loading it early enough breaks
@@ -98,6 +100,11 @@ func _process(_delta: float) -> void:
 		if err != OK:
 			push_error("Dev boot: loading save slot %d failed (%s)" % [slot, str(err)])
 	elif _mode_id == "":
+		if Story.has_user_arg("splitscreen"):
+			# The title's Splitscreen button (#231): the loadout then adds a
+			# local keeper for each device that presses a key.
+			print("RUNNING IN DEV MODE (Story Mode dev boot: splitscreen loadout)")
+			Network.multiplayer_mode = Network.MultiplayerMode.OFFLINE_SPLITSCREEN
 		StageManager.startStage("stages/loadout/multiplayerloadout")
 	else:
 		_start_run(_mode_id)
