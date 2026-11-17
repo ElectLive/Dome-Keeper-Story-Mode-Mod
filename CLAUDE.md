@@ -15,6 +15,7 @@ This folder is the decompiled Dome Keeper project (Godot 4.3.1, custom build). W
 - The user is mostly away. Verify every change by playtesting it in the running game (playtest harness, screenshots, frame bursts, state logs) before calling it done. Report what was seen, not what was expected.
 - Game-design calls (values, feel, story, scope) are the user's: leave them as HITL tickets. Technical how-to calls are yours: resolve them by spike and record the reasoning on the ticket.
 - One ticket per session, except research tickets.
+- Script extensions go in `extensions/installer.gd` (#252, #256). Once one takes over a vanilla `class_name` script's path, a script compiled after that can't use the class in a type: `extends Map` fails to compile, `var d: Dome` goes untyped ("Compiler bug: unresolved assign"), `x is CaveBomb` is true for anything. So every script that names an extended class in a type is compiled and held before the install (`NAMED_BY`), a vanilla `class_name` subclass that needs the extension's behaviour gets its own extension (dome3.gd), and the install order follows the comment there. After adding an extension or a script that names one of those classes, run `t252_class_names`: it rescans the project and says what is missing.
 - Story Mode is its own game mode; vanilla modes must keep working. Since 2026-11-16 it must also work in v5 multiplayer (online co-op and splitscreen; map #222): host-authoritative, `Data.apply` only on the host, anything a client's keeper does to the team goes to the host.
 
 ## Version control

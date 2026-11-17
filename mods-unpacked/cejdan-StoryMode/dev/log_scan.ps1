@@ -3,7 +3,9 @@
 #
 # Counted anywhere in the log (as before #249): SCRIPT ERROR (and USER SCRIPT
 # ERROR), Parse Error, Failed to load script, lines starting ERROR, Invalid
-# call / access, Nonexistent function, and a Sentry start.
+# call / access, Nonexistent function, a Sentry start, and since #252 the
+# compiler's "unresolved assign" (a script compiled after an extension took
+# its class_name; extensions/installer.gd).
 # Counted between "[harness] scenario begin" and "[harness] scenario end" (to the
 # end of the log if the run never got there; the whole log if it never began):
 # USER ERROR lines too. That is where push_error and engine errors from mod
@@ -27,14 +29,6 @@ $script:LogScanAllow = @(
     # Harmless: Client.full_data_sync delivers the same full sync. Reported on
     # #249; not in any godot.log of the 2026-11-17 suite run, kept for when it is.
     @{ Name = "datasync args"; Pattern = '_remote_set_initial_data' },
-    # A vanilla script compiled during the run (a gadget's, the first time one
-    # is bought: Lift.gd, Converter.gd, ...) that types a variable with a class
-    # Story Mode extends (`var dome: Dome`): compiled after the extension took
-    # over the class's path, the type is unresolved and the assignment goes
-    # untyped. Harmless. The ones at startup are fixed by the install order in
-    # mod_main.gd (#249); preloading every such script early would pull their
-    # scenes in before the extensions. The family is #256.
-    @{ Name = "late compile"; Pattern = 'Compiler bug: unresolved assign' },
     # Loading a save: vanilla Map.deserialize calls init(true) on a map already
     # initialised, and CentralMarker.init connects keeper_registered again.
     @{ Name = "save load (CentralMarker)"; Pattern = "keeper_registered' is already connected to given callable 'Line2D\(CentralMarker\.gd\)" },
@@ -88,7 +82,7 @@ function Invoke-LogScan([string]$log) {
         if ($begin -lt 0 -and $lines[$i].StartsWith("[harness] scenario begin")) { $begin = $i }
         elseif ($begin -ge 0 -and $lines[$i].StartsWith("[harness] scenario end")) { $end = $i; break }
     }
-    $anywhere = 'SCRIPT ERROR|Parse Error|Failed to load script|^ERROR|Invalid call|Invalid access|Nonexistent function|starting Sentry SDK'
+    $anywhere = 'SCRIPT ERROR|Parse Error|Failed to load script|^ERROR|Invalid call|Invalid access|Nonexistent function|starting Sentry SDK|Compiler bug'
     $bad = @()
     $allowed = [ordered]@{}
     $prevAllowed = -10

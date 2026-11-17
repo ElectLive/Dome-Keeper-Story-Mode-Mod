@@ -10,7 +10,7 @@ const Palette = preload("res://mods-unpacked/cejdan-StoryMode/util/palette.gd")
 const Prices = preload("res://mods-unpacked/cejdan-StoryMode/data/prices.gd")
 const Strings = preload("res://mods-unpacked/cejdan-StoryMode/text/strings.gd")
 
-const EXT := "res://mods-unpacked/cejdan-StoryMode/extensions/"
+const Installer = preload("res://mods-unpacked/cejdan-StoryMode/extensions/installer.gd")
 
 # Kept alive so resources that took over a vanilla path stay in the cache.
 var _held: Array = []
@@ -132,14 +132,6 @@ func _process(_delta: float) -> void:
 
 # Called by the game once its data is loaded.
 func modInit():
-	# Vanilla's keeper choice map (DeviceSelectionMap.gd, on the stage for
-	# loading an online save and for joining a run under way) says `extends
-	# Map`. Once Map.gd is extended below, its path holds our extension, and a
-	# script compiled after that can't resolve Map ("Could not find class Map"):
-	# the keeper choice then has no map and breaks (#232). Compiled now, it sits
-	# on vanilla's Map (the keeper choice needs nothing of Story Mode's), and
-	# held, it stays the one its scene loads.
-	_held.append(load("res://stages/deviceselection/DeviceSelectionMap.gd"))
 	# Data messages to a peer keep their order in the chunker (#246; see
 	# net/ordered_chunker.gd). Set on vanilla's node before any session, so it
 	# keeps its name and RPC path. `--vanillachunker` (editor) leaves it vanilla.
@@ -150,59 +142,13 @@ func modInit():
 	# Script extensions: each handles Story Mode and defers to vanilla otherwise.
 	# They are installed here, not in _init(): loading a vanilla script while
 	# ModLoader is still starting up pulls its dependencies in too early, and
-	# some of them then fail to parse.
-	# Order matters (#249): loading an extension recompiles its vanilla base,
-	# and a base compiled after another class it names was extended gets that
-	# type unresolved. Vanilla TechTree.gd loops `for techPanel: TechPanel`
-	# and LevelStage.gd has `var dome: Dome`, so installed after Tech2.gd and
-	# Dome.gd each logged "Compiler bug: unresolved assign" at startup (the
-	# assignment then just goes untyped). They go first.
-	for path: String in [
-		"stages/level/LevelStage.gd",
-		"content/techtree/TechTree.gd",
-		"stages/loadout/MultiplayerloadoutStage.gd",
-		"content/hud/inventory/Inventory.gd",
-		"content/techtree/Tech2.gd",
-		"content/techtree/TechTreePopup.gd",
-		"content/map/Map.gd",
-		"content/map/tile/Tile.gd",
-		"content/map/tile/DirtParticle.gd",
-		"content/dome/Dome.gd",
-		"content/map/generation/TileDataGenerator.gd",
-		"content/gadgets/suitblaster/SuitblasterExplosion.gd",
-		"content/caves/treecave/Iron.gd",
-		"content/gadgets/mineraltree/FruitGrowth.gd",
-		"content/gadgets/mineraltree/MineralTree.gd",
-		"content/gadgets/minedriller/TileToucher.gd",
-		"content/gadgets/drillbot/Drillbot.gd",
-		"content/caves/bombcave/CaveBomb.gd",
-		"content/gadgets/blastMining/Mine.gd",
-	]:
-		ModLoaderMod.install_script_extension(EXT + path)
-	# Scenes that were already loaded still hold the vanilla script; reload them
-	# so their nodes pick up the extension.
-	for scene_path: String in [
-		"res://content/techtree/Tech2.tscn",
-		"res://content/techtree/TechTree.tscn",
-		"res://content/techtree/TechTreePopup.tscn",
-		"res://content/map/Map.tscn",
-		"res://content/map/tile/Tile.tscn",
-		"res://content/map/tile/DirtParticle.tscn",
-		"res://content/map/tile/TileBreakParticles.tscn",
-		"res://content/dome/Dome.tscn",
-		"res://content/map/generation/TileDataGenerator.tscn",
-		"res://content/gadgets/suitblaster/SuitblasterExplosion.tscn",
-		"res://stages/level/LevelStage.tscn",
-		"res://content/caves/treecave/IronTreeCave.tscn",
-		"res://content/gadgets/mineraltree/MineralTree.tscn",
-		"res://content/gadgets/minedriller/Drill.tscn",
-		"res://content/gadgets/minedriller/SideDriller.tscn",
-		"res://content/gadgets/drillbot/Drillbot.tscn",
-		"res://content/caves/bombcave/CaveBomb.tscn",
-		"res://content/gadgets/blastMining/Mine.tscn",
-	]:
-		if ResourceLoader.has_cached(scene_path):
-			_held.append(ResourceLoader.load(scene_path, "", ResourceLoader.CACHE_MODE_REPLACE))
+	# some of them then fail to parse. Every script that names a class_name
+	# they take over is compiled and held first (#252, #256; the list and the
+	# reason are in extensions/installer.gd). `--noclasshold` (editor) skips
+	# that, to show what it prevents.
+	var t0: int = Time.get_ticks_msec()
+	Installer.install(_held, not (OS.has_feature("editor") and Story.has_user_arg("noclasshold")))
+	ModLoaderLog.info("Script extensions installed (%d ms)" % (Time.get_ticks_msec() - t0), STORYMODE_LOG)
 	Minerals.register()
 	Metal.register()
 	# Miner bones (#94): a tile id and a carried, sellable drop.
