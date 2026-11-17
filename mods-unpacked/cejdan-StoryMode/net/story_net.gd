@@ -6,9 +6,10 @@ extends Node
 #
 # - The map generator's facts (map/story_gen.gd: the lava ocean, the boss
 #   chamber, pools, gas caverns, ...) are meta on the map data, and vanilla
-#   sends clients only the tile layers. The host puts them in Data (MAP_META),
-#   which reaches every client, a late joiner too; a client copies them onto
-#   its map. Whatever reads them on a client waits for map_meta_ready().
+#   sends clients only the tile layers. The host sends them to every client, a
+#   late joiner too, in small reliable RPCs of its own (_host_meta; they were a
+#   13-16 KB Data key until #247); a client copies them onto its map. Whatever
+#   reads them on a client waits for map_meta_ready().
 # - GameWorld.prepareLevelStart (and with it mod_main.prepareGameMode) runs
 #   only on the host. A client applies Story Mode's prices and iron drop itself.
 # - Data a client got from a big message could be older than a small change
@@ -21,6 +22,8 @@ const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Prices = preload("res://mods-unpacked/cejdan-StoryMode/data/prices.gd")
 const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd")
 
+# The Data key the map facts went out in before #247. A save from then still
+# has it; the host drops it, and the chunker never sends it.
 const MAP_META := "story.mapmeta"
 # Set on a client's map data once the host's meta is on it.
 const SYNCED := "story_meta_synced"
@@ -32,10 +35,26 @@ const LOCAL_ONLY := ["story_seed"]
 const RESEND_PREFIXES := ["team1.story.", "story.", "team1.inventory.", "team1.suit."]
 # The host's own save blobs (save_blob): never sent.
 const HOST_ONLY := ["story.lava", "story.gas"]
+# Keys net/ordered_chunker.gd takes out of every big Data message to a client
+# (#247): the save blobs, which a loaded save puts back into Data, and the old
+# map facts key.
+const NEVER_SENT := ["story.lava", "story.gas", MAP_META]
+const META_PART := 700         # bytes of compressed map facts per RPC: under the chunker's 900
 const RESEND_SETTLE := 1.0     # seconds after the last chunked Data message to a peer left
 const RESEND_BATCH := 700      # bytes per message: under the chunker's 900, so sent whole
 
 var _client_story := false     # a client's prices and drops are Story Mode's
+# The map facts (#247): the host's, compressed, for the run with seed _meta_seed,
+# and which seed each client has had; a client's parts as they arrive, and the
+# facts once whole.
+var _meta_seed := -1
+var _meta_size := 0
+var _meta_bytes := PackedByteArray()
+var _meta_sent: Dictionary = {}
+var _meta_in_seed := -1
+var _meta_parts: Dictionary = {}
+var _meta_text := ""
+var _meta_text_seed := -1
 
 # peer id -> {"vals": key -> value the chunked Data messages to it carry,
 # "full": one of them was a full sync, "story": it reached LEVEL_STAGE_SYNC,
@@ -63,6 +82,8 @@ static func is_client() -> bool:
 # client as one big delta at each autosave (every wave's start and end), which
 # holds up the chunker's other Data messages to them (#246); clients get the
 # lava and gas from the host's stream instead, so the host keeps it to itself.
+# A loaded save puts the blobs back into Data, and a full sync sends all of
+# Data: net/ordered_chunker.gd takes them out of every big Data message (#247).
 static func save_blob(key: String, blob: String) -> void:
 	if online() and not is_client():
 		Data.server_apply(key, blob)
@@ -88,26 +109,46 @@ func _process(_delta: float) -> void:
 	elif Story.is_story():
 		_host_meta()
 		_host_resend()
+		_log_tally()
 
 
 # --- host ----------------------------------------------------------------------
 
 func _host_meta() -> void:
+	if Data.values.has(MAP_META):
+		Data.values.erase(MAP_META)
 	var td = _host_map_data()
 	if td == null or not td.has_meta("story_ocean"):
 		return
-	var have = Data.ofOr(MAP_META, "")
-	if have is String and have != "" and have.begins_with("{\"seed\": %d," % Level.levelSeed):
-		return
-	var metas: Dictionary = {}
-	for k: StringName in td.get_meta_list():
-		var v = td.get_meta(k)
-		if String(k) in LOCAL_ONLY or v is Object:
+	if _meta_seed != Level.levelSeed:
+		var metas: Dictionary = {}
+		for k: StringName in td.get_meta_list():
+			var v = td.get_meta(k)
+			if String(k) in LOCAL_ONLY or v is Object:
+				continue
+			metas[String(k)] = v
+		# var_to_str keeps Rect2i and Vector2i.
+		var text: PackedByteArray = var_to_str(metas).to_utf8_buffer()
+		_meta_size = text.size()
+		_meta_bytes = text.compress(FileAccess.CompressionMode.COMPRESSION_ZSTD)
+		_meta_seed = Level.levelSeed
+		_meta_sent.clear()
+		ModLoaderLog.info("Story map facts for clients: %d keys, %d bytes, %d compressed" % [metas.size(), _meta_size, _meta_bytes.size()], Story.LOG)
+	var peers: Dictionary = {}
+	for c in Network.clients:
+		peers[c.peer_id] = true
+		if c.connection_state == Network.ConnectionState.HANDSHAKE or int(_meta_sent.get(c.peer_id, -1)) == _meta_seed:
 			continue
-		metas[String(k)] = v
-	# var_to_str keeps Rect2i and Vector2i; the seed leads, so a check is cheap.
-	Data.apply(MAP_META, "{\"seed\": %d, \"meta\": %s}" % [Level.levelSeed, var_to_str(metas)])
-	ModLoaderLog.info("Story map facts shared with clients (%d keys)" % metas.size(), Story.LOG)
+		_meta_sent[c.peer_id] = _meta_seed
+		# Reliable RPCs on one channel arrive in order, each under the chunker's
+		# size, so none of them holds up a Data message.
+		var total: int = ceili(float(_meta_bytes.size()) / META_PART)
+		for i in total:
+			_client_meta_part.rpc_id(c.peer_id, _meta_seed, _meta_size, i, total, _meta_bytes.slice(i * META_PART, mini((i + 1) * META_PART, _meta_bytes.size())))
+		ModLoaderLog.info("Story map facts sent to peer %d in %d messages" % [c.peer_id, total], Story.LOG)
+	for p in _meta_sent.keys():
+		if not peers.has(p):
+			_meta_sent.erase(p)
 
 
 # The run's map data: the landing stage's while it lands, then the level's.
@@ -158,6 +199,7 @@ func _host_resend() -> void:
 		var w: Dictionary = _wait(r.target_peer_id)
 		var full: bool = r.request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC
 		var vals: Dictionary = _message_values(r, full)
+		_log_message(r, full, vals)
 		if full:
 			w["full"] = true
 			w["vals"] = vals    # a full sync replaces everything before it
@@ -265,6 +307,103 @@ func _send_delta(peer: int, batch: Dictionary) -> void:
 	Network.chunker.send(peer, Chunker.ChunkRequestType.DATA_DELTA_SYNC, Data.synchronizer.remote_data_call.bind(Network.tick_count, var_to_bytes(batch)))
 
 
+# --- measuring Data messages (#247) ---------------------------------------------
+# Each chunked Data message to a client (900 bytes or more, the chunker's
+# MAX_CHUNK_SIZE) is logged once from the host, as the resend reads it: kind,
+# bytes sent, the client's connection state, and the keys and key groups that
+# make it up, by what var_to_bytes spends on each (a full sync goes out zstd
+# compressed; its raw sizes are before that). With `--datasizes` (editor) every
+# key is logged too, a full sync's biggest keys get their share of the
+# compressed size, and ordered_chunker.gd tallies every Data message sent.
+
+static var measured: Array = []    # one entry per logged message, for playtests
+
+
+func _log_message(r, full: bool, vals: Dictionary) -> void:
+	var sent := 0
+	for ch: PackedByteArray in r.chunks:
+		sent += ch.size()
+	if sent < Chunker.MAX_CHUNK_SIZE:
+		return
+	var rows: Array = key_sizes(vals)
+	var groups: Dictionary = {}
+	var raw := 0
+	for row in rows:
+		raw += int(row[1])
+		var g: String = key_group(row[0])
+		groups[g] = int(groups.get(g, 0)) + int(row[1])
+	var grows: Array = []
+	for g in groups:
+		grows.append([g, groups[g]])
+	grows.sort_custom(func(a, b): return a[1] > b[1])
+	var state := "?"
+	for c in Network.clients:
+		if c.peer_id == r.target_peer_id:
+			state = str(Network.ConnectionState.find_key(c.connection_state))
+	var entry: Dictionary = {"peer": r.target_peer_id, "kind": "full" if full else "delta", "sent": sent, "keys": vals.size(),
+		"raw": raw, "state": state, "top": rows.slice(0, 12), "groups": grows.slice(0, 12)}
+	var dev: bool = OS.has_feature("editor") and Story.has_user_arg("datasizes")
+	if full and dev:
+		var bytes: PackedByteArray = var_to_bytes(vals)
+		var zall: int = bytes.compress(FileAccess.CompressionMode.COMPRESSION_ZSTD).size()
+		var shares: Array = []
+		for row in rows.slice(0, 10):
+			var rest: Dictionary = vals.duplicate()
+			rest.erase(row[0])
+			shares.append([row[0], zall - var_to_bytes(rest).compress(FileAccess.CompressionMode.COMPRESSION_ZSTD).size()])
+		entry["zstd"] = zall
+		entry["zstd_shares"] = shares
+	measured.append(entry)
+	ModLoaderLog.info("Data message to peer %d (%s): %s, %d bytes sent, %d keys, %d bytes raw; groups: %s; biggest: %s" % [
+		r.target_peer_id, state, entry["kind"], sent, vals.size(), raw, _rows_text(grows.slice(0, 6)), _rows_text(rows.slice(0, 6))], Story.LOG)
+	if dev:
+		ModLoaderLog.info("  every key: " + _rows_text(rows), Story.LOG)
+		if entry.has("zstd"):
+			ModLoaderLog.info("  zstd %d bytes; biggest keys' share of it: %s" % [entry["zstd"], _rows_text(entry["zstd_shares"])], Story.LOG)
+
+
+# [key, bytes] for each key of `vals`, largest first: what var_to_bytes spends
+# on the key and its value.
+static func key_sizes(vals: Dictionary) -> Array:
+	var rows: Array = []
+	for k in vals:
+		rows.append([String(k), var_to_bytes(k).size() + var_to_bytes(vals[k]).size()])
+	rows.sort_custom(func(a, b): return a[1] > b[1])
+	return rows
+
+
+# A key's group: its path without the last part, numbers in player ids kept
+# ("team1.story.boss" -> "team1.story", "story.mapmeta" -> "story").
+static func key_group(k: String) -> String:
+	var at: int = k.rfind(".")
+	return k.substr(0, at) if at > 0 else k
+
+
+var _tally_at := 0
+
+
+# With `--datasizes`: every 20 s, how many Data messages went to clients and
+# how big (ordered_chunker.gd's tally since start-up).
+func _log_tally() -> void:
+	var ch = Network.chunker
+	if ch == null or not ch.get("tally_on"):
+		return
+	var now: int = Time.get_ticks_msec()
+	if now - _tally_at < 20000:
+		return
+	_tally_at = now
+	var t: Dictionary = ch.tally
+	ModLoaderLog.info("Data messages so far: %d, %d bytes (mean %d, max %d); under 300 bytes %d, 300-899 %d, chunked %d" % [
+		t["messages"], t["bytes"], int(t["bytes"]) / maxi(1, int(t["messages"])), t["max"], t["under_300"], t["under_900"], t["chunked"]], Story.LOG)
+
+
+static func _rows_text(rows: Array) -> String:
+	var out: PackedStringArray = []
+	for row in rows:
+		out.append("%s %d" % [row[0], row[1]])
+	return ", ".join(out)
+
+
 static func _story_key(k: String) -> bool:
 	for pre: String in RESEND_PREFIXES:
 		if k.begins_with(pre):
@@ -282,11 +421,9 @@ func _client_meta() -> void:
 	var map = Level.map
 	if map == null or not is_instance_valid(map) or map.tileData == null or map.tileData.has_meta(SYNCED):
 		return
-	var blob = Data.ofOr(MAP_META, "")
-	if not blob is String or not blob.begins_with("{\"seed\": %d," % Level.levelSeed):
+	if _meta_text_seed != Level.levelSeed or _meta_text == "":
 		return
-	var at: int = blob.find("\"meta\": ")
-	var metas = str_to_var(blob.substr(at + 8, blob.length() - at - 9))
+	var metas = str_to_var(_meta_text)
 	if not metas is Dictionary:
 		push_error("Story Mode: the host's map facts did not parse")
 		return
@@ -294,6 +431,24 @@ func _client_meta() -> void:
 		map.tileData.set_meta(k, metas[k])
 	map.tileData.set_meta(SYNCED, true)
 	ModLoaderLog.info("Story map facts from the host applied (%d keys)" % metas.size(), Story.LOG)
+
+
+# Host -> one client: part `index` of `total` of the zstd-compressed map facts
+# (`size` bytes whole) for the run with `seed`.
+@rpc("authority", "call_remote", "reliable")
+func _client_meta_part(seed: int, size: int, index: int, total: int, part: PackedByteArray) -> void:
+	if seed != _meta_in_seed:
+		_meta_in_seed = seed
+		_meta_parts = {}
+	_meta_parts[index] = part
+	if _meta_parts.size() < total:
+		return
+	var buf := PackedByteArray()
+	for i in total:
+		buf.append_array(_meta_parts.get(i, PackedByteArray()))
+	_meta_parts = {}
+	_meta_text = buf.decompress(size, FileAccess.CompressionMode.COMPRESSION_ZSTD).get_string_from_utf8()
+	_meta_text_seed = seed
 
 
 # Story Mode's prices and iron drop for a Story Mode run, vanilla's otherwise;
