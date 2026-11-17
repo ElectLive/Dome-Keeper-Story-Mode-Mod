@@ -16,6 +16,13 @@ extends "res://content/gadgets/suitblaster/SuitBlaster.gd"
 # On a client the missing keys get vanilla's starting values (a full charge of
 # one) until the host's arrive and replace them. A client can't apply Data, so
 # nothing else changes. The host is untouched.
+#
+# Since #261 the chunker sends a small delta's keys that no queued message
+# holds at once, so the keys come first again (t253 `--bigdelta` needs no
+# stand-in; `--heldchunker` shows the old order). This stays as insurance for
+# what that leaves: a full sync still on its way wipes keys sent ahead of it
+# until their copy behind it lands, and a gadget delta of 900 bytes or more
+# is chunked itself (vanilla's order, RPC first, in any mode).
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 
