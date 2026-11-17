@@ -4,15 +4,34 @@ extends RefCounted
 # has by the time the boss is reached, and a drilled way home for the chase.
 
 # Every upgrade a keeper at the boss has bought: all of the drill and the
-# jetpack, and a dome that can fight (Laser IV, faster aim, more health).
+# jetpack, and a dome that can fight (DOME_GEAR: Laser IV, faster aim, more
+# health on the laser dome; the same kind of thing on the others).
 const GEAR: Array = [
 	"drill1", "drill2", "drill3", "drill4",
 	"jetpackspeed1", "jetpackspeed2", "jetpackspeed3", "jetpackspeed4",
 	"jetpackstrength1", "jetpackstrength2", "jetpackstrength3", "jetpackstrength4",
-	"laserstrength1", "laserstrength2", "laserstrength3", "laserstrength4",
-	"lasermove1", "lasermove2", "laseraimline",
-	"domehealthmeter", "dome1health1", "dome1health2",
+	"domehealthmeter",
 ]
+
+# The dome's own share of GEAR, by dome (#269): its weapon's strength tiers and
+# aim, and its health upgrades. The laser dome's is the original (Laser IV).
+const DOME_GEAR: Dictionary = {
+	"dome1": ["laserstrength1", "laserstrength2", "laserstrength3", "laserstrength4",
+		"lasermove1", "lasermove2", "laseraimline", "dome1health1", "dome1health2"],
+	"dome2": ["swordblade1", "swordlargeblade1", "swordlargeblade2", "swordlargeblade3",
+		"swordstabfast1", "swordstabfast2", "swordaimline", "dome2health1", "dome2health2"],
+	"dome3": ["artillerydirecthit1", "artillerydirecthit2", "artillerydirecthit3", "artillerydirecthit4",
+		"artillerysplash1", "artillerysplash2", "artillerymachinegun1", "dome3health1", "dome3health2"],
+	"dome4": ["teslapower1", "teslapower2", "teslapower3", "teslapower4",
+		"teslaspeed1", "teslaspeed2", "teslaautoaim", "dome4health1", "dome4health2"],
+	"dome5": ["turretslot1machinegun", "turretslot2machinegun", "dome5health1", "dome5health2"],
+}
+
+
+static func dome_id() -> String:
+	if Level.loadout != null and Level.loadout.domes.size() > 0:
+		return Level.loadout.domes.front().domeId
+	return "dome1"
 
 
 # Gives every keeper GEAR for free (#265: the keeper upgrades are per player,
@@ -23,7 +42,7 @@ static func give_gear(extra: Array = [], laser_level: int = 4) -> Array:
 	var KeeperUpgrades = load("res://mods-unpacked/cejdan-StoryMode/gamemode/keeper_upgrades.gd")
 	var keepers: Array = Keepers.getAll().filter(func(k): return k != null and is_instance_valid(k))
 	var given: Array = []
-	for raw: String in GEAR + extra:
+	for raw: String in GEAR + DOME_GEAR.get(dome_id(), DOME_GEAR["dome1"]) + extra:
 		if raw.begins_with("laserstrength") and int(raw.substr(13)) > laser_level:
 			continue
 		for keeper in keepers:

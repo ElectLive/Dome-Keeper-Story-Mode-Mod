@@ -2,12 +2,12 @@ extends "res://stages/loadout/MultiplayerloadoutStage.gd"
 
 # Story Mode in the loadout screen. Story Mode borrows the Relic Hunt block for
 # its difficulty picker (map size and run modifiers hidden), and locks the
-# loadout to the Engineer and the laser dome. Vanilla modes are untouched.
+# loadout to the Engineer. Every dome vanilla offers is offered (#269).
+# Vanilla modes are untouched.
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 
 const STORY_KEEPER := "keeper1"
-const STORY_DOME := "dome1"
 
 
 @rpc("reliable", "any_peer")
@@ -26,8 +26,6 @@ func _story_apply() -> void:
 	Level.loadout.modeConfig[CONST.MODE_CONFIG_MAP_ARCHETYPE] = CONST.MAP_MEDIUM
 	Level.loadout.modeConfig.erase(CONST.MODE_CONFIG_WORLDMODIFIERS)
 	difficultySelected(Level.loadout.difficultyByTeamId.get("team1", 0), "team1", false, false)
-	if Level.loadout.domes.size() > 0 and Level.loadout.domes.front().domeId != STORY_DOME:
-		domeSelected(STORY_DOME, "team1", false, false)
 	for lk: LoadoutKeeper in Level.loadout.keepers:
 		if lk.keeperId != STORY_KEEPER:
 			changeKeeper(lk.playerId, STORY_KEEPER + "-skin0")
@@ -59,9 +57,6 @@ func _story_dress(story: bool) -> void:
 		var modifiers: Node = block.find_child("ModifiersBox", true, false)
 		if modifiers != null and story:
 			modifiers.visible = false
-	for c in _DomeContainersTeam1.get_children():
-		if not c is Label:
-			c.visible = (not story) or c.id == STORY_DOME
 	var kc: Node = find_child("KeeperContainers")
 	if kc != null:
 		var i: int = 0
