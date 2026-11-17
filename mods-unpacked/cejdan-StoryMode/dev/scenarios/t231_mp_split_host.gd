@@ -34,8 +34,12 @@ func run(h) -> void:
 	gas.freeze_flow = true
 	Data.apply("team1.inventory.money", 1000)
 	var spot2: Vector2 = lava.recall_spots.get(k2.playerId, Vector2.ZERO)
-	var room := Vector2i(-7, 12)
+	var room := _solid_block(lava, gas, 10)
 	await h.dig_room(room + Vector2i(-2, -1), room + Vector2i(2, 1))
+	# What the room dropped: water would harden the lava (#47).
+	for d in Level.drops.get_children():
+		if "type" in d and "absorbed" in d:
+			d.queue_free()
 	await h.teleport_tile(room, k2)
 	k2.set("gravity_scale", 0.0)
 	await h.wait(0.5)
@@ -75,3 +79,23 @@ func run(h) -> void:
 	await h.wait(10.0)
 	share("done", true)
 	await host_wait_clients_left(h, 60.0)
+
+
+# The middle of a solid block of rock (a 5 x 3 room and a wall around it) at or
+# below row `from_y`, away from lava and gas.
+static func _solid_block(lava, gas, from_y: int) -> Vector2i:
+	var td = Level.map.tileData
+	for y in range(from_y, 300):
+		for x in [-8, 8, -12, 12, -16, 16]:
+			var ok := true
+			for dy in range(-3, 4):
+				for dx in range(-5, 6):
+					var c := Vector2i(x + dx, y + dy)
+					if Level.map.is_tile_empty(c) or td.get_hardnessv(c) >= Data.HARDNESS_INDESTRUCTIBLE or lava.magma.has(c) or lava.mass.has(c) or gas.rock.has(c) or gas.mass.has(c):
+						ok = false
+						break
+				if not ok:
+					break
+			if ok:
+				return Vector2i(x, y)
+	return Vector2i(-8, from_y)

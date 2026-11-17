@@ -145,6 +145,7 @@ func run(h) -> void:
 	var talk = load("res://mods-unpacked/cejdan-StoryMode/hud/heat_talk.gd").instance()
 	var said: bool = await h.until(func(): return talk.shown.any(func(e): return e.get("player") == "player2"), 6.0)
 	h.check("keeper 2 says its heat line", said, talk.shown)
+	await h.shot("k2_heat_line")
 	h.check("keeper 1 said nothing", not talk.shown.any(func(e): return e.get("player") == "player1"), talk.shown)
 	h.check("keeper 2 has passive heat, keeper 1 none", lava.passive_rate_of(k2) > 0.0 and lava.passive_rate_of(k1) == 0.0, [lava.passive_rate_of(k1), lava.passive_rate_of(k2)])
 	await h.wait(0.4)
@@ -162,7 +163,8 @@ func run(h) -> void:
 # What the dug rooms dropped (water would harden the lava, #47).
 func _clear_drops() -> void:
 	for d in Level.drops.get_children():
-		d.queue_free()
+		if "type" in d and "absorbed" in d:
+			d.queue_free()
 
 
 # The middle of a solid block of rock (9 x 5 tiles, a tile of wall
