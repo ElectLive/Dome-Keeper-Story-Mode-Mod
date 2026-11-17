@@ -132,6 +132,14 @@ func _process(_delta: float) -> void:
 
 # Called by the game once its data is loaded.
 func modInit():
+	# Vanilla's keeper choice map (DeviceSelectionMap.gd, on the stage for
+	# loading an online save and for joining a run under way) says `extends
+	# Map`. Once Map.gd is extended below, its path holds our extension, and a
+	# script compiled after that can't resolve Map ("Could not find class Map"):
+	# the keeper choice then has no map and breaks (#232). Compiled now, it sits
+	# on vanilla's Map (the keeper choice needs nothing of Story Mode's), and
+	# held, it stays the one its scene loads.
+	_held.append(load("res://stages/deviceselection/DeviceSelectionMap.gd"))
 	# Script extensions: each handles Story Mode and defers to vanilla otherwise.
 	# They are installed here, not in _init(): loading a vanilla script while
 	# ModLoader is still starting up pulls its dependencies in too early, and
