@@ -140,6 +140,12 @@ func modInit():
 	# on vanilla's Map (the keeper choice needs nothing of Story Mode's), and
 	# held, it stays the one its scene loads.
 	_held.append(load("res://stages/deviceselection/DeviceSelectionMap.gd"))
+	# Data messages to a peer keep their order in the chunker (#246; see
+	# net/ordered_chunker.gd). Set on vanilla's node before any session, so it
+	# keeps its name and RPC path. `--vanillachunker` (editor) leaves it vanilla.
+	if Network.chunker != null and not (OS.has_feature("editor") and Story.has_user_arg("vanillachunker")):
+		Network.chunker.set_script(load(Story.MOD_DIR + "net/ordered_chunker.gd"))
+		Network.chunker.set_process(true)
 	# Script extensions: each handles Story Mode and defers to vanilla otherwise.
 	# They are installed here, not in _init(): loading a vanilla script while
 	# ModLoader is still starting up pulls its dependencies in too early, and
