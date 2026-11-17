@@ -64,6 +64,10 @@ $script:LogScanAllow = @(
     # keeper still sends KeeperSynchronizer packets for a node the host has
     # just freed. Vanilla: a relichunt pair logs the same (#249).
     @{ Name = "loadout teardown"; Pattern = 'MultiplayerLoadoutStage/.*/player[0-9]+/KeeperSynchronizer' },
+    # Online host, as a client quits: for a few frames the ENet peer is
+    # disconnecting (its channels gone) but not yet removed, and whatever sends
+    # to it then (vanilla's syncs as much as ours) is dropped by the engine.
+    @{ Name = "client leaving"; Pattern = 'Unable to send packet on channel 0, max channels: 0' },
     # Loading an online save (#232): vanilla's keeper choice (DeviceSelection
     # stage) gets KeeperSynchronizer packets for a player node it has not made
     # yet, and Keeper.updatePlayerName reads a member that is not there yet.
