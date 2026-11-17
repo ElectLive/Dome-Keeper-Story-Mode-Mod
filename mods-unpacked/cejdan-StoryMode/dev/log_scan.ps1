@@ -58,12 +58,6 @@ $script:LogScanAllow = @(
     # disconnecting (its channels gone) but not yet removed, and whatever sends
     # to it then (vanilla's syncs as much as ours) is dropped by the engine.
     @{ Name = "client leaving"; Pattern = 'Unable to send packet on channel 0, max channels: 0' },
-    # Splitscreen, the end screen's Another Run (#231): vanilla
-    # MultiplayerloadoutStage.build spawns the lobby's keepers before
-    # setLoadout adds the loadout dome, so a keeper's camera inits with
-    # Level.domesByTeamId empty (KeeperCamera.updateCameraRestPosition), now
-    # and then. A Relic Hunt run logs it the same (t231_title_again --vanilla).
-    @{ Name = "loadout reopen camera"; Pattern = "key 'team1' on a base object of type 'Dictionary'.*KeeperCamera\.updateCameraRestPosition" },
     # Vanilla's keeper choice (DeviceSelection stage; loading an online save,
     # #232/#251): a player takes a keeper, vanilla's spawner frees the dummy
     # it walked in as, and a KeeperSynchronizer packet the other instance sent

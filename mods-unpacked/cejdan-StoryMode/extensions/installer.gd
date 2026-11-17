@@ -60,6 +60,7 @@ const EXTENSIONS: Array[String] = [
 	"content/gadgets/drillbot/Drillbot.gd",
 	"content/caves/bombcave/CaveBomb.gd",
 	"content/gadgets/blastMining/Mine.gd",
+	"systems/camera/KeeperCamera.gd",
 ]
 
 # Scripts that name a class_name of EXTENSIONS in a type: extends, a typed
@@ -106,6 +107,7 @@ const NAMED_BY: Array[String] = [
 	"res://content/techtree/techtrack/TechTrack.gd",
 	"res://content/weapons/artillery/Bullet.gd",
 	"res://content/weapons/sword/Sword.gd",
+	"res://content/worlds/ParallaxBackground.gd",
 	"res://game/GameWorld.gd",
 	"res://stages/deviceselection/DeviceSelectionMap.gd",
 	"res://stages/landing/LandingStage.gd",
@@ -121,6 +123,8 @@ const NAMED_BY: Array[String] = [
 	"res://mods-unpacked/cejdan-StoryMode/gas/gas_director.gd",
 	"res://mods-unpacked/cejdan-StoryMode/lava/lava_director.gd",
 	"res://mods-unpacked/cejdan-StoryMode/lava/lava_field.gd",
+	"res://mods-unpacked/cejdan-StoryMode/lava/dev_lava_finder.gd",
+	"res://mods-unpacked/cejdan-StoryMode/lava/dev_lava_probe.gd",
 ]
 
 # Scenes and resources that use an extended script. One cached before the
@@ -151,6 +155,8 @@ const SCENES: Array[String] = [
 	"res://stages/deviceselection/DeviceselectionStage.tscn",
 	"res://stages/level/LevelStage.tscn",
 	"res://stages/loadout/MultiplayerloadoutStage.tscn",
+	"res://systems/camera/Camera.tscn",
+	"res://test/caves/CaveTest.tscn",
 ]
 
 
