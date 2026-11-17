@@ -49,11 +49,12 @@ static func play(name: String, volume_db: float = 0.0, pitch: float = 1.0) -> vo
 	tree.root.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
-	# Belt and braces: a player never outlives its sound (#188).
+	# Belt and braces: a player never outlives its sound (#188). Bound to the
+	# player itself, not a lambda that captures it: when `finished` has already
+	# freed it, Godot drops the connection, where a lambda would be called with
+	# a freed capture and log "Lambda capture at index 0 was freed" (#237).
 	var secs: float = stream.get_length() / maxf(0.05, pitch) + 0.5 if stream.get_length() > 0.0 else 10.0
-	tree.create_timer(secs).timeout.connect(func():
-		if is_instance_valid(p):
-			p.queue_free())
+	tree.create_timer(secs).timeout.connect(p.queue_free)
 
 
 # Some of the game's sounds loop (the charge, the eerie hum): played as a

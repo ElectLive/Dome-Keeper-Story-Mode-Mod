@@ -33,9 +33,8 @@ static func play(name: String, volume_db: float = 0.0, min_gap: float = 0.0) -> 
 	tree.root.add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
-	tree.create_timer(p.stream.get_length() + 0.5).timeout.connect(func():
-		if is_instance_valid(p):
-			p.queue_free())
+	# Bound to the player, not a lambda capturing it (see boss/sfx.gd, #237).
+	tree.create_timer(p.stream.get_length() + 0.5).timeout.connect(p.queue_free)
 
 
 # Noise through a band-pass (a one-pole high-pass, then a one-pole low-pass),
