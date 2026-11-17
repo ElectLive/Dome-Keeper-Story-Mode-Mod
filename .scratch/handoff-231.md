@@ -22,5 +22,5 @@ t231_split_probe, t231_split_keeper2, t231_split_laser, t231_split_lava (+ --old
 ## Known
 - KeeperCamera.updateCameraRestPosition script error, sometimes, when the loadout reopens with lobby members (Another Run in splitscreen): Level.domesByTeamId empty when a keeper camera inits. Vanilla code ordering; not allowlisted.
 
-## Left
-- Regression batches (single list from brief + touched; online pairs), PR into ticket/251-mp-client-clients.
+## Status
+- Done: PR #262 (base ticket/251-mp-client-clients). Regressions pass (t26_wired as on #255). log_scan allowlists vanilla's loadout-reopen camera error (seen in Relic Hunt twice).
