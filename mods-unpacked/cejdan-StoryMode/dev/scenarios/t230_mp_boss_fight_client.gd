@@ -27,8 +27,12 @@ func run(h) -> void:
 	h.check("the host set the chamber up", c != null)
 	if c == null:
 		return
-	var race: Array = [int(Data.ofOr("story.dev.race_a", 0)), int(Data.ofOr("story.dev.race_b", 0))]
-	h.check("vanilla's Data race: a change made while a full Data sync is on its way is lost, a later one arrives", race == [0, 1], race)
+	# Vanilla's Data race: a change made while a full Data sync is on its way
+	# is overwritten here by that sync; StoryNet's settled resend (#242) sends
+	# it again once the sync has landed.
+	var race := func() -> Array: return [int(Data.ofOr("story.dev.race_a", 0)), int(Data.ofOr("story.dev.race_b", 0))]
+	await h.until(func(): return race.call() == [1, 1], 5.0)
+	h.check("a change made while a full Data sync is on its way arrives too (#242)", race.call() == [1, 1], race.call())
 	var ch := Rect2i(int(c[0]), int(c[1]), int(c[2]), int(c[3]))
 	# The host's playtest reveal of the chamber is local to it (real drilling
 	# reveals tiles on every peer): the same here, for the screenshots.
@@ -55,7 +59,7 @@ func run(h) -> void:
 	h.check("the client has the boss layer and a puppet Velle", built and boss.layer != null, [boss.layer != null, boss.velle != null])
 	if not built:
 		return
-	# The boss state lost from this client's Data (the race above) comes back.
+	# The boss state lost from this client's Data comes back (the repeat, kept as insurance).
 	Data.values.erase(Director.STATE)
 	h.check("state gone from the client's Data", Director.current() == "")
 	var back: bool = await h.until(func(): return Director.current() == "fight", 5.0)

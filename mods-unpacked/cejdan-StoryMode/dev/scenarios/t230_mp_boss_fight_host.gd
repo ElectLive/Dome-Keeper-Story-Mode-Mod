@@ -36,7 +36,8 @@ func run(h) -> void:
 	# boss_director.gd): vanilla sends a client all of Data when it changes
 	# stage (Client.full_data_sync), in chunks over a few frames; a small change
 	# made meanwhile goes straight out, arrives first, and is then overwritten
-	# by the older full copy. race_a is made in that window, race_b after it.
+	# by the older full copy. race_a is made in that window, race_b after it;
+	# since #242 the host sends race_a again once the copies have landed.
 	# (Not in the client's first moments: its first, large update is itself
 	# sent in chunks, in order behind the full copies.)
 	await h.wait(2.0)

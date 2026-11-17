@@ -15,6 +15,9 @@ func run(h) -> void:
 	h.check("this is a client", not h.multiplayer.is_server())
 	var host_counts = await shared(h, "counts")
 	await h.until(func(): return Level.map.has_node("StoryGasField"), 20.0)
+	# Since #228 a client's gas field starts empty and draws the host's stream.
+	var gas = Level.map.get_node_or_null("StoryGasField")
+	await h.until(func(): return gas != null and gas.net_packets > 0 and not gas.rock.is_empty(), 20.0)
 	var mine: Dictionary = Host._counts()
 	h.note("counts", {"host": host_counts, "client": mine})
 	h.check("story map facts arrived", Level.map.tileData.has_meta("story_meta_synced"))
