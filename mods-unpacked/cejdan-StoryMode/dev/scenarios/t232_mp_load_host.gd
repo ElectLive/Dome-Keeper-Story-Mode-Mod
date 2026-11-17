@@ -10,15 +10,18 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/mp_scenario.gd"
 
 const TIMEOUT := 300
 const SAVED := "user://t232_saved.json"
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
+# `--slot=<n> --notes=<user:// path>` load another save checked against its own
+# notes (#265: t265_mp_oldsave_host's save from before per-keeper Heat Shielding).
 
 
 func boot() -> Dictionary:
 	# beats: true, so the saved beats are the ones checked (not the harness's mute).
-	return {"loadout": true, "netload": 31, "beats": true}
+	return {"loadout": true, "netload": int(Story.user_arg("slot", "31")), "beats": true}
 
 
 func run(h) -> void:
-	var f := FileAccess.open(SAVED, FileAccess.READ)
+	var f := FileAccess.open(Story.user_arg("notes", SAVED), FileAccess.READ)
 	h.check("the first session's notes are there", f != null)
 	if f == null:
 		return
@@ -73,6 +76,8 @@ func run(h) -> void:
 	h.check("the beats played came back", str(Data.ofOr("team1.story.beatsplayed", "")) == saved["beatsplayed"])
 	h.check("the translator stage came back", mine["translation"] == int(saved["translation"]), mine["translation"])
 	h.check("the heat shield tier came back", mine["heat shield"] == int(saved["heat shield"]), mine["heat shield"])
+	if saved.has("heat shields"):
+		h.check("each keeper's heat shield tier came back (#265)", mine["heat shields"] == saved["heat shields"], {"now": mine["heat shields"], "saved": saved["heat shields"]})
 	h.check("the lava came back", absf(mine["lava room"] - float(saved["saved lava room"])) < 0.1 and absi(mine["lava cells"] - int(saved["saved lava cells"])) < 40,
 		{"room": [mine["lava room"], saved["saved lava room"]], "cells": [mine["lava cells"], saved["saved lava cells"]]})
 	h.check("the gas came back", absf(mine["gas room"] - float(saved["saved gas room"])) < 0.2 and mine["gas rock"] == int(saved["gas rock"]),
