@@ -100,7 +100,11 @@ func _kp() -> Vector2:
 # How close the tentacles are to this instance's own keeper: the path gap for
 # the hunted keeper, the straight distance to the lead tip for anyone else.
 func my_gap() -> float:
-	var me = Story.local_keeper()
+	return gap_for(Story.local_keeper())
+
+
+# The same for keeper `me` (each local keeper's own in splitscreen, #263).
+func gap_for(me) -> float:
 	if me == null or not is_instance_valid(me) or me == target:
 		return gap
 	if float(heads[0]) <= 2.0:
@@ -347,10 +351,44 @@ func _draw() -> void:
 
 
 # When the lead tip is off screen, a mark at the screen edge shows where it is
-# coming from, brighter as it closes in.
+# coming from, brighter as it closes in. In splitscreen (#263) each local
+# keeper gets its own mark at its own view's edge, drawn in its view only: a
+# child node shown just there (Level.viewports.showForLocalKeeper, as the hit
+# flash in keeper_health.gd); this node itself shows in every view.
+var _marks: Dictionary = {}   # playerId -> Node2D, with 2+ local keepers
+
+
 func _draw_warning() -> void:
-	var k = Story.local_keeper()
-	if k == null or Level.viewports == null or float(heads[0]) <= 2.0:
+	var locals: Array = Story.local_keepers()
+	if locals.size() <= 1 or Level.viewports == null:
+		_draw_warning_on(self, Story.local_keeper())
+		return
+	for k in locals:
+		var m: Node2D = _mark_for(k)
+		if m != null:
+			m.queue_redraw()
+
+
+func _mark_for(k) -> Node2D:
+	if not _ok(k):
+		return null
+	if _marks.has(k.playerId) and is_instance_valid(_marks[k.playerId]):
+		return _marks[k.playerId]
+	var m := Node2D.new()
+	m.name = "EdgeMark_" + str(k.playerId)
+	m.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_child(m)
+	m.visibility_layer = 0
+	Level.viewports.showForLocalKeeper(k, m)
+	m.draw.connect(func(): _draw_warning_on(m, k))
+	_marks[k.playerId] = m
+	return m
+
+
+# The mark for keeper `k`'s view, drawn on `ci` (this node or a child at its
+# origin, so both share its space).
+func _draw_warning_on(ci: CanvasItem, k) -> void:
+	if not _ok(k) or Level.viewports == null or float(heads[0]) <= 2.0:
 		return
 	var cam = Level.viewports.getPlayerCam(k.playerId)
 	if cam == null:
@@ -361,7 +399,7 @@ func _draw_warning() -> void:
 	if view.has_point(lead):
 		return
 	var p := Vector2(clampf(lead.x, view.position.x, view.end.x), clampf(lead.y, view.position.y, view.end.y))
-	var near: float = clampf(1.0 - my_gap() / 500.0, 0.2, 1.0)
+	var near: float = clampf(1.0 - gap_for(k) / 500.0, 0.2, 1.0)
 	var blink: float = 0.5 + 0.5 * sin(time * (6.0 + 10.0 * near))
-	Pix.disc(self, p, 7.0 + 2.0 * blink, Color(Pix.VIOLET, 0.25 + 0.4 * near))
-	Pix.eye(self, p, int(time * 6.0) % 4, 0.5, Color(1, 1, 1, 0.6 + 0.4 * blink))
+	Pix.disc(ci, p, 7.0 + 2.0 * blink, Color(Pix.VIOLET, 0.25 + 0.4 * near))
+	Pix.eye(ci, p, int(time * 6.0) % 4, 0.5, Color(1, 1, 1, 0.6 + 0.4 * blink))

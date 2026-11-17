@@ -45,7 +45,11 @@ var _current: Node = null
 var _last_line: String = ""
 var _ui_layer: CanvasLayer
 # Every plea shown this run, for checks: [{t, kind, stage, line, where}]
+# (splitscreen, #263: also `views`, the keepers whose view got it on screen)
 var shown: Array = []
+# Splitscreen (#263): the on-screen lines, each in one local keeper's view.
+var _pins: Array = []       # [pin Node2D, keeper], kept on that keeper's camera
+var _screen_by: Dictionary = {}   # playerId -> the pin of its view's last on-screen line
 
 
 static func instance():
@@ -80,6 +84,8 @@ func _wave_arrived() -> void:
 
 
 func _process(delta: float) -> void:
+	if not _pins.is_empty():
+		_place_pins()
 	if GameWorld.paused or not Story.is_story():
 		return
 	_time += delta
@@ -135,19 +141,40 @@ func say(kind: String, at = null, forced: String = "", life: float = -1.0, from_
 		Network.rpc_if_state(_net_say.bind(kind, at, line, life), Network.ConnectionState.LEVEL_STAGE_SYNC)
 	var where: String = "world"
 	var pos: Vector2
+	# Splitscreen (#263): a wave line floats above the dome for every view that
+	# shows it, and goes on screen in each local keeper's view that doesn't.
+	var away: Array = []
 	if at != null:
 		pos = at
 	else:
 		var dome = Level.getDome("team1")
 		pos = (dome.global_position if dome != null else Vector2.ZERO) + DOME_OFFSET
-		if not _on_screen(pos):
+		if _split():
+			for k in Story.local_keepers():
+				if not _keeper_sees(k, pos, -24):
+					away.append(k)
+			if away.size() == Story.local_keepers().size():
+				where = "screen"
+			elif not away.is_empty():
+				where = "both"
+		elif not _on_screen(pos):
 			where = "screen"
-	if where == "world" and kind != "death" and is_instance_valid(_current):
+	if where != "screen" and kind != "death" and is_instance_valid(_current):
 		_current.queue_free()
-	var node: Node = _make(line, st, kind, pos, where, life)
-	if kind != "death":
+	var node: Node = null
+	if where != "screen" or away.is_empty():
+		node = _make(line, st, kind, pos, "world" if where == "both" else where, life)
+	for k in away:
+		var old = _screen_by.get(k.playerId)
+		if old != null and is_instance_valid(old):
+			old.queue_free()
+		_screen_by[k.playerId] = _make(line, st, kind, pos, "screen", life, k).get_parent()
+	if kind != "death" and node != null:
 		_current = node
-	shown.append({"t": snappedf(_time, 0.01), "kind": kind, "stage": st, "line": line, "where": where})
+	var entry: Dictionary = {"t": snappedf(_time, 0.01), "kind": kind, "stage": st, "line": line, "where": where}
+	if _split():
+		entry["views"] = away.map(func(k): return k.playerId)
+	shown.append(entry)
 	plea_shown.emit(kind, line, st)
 	return line
 
@@ -172,7 +199,46 @@ func _on_screen(world_pos: Vector2) -> bool:
 	return Story.on_any_view(world_pos, -24)
 
 
-func _make(line: String, st: String, kind: String, pos: Vector2, where: String, life_override: float = -1.0) -> Node:
+# More than one local keeper, each with its own view (splitscreen, #263).
+func _split() -> bool:
+	return Story.local_keepers().size() > 1 and Level.viewports != null and is_instance_valid(Level.viewports)
+
+
+func _keeper_sees(k, world_pos: Vector2, grow: float) -> bool:
+	var r = _view_of(k)
+	return r == null or (r as Rect2).grow(grow).has_point(world_pos)
+
+
+# Keeper `k`'s view in the world, or null without a camera.
+func _view_of(k):
+	var cam = Level.viewports.getPlayerCam(k.playerId) if Level.viewports != null else null
+	if cam == null or not is_instance_valid(cam) or not cam.is_inside_tree():
+		return null
+	var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
+	return Rect2(cam.get_screen_center_position() - vs / 2.0, vs)
+
+
+# The on-screen lines in splitscreen sit in the world on their keeper's camera,
+# scaled to its zoom, so they read as screen text in that view alone (a
+# CanvasLayer here draws in the first view only, and pointing one at a split
+# view errors when the level is freed; #231).
+func _place_pins() -> void:
+	for i in range(_pins.size() - 1, -1, -1):
+		var pin = _pins[i][0]
+		var k = _pins[i][1]
+		if not is_instance_valid(pin) or not is_instance_valid(k):
+			_pins.remove_at(i)
+			continue
+		var cam = Level.viewports.getPlayerCam(k.playerId) if Level.viewports != null else null
+		if cam == null or not is_instance_valid(cam):
+			continue
+		var r = _view_of(k)
+		if r != null:
+			pin.global_position = (r as Rect2).position
+			pin.scale = Vector2.ONE / cam.zoom
+
+
+func _make(line: String, st: String, kind: String, pos: Vector2, where: String, life_override: float = -1.0, keeper = null) -> Node:
 	var label: RichTextLabel = RichTextLabel.new()
 	label.name = "PleaText"
 	label.bbcode_enabled = true
@@ -209,8 +275,24 @@ func _make(line: String, st: String, kind: String, pos: Vector2, where: String, 
 		label.add_theme_font_size_override("normal_font_size", 30)
 		label.add_theme_constant_override("outline_size", 10)
 		width = 1200.0
-		_ui_layer.add_child(holder)
-		holder.position = Vector2(get_viewport().get_visible_rect().size.x / 2.0, 70)
+		if keeper != null:
+			# One keeper's view (#263): see _place_pins.
+			var pin := Node2D.new()
+			pin.name = "PleaPin_" + str(keeper.playerId)
+			pin.z_index = 200
+			pin.z_as_relative = false
+			Level.map.add_child(pin)
+			pin.visibility_layer = 0
+			Level.viewports.showForLocalKeeper(keeper, pin)
+			pin.add_child(holder)
+			holder.set_meta("view", keeper.playerId)
+			_pins.append([pin, keeper])
+			var cam = Level.viewports.getPlayerCam(keeper.playerId)
+			holder.position = Vector2((cam.get_viewport_rect().size.x if cam != null else 1280.0) / 2.0, 70)
+			_place_pins()
+		else:
+			_ui_layer.add_child(holder)
+			holder.position = Vector2(get_viewport().get_visible_rect().size.x / 2.0, 70)
 		label.modulate = Color(1, 1, 1, 0.85)
 	label.custom_minimum_size = Vector2(width, 0)
 	label.position = Vector2(-width / 2.0, -10)
@@ -226,5 +308,5 @@ func _make(line: String, st: String, kind: String, pos: Vector2, where: String, 
 		t.parallel().tween_property(holder, "position:y", holder.position.y - 18.0, life)
 	t.tween_interval(maxf(0.1, life - 0.9) if kind != "death" else 0.0)
 	t.tween_property(holder, "modulate:a", 0.0, 0.6)
-	t.tween_callback(holder.queue_free)
+	t.tween_callback(holder.get_parent().queue_free if keeper != null else holder.queue_free)
 	return holder
