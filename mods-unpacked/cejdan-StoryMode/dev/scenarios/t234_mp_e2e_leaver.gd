@@ -6,6 +6,7 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/mp_scenario.gd"
 # when such a player left (#234); log_scan.ps1 allowlists it.
 
 const TIMEOUT := 400
+const TP := "team1.teleporter"
 
 
 func boot() -> Dictionary:
@@ -24,11 +25,16 @@ func run(h) -> void:
 	Level.stage.openStoryGadgetChoice("team1", me)
 	var opened: bool = await h.until(func(): return _popup(me) != null and not _popup(me).offersById.is_empty(), 15.0)
 	var shown: Array = _popup(me).offersById.keys() if opened else []
-	h.check("the leaver's gadget choice offers the Teleporter", opened and shown.has("teleporter"), shown)
+	h.check("the leaver's gadget choice offers the Teleporter", opened and shown.has(TP), shown)
 	await h.wait(1.0)
 	await h.shot("leaver_offers")
-	Level.stage.onGadgetSelected("teleporter", CONST.GADGET, me, "team1")
-	var got: bool = await h.until(func(): return GameWorld.boughtUpgrades.has("teleporter") and _popup(me) == null, 10.0)
+	Level.stage.onGadgetSelected(TP, CONST.GADGET, me, "team1")
+	var got: bool = await h.until(func(): return GameWorld.boughtUpgrades.has(TP) and _popup(me) == null, 10.0)
 	h.check("the leaver bought the Teleporter", got)
 	await h.wait(3.0)
 	await h.shot("leaver_teleporter")
+	# Leaves with a second shop choice open: the host must drop its mark.
+	Level.stage.openStoryGadgetChoice("team1", me)
+	var again: bool = await h.until(func(): return _popup(me) != null and not _popup(me).offersById.is_empty(), 15.0)
+	h.check("a second gadget choice is open as the leaver goes", again)
+	await h.wait(1.0)

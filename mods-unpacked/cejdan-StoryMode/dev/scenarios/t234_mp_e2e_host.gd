@@ -22,6 +22,9 @@ const Runes = preload("res://mods-unpacked/cejdan-StoryMode/pleas/runes.gd")
 const Endings = preload("res://mods-unpacked/cejdan-StoryMode/data/endings.gd")
 
 const MONEY := "team1.inventory.money"
+const TP := "team1.teleporter"
+# A room under the dome: where the client's keeper flies home from.
+const UNDER := Vector2i(0, 3)
 
 var _held: Dictionary = {}
 
@@ -143,6 +146,21 @@ func _near(k, tile: Vector2i, r: int = 2) -> bool:
 	return absi(t.x - tile.x) <= r and absi(t.y - tile.y) <= r
 
 
+# The client's keeper carried `drops` to the room under the dome by teleport,
+# which moves them on the client only: the host brings its drops along (the
+# trip through the mine), then the client flies up into the dome.
+func _bring_home(h, drops: Array, what: String) -> void:
+	var there: bool = await h.until(func(): return _near(_client_keeper(), UNDER, 1), 40.0)
+	h.check("%s: the client's keeper is under the dome" % what, there, keeper_rows(h))
+	var ck = _client_keeper()
+	h.note("%s: the host's copy of the client keeper carries" % what, ck.carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
+	for d in drops:
+		if is_instance_valid(d) and not d.absorbed:
+			d.teleport(ck.global_position + Vector2(randf_range(-4, 4), 4))
+	await h.wait(0.5)
+	share("fly_" + what, true)
+
+
 func _clear_of_hazards(c: Vector2i, r: int) -> bool:
 	var lava = Level.map.get_node("StoryLavaField")
 	var gas = Level.map.get_node("StoryGasField")
@@ -166,14 +184,14 @@ func run(h) -> void:
 
 	# ---- 1. A second client buys the Teleporter (New Gadget I) and leaves.
 	var cands: Array = GadgetShop.candidates("team1", "player1")
-	h.check("the Teleporter is a gadget-shop candidate", cands.has("teleporter"), cands)
-	var others: Array = cands.filter(func(c): return c != "teleporter")
+	h.check("the Teleporter is a gadget-shop candidate", cands.has(TP), cands)
+	var others: Array = cands.filter(func(c): return c != TP)
 	var n: int = GadgetShop.offer_count("team1")
-	Data.apply("team1.story.gadgetoffers", ",".join(["teleporter"] + others.slice(0, n - 1)))
+	Data.apply("team1.story.gadgetoffers", ",".join([TP] + others.slice(0, n - 1)))
 	var entries: Array = GadgetShop.entries("team1")
 	var m0: int = money()
 	share("leaver_go", true)
-	var tp: bool = await h.until(func(): return GameWorld.boughtUpgrades.has("teleporter") and GameWorld.boughtUpgrades.has(entries[0]), 90.0)
+	var tp: bool = await h.until(func(): return GameWorld.boughtUpgrades.has(TP) and GameWorld.boughtUpgrades.has(entries[0]), 90.0)
 	h.check("the second client bought the Teleporter with New Gadget I", tp and m0 - money() == cost(entries[0]), {"paid": m0 - money(), "price": cost(entries[0])})
 	await h.shot("host_teleporter")
 	var left: bool = await h.until(func(): return Network.clients.size() == 1, 60.0)
@@ -183,6 +201,7 @@ func run(h) -> void:
 	h.check("two keepers left in the run", Keepers.getAll().size() == 2, keeper_rows(h))
 	var ck = _client_keeper()
 	h.check("the staying client's keeper is player2", ck != null and ck.playerId == "player2", keeper_rows(h))
+	h.check("the leaver's open shop choice is dropped on the host", not Level.stage.story_shop.has("player3"), Level.stage.story_shop)
 	await h.shot("host_after_leave")
 
 	# ---- 2. Selling as the host: iron at the dome.
@@ -204,6 +223,7 @@ func run(h) -> void:
 	h.check("B1 has bones", bones_at != null)
 	if bones_at == null:
 		return
+	await h.dig_room(UNDER + Vector2i(-1, -2), UNDER + Vector2i(1, 1))
 	await h.dig_room(bones_at + Vector2i(-2, -3), bones_at + Vector2i(2, -1))
 	await h.reveal([bones_at])
 	share("bones", [bones_at.x, bones_at.y])
@@ -220,10 +240,12 @@ func run(h) -> void:
 	if bones_drop != null:
 		Level.drops.network_pickup(bones_drop, "player2")
 	var at_pos: Vector2 = _client_keeper().global_position
+	var carried: Array = [bones_drop]
 	for i in 3:
-		Level.drops.network_spawn({"type": "iron", "position": at_pos + Vector2(randf_range(-4, 4), -6), "carriers": ["player2"], "team": "team1"})
+		carried.append(Level.drops.network_spawn({"type": "iron", "position": at_pos + Vector2(randf_range(-4, 4), -6), "carriers": ["player2"], "team": "team1"}))
 		await h.frames(4)
 	share("carry_home", true)
+	await _bring_home(h, carried, "sale")
 	var want: int = 3 * iron + Bones.value_for(0)
 	sold = await h.until(func(): return money() - m0 >= want, 30.0)
 	h.check("the client's keeper sells 3 iron and the bones for $%d" % want, sold and money() - m0 == want, {"got": money() - m0, "want": want})
@@ -256,6 +278,13 @@ func run(h) -> void:
 	var opened: bool = await h.until(func(): return chamber.currentState == chamber.State.OPEN, 10.0)
 	h.check("the chamber opens", opened, chamber.currentState)
 	share("chamber_open", true)
+	var tdrops: Array = []
+	await h.until(func():
+		tdrops.clear()
+		tdrops.append_array(Level.drops.find_children("*", "", true, false).filter(func(d): return d.get("type") == "translator" and not d.absorbed))
+		return tdrops.size() > 0, 30.0)
+	h.check("the client's hit spawns the translator on the host", tdrops.size() == 1, tdrops.size())
+	await _bring_home(h, tdrops, "translator")
 	var installed: bool = await h.until(func(): return int(Data.ofOr("team1.inventory.translator", 0)) >= 1, 60.0)
 	h.check("the client's translator is installed: plea stage 1", installed and Runes.stage() == 1, [Data.ofOr("team1.inventory.translator", 0), Runes.stage()])
 	await h.wait(1.0)
@@ -381,7 +410,7 @@ func run(h) -> void:
 				dmg += hp[u] - m.currentHealth
 			hp[u] = m.currentHealth
 		await h.frames(1)
-		if h.now() - t0 > 8.0 and not _held.get("shot", false):
+		if h.now() - t0 > 2.0 and not _held.get("shot", false):
 			_held["shot"] = true
 			await h.shot("host_wave_client_fires")
 	h.check("the client's laser hurts the wave on the host (the host's laser idle)", dmg > 0.0, dmg)
@@ -394,7 +423,7 @@ func run(h) -> void:
 		if gun0 != null:
 			fight_step(h, gun0, _held)
 		await h.frames(2)
-		if h.now() - t0 > 6.0 and not _held.get("shot2", false):
+		if h.now() - t0 > 1.0 and not _held.get("shot2", false):
 			_held["shot2"] = true
 			await h.shot("host_wave_both_fire")
 	release(h, _held)

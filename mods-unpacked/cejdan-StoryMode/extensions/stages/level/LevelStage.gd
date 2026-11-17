@@ -160,6 +160,14 @@ func addGadgetUpgrade(id: String, offerType: String, playerId: String, teamId: S
 	super(id, offerType, playerId, teamId)
 
 
+# A player who leaves with a shop choice open never closes it: drop the mark,
+# or the keeper's next player (a drop-in) could never open the shop (#234).
+func on_level_keeper_removed(keeper: Keeper) -> void:
+	if keeper != null:
+		story_shop.erase(keeper.playerId)
+	super(keeper)
+
+
 @rpc("reliable", "any_peer")
 func continueOfferQueue(playerId: String) -> void:
 	story_shop.erase(playerId)
