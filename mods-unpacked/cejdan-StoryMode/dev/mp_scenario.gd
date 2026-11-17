@@ -7,9 +7,10 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 const DEV_SHARE := "story.dev.share"
 
 
-# Host: waits in the loadout for `players` lobby members, picks Story Mode,
-# starts the run and waits until it is playable. False if any step failed.
-func host_start(h, players: int = 2) -> bool:
+# Host: waits in the loadout for `players` lobby members, picks `mode` (Story
+# Mode by default), starts the run and waits until it is playable. False if
+# any step failed.
+func host_start(h, players: int = 2, mode: String = "storymode") -> bool:
 	var stage = Level.stage
 	GameWorld.figuredOutMovementInLoadout = true
 	var joined: bool = await h.until(func(): return Lobby.members.size() >= players, 120.0)
@@ -24,9 +25,9 @@ func host_start(h, players: int = 2) -> bool:
 				return false
 		return true, 30.0)
 	h.check("loadout keepers spawned", spawned, Level.loadout.keepers.size())
-	stage.gameModeSelected("storymode")
+	stage.gameModeSelected(mode)
 	await h.wait(2.0)
-	h.check("story mode selected", Level.loadout.modeId == "storymode", Level.loadout.modeId)
+	h.check(mode + " selected", Level.loadout.modeId == mode, Level.loadout.modeId)
 	stage.startRun()
 	var started: bool = await h.until(func(): return Level.stage is LevelStage and Level.stage.get("keeperInputStarted") == true and Level.map != null and Level.map.isMapReady(), 180.0)
 	h.check("run started", started)
@@ -35,7 +36,8 @@ func host_start(h, players: int = 2) -> bool:
 	h.mute_beats()
 	h.disable_waves()
 	# The hazard fields are added a few frames after the map is ready.
-	await h.until(func(): return Level.map.has_node("StoryGasField"), 20.0)
+	if mode == "storymode":
+		await h.until(func(): return Level.map.has_node("StoryGasField"), 20.0)
 	# Vanilla sends tile reveals and breaks only to clients it sees in sync.
 	var t0: float = h.now()
 	var synced: bool = await h.until(func():
