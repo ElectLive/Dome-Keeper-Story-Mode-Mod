@@ -5,6 +5,7 @@ extends Node2D
 # game's sound going muffled. A child of the gas field, drawn above the gas.
 # Draw and sound only; the toxin itself is the gas field's.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
 const BAR_OFFSET := Vector2(-9, -15)      # under the heat bar (-20)
@@ -128,7 +129,7 @@ func _exit_tree() -> void:
 func _draw() -> void:
 	if field == null or field.toxin <= 0.5:
 		return
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper == null or not is_instance_valid(keeper):
 		return
 	var p: Vector2 = (to_local(keeper.global_position) + BAR_OFFSET).round()

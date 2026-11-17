@@ -29,6 +29,19 @@ func send(target_peer_id: int, request_type: ChunkRequestType, callable: Callabl
 	super.send(target_peer_id, request_type, callable)
 
 
+# A request to a peer that has left is dropped: vanilla keeps sending its
+# chunks, each one an "Attempt to call RPC with unknown peer ID" error (#249).
+func _process(delta: float) -> void:
+	if not outgoing_rpcs.is_empty() and multiplayer.has_multiplayer_peer() and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+		var peers: PackedInt32Array = multiplayer.get_peers()
+		var me: int = multiplayer.get_unique_id()
+		for id in outgoing_rpcs.keys():
+			var to: int = outgoing_rpcs[id].target_peer_id
+			if to != me and not peers.has(to):
+				outgoing_rpcs.erase(id)
+	super(delta)
+
+
 func _data_queued(peer: int) -> bool:
 	for r in outgoing_rpcs.values():
 		if r.target_peer_id == peer and not r.is_sent() and (r.request_type == ChunkRequestType.DATA_DELTA_SYNC or r.request_type == ChunkRequestType.DATA_FULL_SYNC):

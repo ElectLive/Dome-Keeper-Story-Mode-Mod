@@ -13,6 +13,7 @@ extends Node2D
 #
 # Draw-only: nothing here is saved or changes the game.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const DIR := "res://mods-unpacked/cejdan-StoryMode/gas/look/"
 const TILE := 24.0
 const SUB := 8                      # field texels per tile
@@ -151,7 +152,7 @@ func _process(delta: float) -> void:
 			_acc = minf(_acc - 1.0 / STEPS, 1.0 / STEPS)
 	_update_window()
 	_update_tiles()
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	var kp := Vector2(-999, -999)
 	if keeper != null and is_instance_valid(keeper):
 		var local: Vector2 = to_local(keeper.global_position)

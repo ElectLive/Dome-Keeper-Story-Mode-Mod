@@ -155,7 +155,7 @@ func _ready_to_run() -> bool:
 		return false
 	if Level.map == null or not is_instance_valid(Level.map) or not Level.map.isMapReady():
 		return false
-	if SaveGame.currentLoadingSavegame or Keepers.first() == null:
+	if SaveGame.currentLoadingSavegame or Story.local_keeper() == null:
 		return false
 	return true
 
@@ -257,7 +257,7 @@ func _resume() -> void:
 			# A save made during the chase: the tentacles come up from below again.
 			if _ensure_layer():
 				_stop_waves()
-				var k = Keepers.first()
+				var k = Story.local_keeper()
 				_start_chase(layer.to_local(k.global_position) + Vector2(0, 220))
 				_chase_left_dome = true
 		"finale":
@@ -722,7 +722,7 @@ func _dev_boss(what: String) -> void:
 	if not _ensure_layer():
 		return
 	var dev = load(Story.MOD_DIR + "dev/boss_dev.gd")
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	Data.apply("team1.suit.heatshield", 4)
 	var gear: Array = dev.give_gear()
 	ModLoaderLog.info("Dev command: gear " + ", ".join(PackedStringArray(gear)), Story.LOG)

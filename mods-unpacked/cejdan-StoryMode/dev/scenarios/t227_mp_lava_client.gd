@@ -21,7 +21,10 @@ func run(h) -> void:
 	var lava = Level.map.get_node("StoryLavaField")
 	h.check("client field draws the host's lava", lava.net_client)
 	var a := Vector2i(int(room[0]), int(room[1]))
-	h.check("room open on the client", Level.map.is_tile_empty(a + Vector2i(1, 1)), a)
+	# The host's digging reaches the client as tile messages that can land
+	# after the share itself (#249: reading it at once was flaky).
+	var open: bool = await h.until(func(): return Level.map.is_tile_empty(a + Vector2i(1, 1)), 15.0)
+	h.check("room open on the client", open, a)
 	await h.teleport_tile(a + Vector2i(1, 1))
 	await h.wait(3.0)
 	var vis := 0

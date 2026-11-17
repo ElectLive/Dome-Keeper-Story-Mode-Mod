@@ -25,6 +25,7 @@ extends Node2D
 # Cost: each chain is one Line2D with a tiled link texture (one draw call, culled
 # by the renderer). Only chains crossing the camera get new points, at 30 Hz.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Awakening = preload("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd")
 
 const UNOB_ID := 47
@@ -325,7 +326,7 @@ func _process(delta: float) -> void:
 
 
 func _view() -> Rect2:
-	var k = Keepers.first()
+	var k = Story.local_keeper()
 	if k == null or Level.viewports == null:
 		return Rect2()
 	var cam = Level.viewports.getPlayerCam(k.playerId)

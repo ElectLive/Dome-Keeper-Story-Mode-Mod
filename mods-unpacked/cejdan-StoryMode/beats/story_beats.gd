@@ -175,7 +175,7 @@ func _watch_depth() -> void:
 		for k in Keepers.getAll():
 			_watch_keeper(k)
 	else:
-		_watch_keeper(Keepers.first())
+		_watch_keeper(Story.local_keeper())
 
 
 func _watch_keeper(keeper) -> void:
@@ -240,7 +240,7 @@ func _can_show() -> bool:
 	if mode != null and mode.has_method("is_ending") and mode.is_ending():
 		return false
 	# A loading save restores Data (and so the queue) after the stage starts.
-	if GameWorld.paused or SaveGame.currentLoadingSavegame or Keepers.first() == null:
+	if GameWorld.paused or SaveGame.currentLoadingSavegame or Story.local_keeper() == null:
 		return false
 	# Online: a client's own queue check never opens a beat (the host's OPEN key
 	# does), and the host gives clients still loading a moment to arrive.
@@ -285,7 +285,7 @@ func _show(id: String) -> void:
 
 # This player's box for the beat `id`.
 func _open_box(id: String, beat: Dictionary) -> void:
-	var keeper: Keeper = Keepers.first()
+	var keeper: Keeper = Story.local_keeper()
 	var i = load(Story.MOD_DIR + "beats/BeatInputProcessor.gd").new()
 	i.deviceId = keeper.deviceId
 	i.globalInput = true
@@ -401,7 +401,7 @@ func _follow_team(delta: float) -> void:
 
 func _client_can_show() -> bool:
 	var stage = Level.stage
-	if StageManager.isSwitchingStage() or not stage.keeperInputStarted or Keepers.first() == null:
+	if StageManager.isSwitchingStage() or not stage.keeperInputStarted or Story.local_keeper() == null:
 		return false
 	if stage.pauseMenuOpen or stage.showingChoicePopup or stage.endingPanel != null:
 		return false

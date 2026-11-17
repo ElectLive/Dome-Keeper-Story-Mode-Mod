@@ -9,7 +9,8 @@
 # -Rejoin: a client started once the last client listed (-Client2 if given, else
 #   the client) has exited, after -RejoinDelay seconds: a player who left joins
 #   the run under way again, in a new process (#232).
-# Output: ..\playtest_out\<scenario>\ for each, as playtest.ps1.
+# Output: ..\playtest_out\<scenario>\ for each, as playtest.ps1, and the same
+# error scan (log_scan.ps1) and VERDICT line over every instance.
 param(
     [Parameter(Mandatory = $true)][string]$HostScenario,
     [Parameter(Mandatory = $true)][string]$ClientScenario,
@@ -78,21 +79,30 @@ foreach ($r in $runs) {
     $p = $r[1]
     if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p | Add-Member -NotePropertyName Killed -NotePropertyValue $true }
 }
-if ($Rejoin -ne "" -and $rejoinProc -eq $null) { Write-Output "=== $Rejoin"; Write-Output "RESULT: NOT STARTED (the client before it never exited)" }
-$noise = "localization_|unknown win condition|leaked|Can't create shader cache|Condition `"!res.is_valid\(\)`"|translation"
+$ok = $true
+if ($Rejoin -ne "" -and $rejoinProc -eq $null) { Write-Output "=== $Rejoin"; Write-Output "RESULT: NOT STARTED (the client before it never exited)"; $ok = $false }
+# Error lines on every instance, with USER ERRORs inside each one's scenario,
+# minus the allowlist (#249).
+. (Join-Path $PSScriptRoot "log_scan.ps1")
 foreach ($pair in $runs) {
     $sc = $pair[0]; $p = $pair[1]
     Write-Output "=== $sc"
-    if ($p.Killed) { Write-Output "RESULT: TIMEOUT (killed)" } else { Write-Output "RESULT: exit code $($p.ExitCode)" }
+    if ($p.Killed) { Write-Output "RESULT: TIMEOUT (killed)"; $ok = $false } else {
+        Write-Output "RESULT: exit code $($p.ExitCode)"
+        if ($p.ExitCode -ne 0) { $ok = $false }
+    }
     $log = Join-Path $root "playtest_out\$sc\godot.log"
     if (Test-Path $log) {
-        $errs = Select-String -CaseSensitive -Path $log -Pattern "SCRIPT ERROR|Parse Error|Failed to load script|^ERROR|Invalid call|Invalid access|Nonexistent function|starting Sentry SDK" | Where-Object { $_.Line -notmatch $noise }
-        Write-Output "ERRORS: $($errs.Count)"
-        $errs | Select-Object -First 25 | ForEach-Object { Write-Output ("  L" + $_.LineNumber + ": " + $_.Line) }
+        $scan = Invoke-LogScan $log
+        $scan.Text | ForEach-Object { Write-Output $_ }
+        if ($scan.Count -gt 0) { $ok = $false }
         Select-String -Path $log -Pattern "^\[harness\] (PASS|FAIL)" | ForEach-Object { Write-Output $_.Line }
-    }
+    } else { $ok = $false }
 }
+# PASS needs every instance to exit 0 with no unexpected error lines.
+Write-Output ("VERDICT: " + $(if ($ok) { "PASS" } else { "FAIL" }) + " " + (($runs | ForEach-Object { $_[0] }) -join " + "))
 } finally {
     $lock.ReleaseMutex()
     $lock.Dispose()
 }
+exit $(if ($ok) { 0 } else { 1 })

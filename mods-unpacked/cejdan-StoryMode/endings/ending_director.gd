@@ -89,7 +89,7 @@ func _cards(cards: Array, mood: String) -> void:
 	box.mood = mood
 	var i = load(Story.MOD_DIR + "beats/BeatInputProcessor.gd").new()
 	i.popup = box
-	var k = Keepers.first()
+	var k = Story.local_keeper()
 	i.deviceId = k.deviceId if k != null else 0
 	i.globalInput = true
 	Level.stage.showPopup(box, null, "", LevelStage.PopupCanvas.GLOBAL)

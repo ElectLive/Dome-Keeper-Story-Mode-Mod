@@ -1,7 +1,8 @@
 # Runs one playtest scenario and exits. Usage (from anywhere, PowerShell):
 #   & "<...>\mods-unpacked\cejdan-StoryMode\dev\playtest.ps1" <scenario> [-Timeout 300] [-Headless] [-Res 1280x720] [-Extra "--foo=1"]
 # Output lands in ..\playtest_out\<scenario>\ next to the project: screenshots,
-# log.json, godot.log. Prints the result and any script errors.
+# log.json, godot.log. Prints the result, the error lines log_scan.ps1 finds
+# (#249) and a VERDICT line; exits 0 when the run passed and the log is clean.
 # A scenario that needs longer than 300 s declares `const TIMEOUT := <seconds>`;
 # that is used unless -Timeout is given.
 param(
@@ -29,17 +30,25 @@ if ($Headless) { $argList += "--headless" }
 $argList += @("--", "--scenario=$Scenario", "`"--out=$out`"")
 if ($Extra -ne "") { $argList += $Extra.Split(" ") }
 $p = Start-Process -FilePath $engine -ArgumentList $argList -PassThru
+$ok = $true
 if (-not $p.WaitForExit($Timeout * 1000)) {
     Stop-Process -Id $p.Id -Force
     Write-Output "RESULT: TIMEOUT after $Timeout s (killed)"
+    $ok = $false
 } else {
     Write-Output "RESULT: exit code $($p.ExitCode)"
+    if ($p.ExitCode -ne 0) { $ok = $false }
 }
 if (Test-Path $log) {
-    $noise = "localization_|unknown win condition|leaked|Can't create shader cache|Condition `"!res.is_valid\(\)`"|translation"
-    $errs = Select-String -CaseSensitive -Path $log -Pattern "SCRIPT ERROR|Parse Error|Failed to load script|^ERROR|Invalid call|Invalid access|Nonexistent function|starting Sentry SDK" | Where-Object { $_.Line -notmatch $noise }
-    Write-Output "ERRORS: $($errs.Count)"
-    $errs | Select-Object -First 25 | ForEach-Object { Write-Output ("  L" + $_.LineNumber + ": " + $_.Line) }
+    # Error lines, with USER ERRORs inside the scenario, minus the allowlist (#249).
+    . (Join-Path $PSScriptRoot "log_scan.ps1")
+    $scan = Invoke-LogScan $log
+    $scan.Text | ForEach-Object { Write-Output $_ }
+    if ($scan.Count -gt 0) { $ok = $false }
     Select-String -Path $log -Pattern "^\[harness\] (PASS|FAIL)" | ForEach-Object { Write-Output $_.Line }
-}
+} else { $ok = $false }
 Get-ChildItem $out | Select-Object -ExpandProperty Name | Out-String | Write-Output
+# PASS needs exit code 0 and no unexpected error lines; the script's own exit
+# code says the same (0 / 1).
+Write-Output ("VERDICT: " + $(if ($ok) { "PASS" } else { "FAIL" }) + " $Scenario")
+exit $(if ($ok) { 0 } else { 1 })

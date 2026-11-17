@@ -144,7 +144,8 @@ func run(h) -> void:
 		h.check("the laser hurts a tentacle", hurt, left.currentHealth if is_instance_valid(left) else -1.0)
 		var made: int = fin.flyers_made
 		var left_eyes: int = left.eyes_left if is_instance_valid(left) else 0
-		var killed: bool = await h.until(func(): return not is_instance_valid(left) or left.dead, 25.0)
+		var left_ref: WeakRef = weakref(left)
+		var killed: bool = await h.until(func(): return left_ref.get_ref() == null or left_ref.get_ref().dead, 25.0)
 		h.up("ui_left")
 		h.up("dome1_fire")
 		await h.burst("tentacle_dies", 4, 6)

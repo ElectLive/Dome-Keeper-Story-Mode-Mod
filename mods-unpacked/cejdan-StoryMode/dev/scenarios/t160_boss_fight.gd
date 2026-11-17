@@ -105,7 +105,10 @@ func run(h) -> void:
 		bomb.global_position = velle.to_global(target["pos"] + Vector2(0, 14))
 		bomb.freeze = true
 		bomb.activate()
-		await h.until(func(): return not is_instance_valid(bomb), 6.0)
+		# A weakref, not the bomb: a lambda holding the freed bomb logs
+		# "Lambda capture at index 0 was freed" (#249).
+		var gone: WeakRef = weakref(bomb)
+		await h.until(func(): return gone.get_ref() == null, 6.0)
 	await h.wait(0.3)
 	await h.shot("bomb_popped_stalk")
 	h.check("the bomb's explosion pops the stalk next to it", not target["alive"], velle.stats)

@@ -24,7 +24,8 @@ func _ready():
 	var icon: Node = grid.get_child(iron_label.get_index() - 1)
 	if icon is TextureRect:
 		icon.texture = Assets.tex("res://mods-unpacked/cejdan-StoryMode/art/icon_money.png")
-	Data.unlisten(self, teamId + ".inventory.iron")
+	# The iron listener stays (propertyChanged ignores it): vanilla's moveOut
+	# unlistens it, and logged an error when it was already gone (#249).
 	Data.listen(self, teamId + ".inventory.money")
 	_story_show_money()
 
@@ -36,6 +37,8 @@ func _story_show_money() -> void:
 func propertyChanged(property: String, oldValue, newValue):
 	if property == teamId + ".inventory.money":
 		_story_show_money()
+		return
+	if property == teamId + ".inventory.iron" and Story.is_story():
 		return
 	super(property, oldValue, newValue)
 
