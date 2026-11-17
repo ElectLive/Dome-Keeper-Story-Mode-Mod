@@ -21,11 +21,14 @@ const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 
 const KEYS := [".suitblaster.maxcharge", ".suitblaster.charge"]
 
+static var stand_ins := 0    # keys given a stand-in (t253_mp_blaster_client, #261)
+
 
 func _ready():
 	if not Network.is_server():
 		for key: String in [teamId + KEYS[0], playerId + KEYS[1]]:
 			if not Data.values.has(key):
 				Data.values[key] = 1.0
+				stand_ins += 1
 				ModLoaderLog.info("Suit Blaster: %s not here yet, stand-in 1.0 until the host's lands" % key, Story.LOG)
 	super()
