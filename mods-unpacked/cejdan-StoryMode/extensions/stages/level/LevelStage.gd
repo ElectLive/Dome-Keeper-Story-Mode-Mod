@@ -76,6 +76,20 @@ func startGadgetChoiceInput(teamId: String, playerId: String, offerType: String)
 	i.stopWithPredecessor = false
 	currentGadgetPopupByPlayerId[playerId] = i.popup
 	showPopup(i.popup, keeper)
+	# The shop's focused panel keeps the focus under the popup, and vanilla only
+	# focuses the first card when nothing has focus: the select key and the
+	# arrows would still work the shop (#234). Free the focus for the cards and
+	# give it back to the panel when the choice closes.
+	var vp: Viewport = i.popup.get_viewport()
+	var prev: Control = vp.gui_get_focus_owner() if vp != null else null
+	if prev != null:
+		prev.release_focus()
+		var cards: Array = i.popup.get_node("%Gadgets").get_children()
+		if not cards.is_empty():
+			InputSystem.grabFocus(cards.front())
+		i.connect("onStop", func():
+			if is_instance_valid(prev) and prev.is_inside_tree() and prev.is_visible_in_tree():
+				InputSystem.grabFocus(prev))
 	showingChoicePopup = true
 	i.connect("onStop", unpause)
 	i.connect("onStop", Network.rpc_server.bind(continueOfferQueue.bind(playerId)))

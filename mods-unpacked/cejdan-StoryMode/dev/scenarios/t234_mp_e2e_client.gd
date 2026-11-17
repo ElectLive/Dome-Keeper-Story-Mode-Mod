@@ -20,7 +20,7 @@ func boot() -> Dictionary:
 
 func _popup(me: String):
 	var p = Level.stage.currentGadgetPopupByPlayerId.get(me, null)
-	return p if p != null and is_instance_valid(p) and p.is_inside_tree() and not p.inputProcessor.desintegrating else null
+	return p if p != null and is_instance_valid(p) and p.is_inside_tree() and is_instance_valid(p.inputProcessor) and not p.inputProcessor.desintegrating else null
 
 
 func _shown(me: String) -> Array:
@@ -64,7 +64,12 @@ func _fly_home(h, what: String) -> void:
 	await h.teleport_tile(Host.UNDER)
 	await shared(h, "fly_" + what, 40.0)
 	await h.wait(0.5)
-	await h.hold("ui_up", 3.0)
+	h.note("%s: carried under the dome" % what, Keepers.first().carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
+	for i in 5:
+		await h.hold("ui_up", 1.5)
+		if Keepers.first().isInsideDome:
+			break
+	await h.wait(1.0)
 	h.check("%s: the client's keeper flew into the dome" % what, Keepers.first().isInsideDome, Level.map.getTileCoord(Keepers.first().global_position))
 
 
@@ -89,11 +94,21 @@ func _has_shared(key: String) -> bool:
 
 
 func _buy(h, id: String, me: String) -> void:
-	var price: int = maxi(0, Host.cost(id))   # -1: no money in its cost
-	var m0: int = Host.money()
+	# Paid in what its cost names (Sand Repair: sand; a repeatable one is not
+	# kept in boughtUpgrades).
+	var c0 = GameWorld.upgrades.get(id, {}).get("cost", {})
+	var cost: Dictionary = c0 if c0 is Dictionary else {}
+	var inv0: Dictionary = {}
+	for t in cost:
+		inv0[t] = int(Data.ofOr("team1.inventory." + t, 0))
 	GameWorld.buyUpgrade(id, "team1", me)
-	var ok: bool = await h.until(func(): return GameWorld.boughtUpgrades.has(id) and Host.money() == m0 - price, 10.0)
-	h.check("client buys %s for $%d" % [id, price], ok, {"paid": m0 - Host.money(), "price": price, "cost": GameWorld.upgrades.get(id, {}).get("cost", null)})
+	var paid := func() -> bool:
+		for t in cost:
+			if int(inv0[t]) - int(Data.ofOr("team1.inventory." + t, 0)) != int(cost[t]):
+				return false
+		return true
+	var ok: bool = await h.until(func(): return paid.call() and (GameWorld.boughtUpgrades.has(id) or GameWorld.upgrades.get(id, {}).get("repeatable", false)), 10.0)
+	h.check("client buys %s for %s" % [id, cost], ok and not cost.is_empty(), {"before": inv0, "bought": GameWorld.boughtUpgrades.has(id)})
 
 
 func run(h) -> void:
@@ -175,11 +190,9 @@ func run(h) -> void:
 	h.check("pressing the panel opens the gadget choice", opened)
 	await h.wait(1.5)
 	await h.shot("client_panel_offers")
-	# The choice opens with no card focused (as in single player): a direction first.
-	await h.press("ui_right")
-	await h.wait(0.5)
 	var p = _popup(me)
 	var focused: String = str(p.selectedGadget.get("id", "")) if p and p.selectedGadget is Dictionary else ""
+	h.check("a card has the focus when the choice opens over the shop", focused != "", focused)
 	await h.press("ui_select")
 	var bought: bool = await h.until(func(): return GameWorld.boughtUpgrades.has(entries[1]) and GameWorld.boughtUpgrades.has(focused), 10.0)
 	h.check("the pick buys New Gadget II and the focused gadget", bought and m0 - Host.money() == Host.cost(entries[1]), {"pick": focused, "paid": m0 - Host.money()})

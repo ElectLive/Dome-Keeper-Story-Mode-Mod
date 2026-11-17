@@ -15,7 +15,7 @@ func boot() -> Dictionary:
 
 func _popup(me: String):
 	var p = Level.stage.currentGadgetPopupByPlayerId.get(me, null)
-	return p if p != null and is_instance_valid(p) and p.is_inside_tree() and not p.inputProcessor.desintegrating else null
+	return p if p != null and is_instance_valid(p) and p.is_inside_tree() and is_instance_valid(p.inputProcessor) and not p.inputProcessor.desintegrating else null
 
 
 func run(h) -> void:

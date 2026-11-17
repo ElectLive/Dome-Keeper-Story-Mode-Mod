@@ -146,18 +146,23 @@ func _near(k, tile: Vector2i, r: int = 2) -> bool:
 	return absi(t.x - tile.x) <= r and absi(t.y - tile.y) <= r
 
 
-# The client's keeper carried `drops` to the room under the dome by teleport,
-# which moves them on the client only: the host brings its drops along (the
-# trip through the mine), then the client flies up into the dome.
+# The client's keeper picked `drops` up where they were (checked on the
+# client) and teleports to the room under the dome. That jump drops them on the
+# host, so the host brings them along (the trip through the mine) and has the
+# keeper pick them up again; then the client flies up into the dome.
 func _bring_home(h, drops: Array, what: String) -> void:
 	var there: bool = await h.until(func(): return _near(_client_keeper(), UNDER, 1), 40.0)
 	h.check("%s: the client's keeper is under the dome" % what, there, keeper_rows(h))
 	var ck = _client_keeper()
 	h.note("%s: the host's copy of the client keeper carries" % what, ck.carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
+	# The long teleport broke the carry on the host: pick them up again here.
 	for d in drops:
 		if is_instance_valid(d) and not d.absorbed:
 			d.teleport(ck.global_position + Vector2(randf_range(-4, 4), 4))
-	await h.wait(0.5)
+			await h.frames(2)
+			Level.drops.network_pickup(d, ck.playerId)
+	await h.wait(1.0)
+	h.check("%s: the host's copy of the client keeper carries them" % what, ck.carriedCarryables.size() == drops.size(), ck.carriedCarryables.map(func(c): return c.type if is_instance_valid(c) else null))
 	share("fly_" + what, true)
 
 
