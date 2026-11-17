@@ -46,10 +46,6 @@ $script:LogScanAllow = @(
     # GadgetSynchronizer (online), and FurnaceStation.gd reads
     # get_meta("tween", null), which logs when the meta is missing.
     @{ Name = "vanilla furnace"; Pattern = "FurnaceStation/GadgetSynchronizer is parented to a gadget without a state_changed|does not have any 'meta' values with the key 'tween'" },
-    # Online client given the Suit Blaster: its gadget and HUD are there before
-    # the Data keys, so SuitBlaster.propertyChanged subtracts a maxcharge it has
-    # not had yet and the HUD reads the charge keys until they land. #253.
-    @{ Name = "suit blaster on a client (#253)"; Pattern = "Invalid operands 'float' and 'Nil' in operator '-'.*propertyChanged \(res://content/gadgets/suitblaster/SuitBlaster\.gd|unknown data (player[0-9]+\.suitblaster\.charge|team[0-9]+\.suitblaster\.maxcharge) " },
     # Vanilla Relic Hunt's final act with the harness's waves forced
     # (t54_vanilla): Wave.gd reads monsters.timingmod before Monsters.gd has
     # set it, and GameWorld re-adds the between_waves limit.
