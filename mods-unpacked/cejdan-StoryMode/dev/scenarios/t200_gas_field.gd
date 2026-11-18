@@ -11,6 +11,7 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 #   #GGG####.#######      G gas rock (the pocket)             y 4..5
 #   #GGG.....#######
 
+const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const SLOT := 11
 const TIMEOUT := 480
 
@@ -135,21 +136,30 @@ func run(h) -> void:
 	h.check("the settled field sleeps", slept, field.stats())
 	await h.shot("settled")
 	# The pocket's own top row is a dead end too, and keeps a cell of gas each.
-	var low := 0.0
+	# The corridor's low ceiling keeps a clinging layer (#212); the shaft,
+	# which climbs, keeps none.
 	var held := 0.0
+	var corridor := 0.0
+	var in_shaft := 0.0
+	var room := 0.0
 	for c in field.mass:
-		if c.y > OY + 2:
-			if c.y == OY + 4 and c.x <= OX + 3:
-				held += field.mass[c]
-			else:
-				low += field.mass[c]
-	h.check("the gas left the shaft, the corridor and the pocket's floor", low < 0.02 * volume, [low, field.total()])
+		if c.y == OY + 4 and c.x <= OX + 3:
+			held += field.mass[c]
+		elif c.y == OY + 5 and c.x >= OX + 4 and c.x <= OX + 7:
+			corridor += field.mass[c]
+		elif c.x == OX + 8 and c.y >= OY + 3:
+			in_shaft += field.mass[c]
+		elif c.y <= OY + 2:
+			room += field.mass[c]
+	h.note("where the gas settled", {"pocket top": held, "corridor": corridor, "shaft": in_shaft, "room": room, "total": field.total()})
+	h.check("the shaft is clear", in_shaft < 0.05, in_shaft)
+	h.check("the corridor's ceiling holds a clinging layer, about CLING_MASS a cell", corridor > 3.2 * GasData.CLING_MASS and corridor < 4.4 * GasData.CLING_MASS, corridor)
 	h.check("the pocket's top row holds about a cell of gas each", held > 2.5 and held < 4.0, held)
 	h.check("the alcove is full", field.mass.get(_c(3, -1), 0.0) >= 0.95 and field.mass.get(_c(4, -1), 0.0) >= 0.95, [field.mass.get(_c(3, -1), 0.0), field.mass.get(_c(4, -1), 0.0)])
 	var top := 0.0
 	for x in 16:
 		top += field.mass.get(_c(x, 0), 0.0)
-	h.check("the room's gas lies under its ceiling", top > 0.6 * (field.total() - 2.0), [top, field.total()])
+	h.check("the room's gas lies under its ceiling", top > 0.6 * (room - 2.0), [top, room])
 	h.check("gas is conserved once settled", absf(_accounted() - volume) < 0.01, [_accounted(), volume])
 	h.check("little faded", field.faded < 0.1 * volume, field.faded)
 	var t0: int = field.phys_us

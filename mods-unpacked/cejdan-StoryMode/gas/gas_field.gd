@@ -322,12 +322,21 @@ func _step() -> void:
 		# slow drift while it is still rising.
 		var resting: bool = not up_open or mu >= 0.9
 		var div: float = GasData.SIDE_DIVISOR if resting else GasData.DRIFT_DIVISOR
+		# Gas under rock clings to it (#212): it keeps CLING_MASS, and only what
+		# is more than that moves on along the ceiling. So a low ceiling or a
+		# bend holds some of the gas, and only a pocket with more than that to
+		# give lets any out, slowly.
+		var free: float = rem
+		if not up_open and not _is_sky(up):
+			free = rem - GasData.CLING_MASS
 		for side in [Vector2i.LEFT, Vector2i.RIGHT]:
+			if free <= 0.0:
+				break
 			var sc: Vector2i = c + side
 			if not _is_open(sc):
 				continue
 			var ms: float = mass.get(sc, 0.0)
-			var flow: float = clampf((m - ms) / div, 0.0, minf(max_flow, rem))
+			var flow: float = clampf((m - ms) / div, 0.0, minf(max_flow, free))
 			# No slivers into empty cells: they would be dropped as too thin.
 			if ms <= 0.0 and flow < GasData.MIN_PACKET:
 				continue
@@ -336,6 +345,7 @@ func _step() -> void:
 				dm[sc] = dm.get(sc, 0.0) + flow
 				_flux(c, sc, flow)
 				rem -= flow
+				free -= flow
 		# Down: only gas squeezed past a full cell.
 		if rem > 1.0:
 			var down: Vector2i = c + Vector2i.DOWN
