@@ -20,6 +20,13 @@ func run(h) -> void:
 	var td = Level.map.tileData
 	h.check("the map data carries the run's seed", td.has_meta(Story.SEED_META) and int(td.get_meta(Story.SEED_META)) == 12345, td.get_meta(Story.SEED_META, null))
 	var field = Level.map.get_node("StoryLavaField")
+	# Heat Shielding IV (#272): since #187 a keeper waiting unshielded above the
+	# ocean (B8) overheats in seconds, and the recall bumps the recalls marker
+	# (4242 -> 4243) around the save or just after the load.
+	h.set_inv("money", 10000000)
+	for n in range(1, 5):
+		await h.buy("storyheatshield%d" % n)
+	h.set_inv("money", 0)
 	# A shaft from the surface down through the ocean's ceiling.
 	var oc: Dictionary = td.get_meta("story_ocean")
 	var entries: Array = td.get_entry_coords(true)
@@ -50,6 +57,7 @@ func run(h) -> void:
 	h.check("the ocean under the shaft is seen and holds lava", field._seen(probe) and field.mass.get(probe, 0.0) > 0.5, {"seen": field._seen(probe), "mass": field.mass.get(probe, 0.0)})
 	Data.apply("dev.t116.probe", [probe.x, probe.y])
 	await h.shot("ocean_before_save")
+	field.heat = 0.0
 	field.recalls = 4242
 	Data.apply("dev.t116.palette", Level.loadout.palette)
 	h.note("before save", {"seed": Level.levelSeed, "palette": Level.loadout.palette, "lava cells": field.mass.size()})
