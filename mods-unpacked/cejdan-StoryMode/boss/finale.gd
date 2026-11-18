@@ -32,7 +32,9 @@ signal step_changed(step: String)
 const SPOTS: Array = [[-150.0, 160.0], [-215.0, -125.0, 135.0], [-200.0, -110.0, 120.0]]
 const FALL_REST := 1.1        # seconds the fallen eye lies there before the monsters come
 const GROUND_Y := 2.0
-const RUMBLE := 2.6           # seconds of cracking ground before a round breaks out
+const RUMBLE := 2.6           # seconds of cracking ground before rounds 2 and 3 break out
+# The first cracking follows the finale music's bell intro (#172): see
+# Boss.FINALE_TOLLS. It ends, and round 1 breaks out, on the music's drop.
 
 var step: String = "rumble"   # rumble, round1, lull, round2, lull, round3, fall, allies, thanks, done
 var great = null              # Velle's great eye (last round)
@@ -51,6 +53,13 @@ var said: Array = []
 var _thanks_i: int = 0
 var _rng := RandomNumberGenerator.new()
 var _dust: Array = []
+# The first cracking, in time with the bells (#172).
+var _toll_k: int = -1         # the last toll that has rung
+var _beat_k: int = -1         # the last heartbeat kick
+var _toll_flash: float = 0.0  # the cracks' flash from the last toll, fading
+var _toll_grow: float = 0.0   # how far the cracks are open, 0..1, eased
+var _toll_roll: bool = false  # the snare roll: the cracks tear open
+var _clock_fallback: bool = false
 
 
 func setup() -> void:
@@ -179,6 +188,11 @@ func _physics_process(delta: float) -> void:
 				m.fury = fury
 	match step:
 		"rumble", "lull":
+			if step == "rumble" and round_i == -1:
+				# The first cracking keeps time with the bells (#172).
+				_toll_rumble(delta)
+				queue_redraw()
+				return
 			# The ground works itself open where they will come up.
 			if fposmod(t, 0.2) < delta:
 				InputSystem.shake(5.0 + t * 5.0, 0.22, 24.0)
@@ -325,13 +339,74 @@ func _say(i: int) -> void:
 	said.append(pd.say("arrive", at, BossText.THANKS[i], 3.8))
 
 
+# Seconds into the bell intro: the music's own clock, so the ground moves with
+# what the player hears; the step's clock if the music has no intro playing.
+func _intro_clock() -> float:
+	var Director = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
+	var d = Director.instance()
+	var at: float = -1.0
+	if d != null and d.music != null and not _clock_fallback:
+		at = d.music.intro_time()
+	if at < 0.0 and t > 0.5:
+		# No intro playing (missing file, or it ended): count on alone.
+		_clock_fallback = true
+	return t if _clock_fallback or at < 0.0 else at
+
+
+func _toll_rumble(delta: float) -> void:
+	var beat: float = _intro_clock() / Boss.FINALE_BEAT
+	var tolls: Array = Boss.FINALE_TOLLS
+	while _toll_k + 1 < tolls.size() and beat >= float(tolls[_toll_k + 1]):
+		_toll_k += 1
+		_on_toll(_toll_k)
+	var beats: Array = Boss.FINALE_HEARTBEATS
+	while _beat_k + 1 < beats.size() and beat >= float(beats[_beat_k + 1]):
+		_beat_k += 1
+		InputSystem.shake(4.0 + 1.5 * _beat_k, 0.18, 20.0)
+		_burst(4 + _beat_k, 0.6)
+	_toll_roll = beat >= Boss.FINALE_ROLL_BEAT
+	# Each toll opens the cracks a step; the roll tears them right open.
+	var goal: float = float(_toll_k + 1) / float(tolls.size() + 1)
+	if _toll_roll:
+		goal = lerpf(goal, 1.0, clampf((beat - Boss.FINALE_ROLL_BEAT) / (Boss.FINALE_INTRO_BEATS - Boss.FINALE_ROLL_BEAT), 0.0, 1.0))
+		if fposmod(t, 0.06) < delta:
+			InputSystem.shake(6.0 + 6.0 * goal, 0.12, 30.0)
+			_burst(2, 1.0)
+	_toll_grow += (goal - _toll_grow) * minf(1.0, delta * 10.0)
+	_toll_flash = maxf(0.0, _toll_flash - delta * 1.6)
+	if beat >= Boss.FINALE_INTRO_BEATS:
+		# The drop: they break out with the music.
+		InputSystem.shake(20.0, 0.7, 16.0)
+		_burst(30, 1.6)
+		_spawn_round(0)
+		_set_step("round1")
+
+
+func _on_toll(k: int) -> void:
+	_toll_flash = 1.0
+	InputSystem.shake(7.0 + 3.0 * k, 0.6, 14.0)
+	Sfx.play("drop", -12.0 + 1.5 * k, _rng.randf_range(0.55, 0.7))
+	_burst(10 + 5 * k, 0.8 + 0.15 * k)
+	ModLoaderLog.info("Finale: toll %d (cracks %.2f)" % [k, float(k + 1) / float(Boss.FINALE_TOLLS.size() + 1)], "cejdan-StoryMode")
+
+
+# Rubble thrown up from the cracks of round 1's spots.
+func _burst(n: int, force: float) -> void:
+	var offs: Array = spots(0)
+	for j in n:
+		var at: Vector2 = to_local(_ground(offs[_rng.randi() % offs.size()]))
+		_dust.append({"p": at + Vector2(_rng.randf_range(-14, 14), 0), "v": Vector2(_rng.randf_range(-40, 40), _rng.randf_range(-130, -50) * force),
+			"life": _rng.randf_range(0.3, 0.8), "col": Color("3b2f44") if j % 3 else Color(Pix.VIOLET_LIGHT, 0.9)})
+
+
 func _draw() -> void:
 	for f: Dictionary in _dust:
 		draw_rect(Rect2(f["p"].round(), Vector2(2, 2)), Color(f.get("col", Color("5a4a66")), clampf(f["life"] * 2.0, 0.0, 1.0)))
 	if step == "rumble" or step == "lull":
 		# The ground splits where they are about to come up: cracks spread
 		# and light up from below, and the soil heaves.
-		var grow: float = clampf(t / (RUMBLE * 0.85), 0.0, 1.0)
+		var tolled: bool = round_i == -1
+		var grow: float = _toll_grow if tolled else clampf(t / (RUMBLE * 0.85), 0.0, 1.0)
 		var Tentacle = load(TENTACLE)
 		var offs: Array = spots(round_i + 1)
 		for i in offs.size():
@@ -339,10 +414,17 @@ func _draw() -> void:
 			var p: Vector2 = to_local(_ground(off))
 			var big: bool = false
 			var glow: float = grow * (0.55 + 0.45 * sin(t * (10.0 + 14.0 * grow) + i))
+			var pulse: float = 0.0
+			if tolled:
+				# Dim between tolls, flaring on each one; flickering in the roll.
+				pulse = _toll_flash
+				glow = clampf(0.25 + 0.75 * _toll_flash, 0.0, 1.0)
+				if _toll_roll:
+					glow = 0.6 + 0.4 * sin(t * 40.0 + i)
 			Tentacle.draw_light(self, p, _crack_seed(off), grow, glow * grow, big)
 			Tentacle.draw_cracks(self, p, Tentacle.crack_lines(_crack_seed(off), big), grow, glow)
 			# A mound pushing up, shuddering.
-			var heave: float = grow * grow * (9.0 if big else 6.0)
+			var heave: float = grow * grow * (9.0 if big else 6.0) + pulse * 3.0
 			var jit: float = sin(t * 47.0 + i * 3.0) * grow
 			Pix.ellipse(self, p + Vector2(jit, 1), (16.0 if big else 11.0) * (0.5 + 0.5 * grow), heave, Color("2a2130"), -1.0, 0.0)
 			draw_rect(Rect2((p + Vector2(-2, -heave)).round(), Vector2(4, 1)), Color(Pix.VIOLET_LIGHT, glow))

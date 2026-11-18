@@ -1,137 +1,204 @@
 extends Node
 
-# Music for the boss sequence (#163), made only from the game's own layered
-# tracks, in the set of the run's keeper (the same sets vanilla uses for the
-# final wave and for carrying the relic home):
+# Music for the boss sequence: the mod's own score (#172), written by
+# art/music/score.py into music/boss_<cue>_<layer>.ogg. Each cue is a loop in
+# layers that start together and stay in step; the director turns layers up
+# and down with the fight:
 #
-#   fight    the final-wave ("desperation") pair. Phase 1 plays layer 1 alone,
-#            a little slow and low; phase 2 brings layer 2 in; phase 3 runs
-#            both at full volume and a touch fast.
-#   chase    the relic-retrieval pair, sped up; layer 2 swells as the
-#            tentacles close in.
-#   finale   the final-wave pair again, both layers, full.
+#   fight    1 the pulse alone in phase 1; 2 war drums and brass join in
+#            phase 2; 3 Velle's theme, choir and crashes on top in phase 3.
+#   chase    1 the run; 2 what is behind you, louder the closer the
+#            tentacles are.
+#   finale   "Toll": music/boss_finale_intro.ogg once (bells while the ground
+#            cracks), then both loop layers at full, starting exactly at the
+#            intro's end so the drop lands. boss/finale.gd times the cracking
+#            to intro_time().
 #
-# Both layers of a pair start together and share one pitch, so they stay in
-# step. The mining music is held off while any of this plays, and everything
-# fades when the sequence ends (the endings bring their own music).
+# The mining music is held off while any of this plays, and everything fades
+# when the sequence ends (the endings bring their own music). The OGGs are
+# read from their bytes, like the mod's PNGs, so they need no import step.
 
-const SETS := {
-	"keeper1": ["res://content/music/LASER Desperation Layer 1 [loop].ogg", "res://content/music/LASER Desperation Layer 2 [loop].ogg",
-		"res://content/music/ENGINEER Relic Retrieval Layer 1 [loop].ogg", "res://content/music/ENGINEER Relic Retrieval Layer 2 [loop].ogg"],
-	"keeper2": ["res://content/music/ASSESSOR Final Push Layer 1 [loop].ogg", "res://content/music/ASSESSOR Final Push Layer 2 [loop].ogg",
-		"res://content/music/ASSESSOR Relic Retrieval Layer 1 [loop].ogg", "res://content/music/ASSESSOR Relic Retrieval Layer 2 [loop].ogg"],
-	"keeper3": ["res://content/music/keeper3/keeper3_final_wave_layer1_loop.ogg", "res://content/music/keeper3/keeper3_final_wave_layer2_loop.ogg",
-		"res://content/music/keeper3/keeper3_relic_layer1_loop.ogg", "res://content/music/keeper3/keeper3_relic_layer2_loop.ogg"],
-	"keeper4": ["res://content/music/keeper4/keeper4_final_wave_layer1_loop.ogg", "res://content/music/keeper4/keeper4_final_wave_layer2_loop.ogg",
-		"res://content/music/keeper4/keeper4_relic_layer1_loop.ogg", "res://content/music/keeper4/keeper4_relic_layer2_loop.ogg"],
-}
+const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
+const DIR := "res://mods-unpacked/cejdan-StoryMode/music/"
+const CUES := {"fight": 3, "chase": 2, "finale": 2}
 const SILENT := -60.0
 const FADE_DB_PER_S := 30.0
+# Layer volumes (dB) per state.
+const FIGHT := [[2.0, SILENT, SILENT], [0.0, 0.0, SILENT], [0.0, 0.0, 0.0]]
+const CHASE_FAR := -16.0
+const FINALE := [0.0, 0.0]
+# All boss music sits this far above the layer volumes. The files are mastered
+# to the game's own music loudness, but the boss fights are busier with sound
+# than a wave, so the music is lifted to carry over them (playtest 2026-11-15).
+# The Music bus is ~10 dB down and the master bus has a limiter: no clipping.
+const GAIN_DB := 3.0
 
-var players: Array = []      # battle 1, battle 2, run 1, run 2
-var goal: Array = [SILENT, SILENT, SILENT, SILENT]
+static var _streams: Dictionary = {}   # path -> AudioStreamOggVorbis
+
+var cues: Dictionary = {}    # cue -> [AudioStreamPlayer, ...]
+var goals: Dictionary = {}   # cue -> [dB, ...]
 var mode: String = ""        # "", fight, chase, finale
-var set_id: String = ""
+var intro: AudioStreamPlayer = null   # the finale's bell intro
+var _intro_pending: bool = false      # the intro plays; the loop has not started yet
 var _hold_t: float = 0.0
 
 
 func _ready() -> void:
 	name = "BossMusic"
-	for i in 4:
-		var p := AudioStreamPlayer.new()
-		p.bus = &"Music"
-		p.volume_db = SILENT
-		add_child(p)
-		players.append(p)
 
 
-func _load_set() -> void:
-	set_id = str(Audio.get_music_keeperId())
-	if not SETS.has(set_id):
-		set_id = "keeper1"
-	for i in 4:
-		var path: String = SETS[set_id][i]
-		players[i].stream = load(path) if ResourceLoader.exists(path) else null
+static func intro_length() -> float:
+	return Boss.FINALE_BEAT * Boss.FINALE_INTRO_BEATS
 
 
-func _start_pair(a: int, pitch: float) -> void:
-	for i in [a, a + 1]:
-		var p: AudioStreamPlayer = players[i]
-		if p.stream == null:
-			continue
-		p.pitch_scale = pitch
-		p.volume_db = SILENT
-		p.play()
+static func stream(cue: String, layer: int, loop: bool = true) -> AudioStream:
+	var path: String = DIR + ("boss_%s_%d.ogg" % [cue, layer] if layer > 0 else "boss_%s_intro.ogg" % cue)
+	if not _streams.has(path):
+		var bytes: PackedByteArray = FileAccess.get_file_as_bytes(path)
+		var s: AudioStreamOggVorbis = AudioStreamOggVorbis.load_from_buffer(bytes) if not bytes.is_empty() else null
+		if s == null:
+			push_error("StoryMode: missing or bad music file " + path)
+		else:
+			s.loop = loop
+			s.resource_name = path.get_file()
+		_streams[path] = s
+	return _streams[path]
 
 
-func _pitch_pair(a: int, pitch: float) -> void:
-	players[a].pitch_scale = pitch
-	players[a + 1].pitch_scale = pitch
+# Starts every layer of `cue` together, silent; the goals bring them in.
+func _start(cue: String) -> void:
+	if mode == cue:
+		return
+	if mode != "":
+		goals[mode] = _silence(mode)
+	mode = cue
+	_ensure(cue)
+	_play_cue(cue, 0.0)
+	goals[cue] = _silence(cue)
+
+
+func _ensure(cue: String) -> void:
+	if not cues.has(cue):
+		var list: Array = []
+		for i in CUES[cue]:
+			var p := AudioStreamPlayer.new()
+			p.bus = &"Music"
+			p.volume_db = SILENT
+			p.stream = stream(cue, i + 1)
+			add_child(p)
+			list.append(p)
+		cues[cue] = list
+
+
+# Plays every layer of `cue` from `from` seconds, silent, or straight at its
+# goal volume when `loud` (the finale's drop must land, not fade in).
+func _play_cue(cue: String, from: float, loud: bool = false) -> void:
+	var g: Array = goals.get(cue, _silence(cue))
+	for i in cues[cue].size():
+		var p: AudioStreamPlayer = cues[cue][i]
+		if p.stream != null:
+			p.volume_db = _out_db(float(g[i])) if loud else SILENT
+			p.play(maxf(0.0, from))
+
+
+# A layer volume as played: lifted by GAIN_DB unless it is silent.
+static func _out_db(layer_db: float) -> float:
+	return layer_db if layer_db <= SILENT else layer_db + GAIN_DB
+
+
+func _silence(cue: String) -> Array:
+	var out: Array = []
+	for i in CUES[cue]:
+		out.append(SILENT)
+	return out
 
 
 # The chamber fight; `phase` 0..2.
 func fight(phase: int) -> void:
-	if mode != "fight":
-		if set_id == "":
-			_load_set()
-		mode = "fight"
-		_start_pair(0, 0.94)
-	match phase:
-		0:
-			goal = [-3.0, SILENT, SILENT, SILENT]
-			_pitch_pair(0, 0.94)
-		1:
-			goal = [-2.0, -4.0, SILENT, SILENT]
-			_pitch_pair(0, 1.0)
-		_:
-			goal = [0.0, 0.0, SILENT, SILENT]
-			_pitch_pair(0, 1.05)
+	_start("fight")
+	goals["fight"] = FIGHT[clampi(phase, 0, 2)].duplicate()
 
 
 # The chase; `closeness` 0 (far behind) .. 1 (on the keeper).
 func chase(closeness: float) -> void:
-	if mode != "chase":
-		if set_id == "":
-			_load_set()
-		mode = "chase"
-		_start_pair(2, 1.08)
-	goal = [SILENT, SILENT, -1.0, lerpf(-18.0, 0.0, clampf(closeness, 0.0, 1.0))]
+	_start("chase")
+	goals["chase"] = [0.0, lerpf(CHASE_FAR, 0.0, clampf(closeness, 0.0, 1.0))]
 
 
 func finale() -> void:
-	if mode != "finale":
-		if set_id == "":
-			_load_set()
-		mode = "finale"
-		_start_pair(0, 1.0)
-	goal = [0.0, 0.0, SILENT, SILENT]
+	if mode == "finale":
+		return
+	if mode != "":
+		goals[mode] = _silence(mode)
+	mode = "finale"
+	_ensure("finale")
+	goals["finale"] = FINALE.duplicate()
+	var s = stream("finale", 0, false)
+	if s == null:
+		_play_cue("finale", 0.0)
+		return
+	if intro == null:
+		intro = AudioStreamPlayer.new()
+		intro.bus = &"Music"
+		add_child(intro)
+	intro.stream = s
+	intro.volume_db = GAIN_DB
+	intro.play()
+	_intro_pending = true
+
+
+# Seconds into the finale's bell intro, from the audio clock, or -1 when no
+# intro is playing (no file, or the loop has taken over).
+func intro_time() -> float:
+	if not _intro_pending or intro == null or not intro.playing:
+		return -1.0
+	return intro.get_playback_position() + AudioServer.get_time_since_last_mix()
 
 
 func stop() -> void:
+	if mode != "":
+		goals[mode] = _silence(mode)
 	mode = ""
-	goal = [SILENT, SILENT, SILENT, SILENT]
+	_intro_pending = false
 
 
-# What is audible now, for playtests: stream file names and volumes.
+# What is audible now, for playtests: file names, volumes and play positions.
 func playing() -> Array:
 	var out: Array = []
-	for i in 4:
-		var p: AudioStreamPlayer = players[i]
-		if p.playing and p.volume_db > -40.0 and p.stream != null:
-			out.append({"file": p.stream.resource_path.get_file(), "db": snappedf(p.volume_db, 0.1), "pitch": p.pitch_scale})
+	if intro != null and intro.playing and intro.volume_db > -40.0:
+		out.append({"file": intro.stream.resource_name, "db": snappedf(intro.volume_db, 0.1), "pitch": 1.0, "pos": snappedf(intro.get_playback_position(), 0.01)})
+	for cue: String in cues:
+		for p: AudioStreamPlayer in cues[cue]:
+			if p.playing and p.volume_db > -40.0 and p.stream != null:
+				out.append({"file": p.stream.resource_name, "db": snappedf(p.volume_db, 0.1), "pitch": p.pitch_scale, "pos": snappedf(p.get_playback_position(), 0.01)})
 	return out
 
 
 func _process(delta: float) -> void:
-	for i in 4:
-		var p: AudioStreamPlayer = players[i]
-		if not p.playing:
-			continue
-		p.volume_db = move_toward(p.volume_db, goal[i], FADE_DB_PER_S * delta)
-		# A pair that has faded right out stops.
-		var pair: int = i - (i % 2)
-		if goal[pair] <= SILENT and goal[pair + 1] <= SILENT and p.volume_db <= SILENT + 0.5:
-			p.stop()
+	# The finale's drop: the loop starts where the intro's bars end, from the
+	# overshoot, so it lands on the beat; the intro's bells ring on over it.
+	if _intro_pending:
+		var at: float = intro_time()
+		if at < 0.0 or at >= intro_length():
+			_intro_pending = false
+			_play_cue("finale", at - intro_length() if at >= 0.0 else 0.0, true)
+	if intro != null and intro.playing and mode != "finale":
+		intro.volume_db = move_toward(intro.volume_db, SILENT, FADE_DB_PER_S * delta)
+		if intro.volume_db <= SILENT + 0.5:
+			intro.stop()
+	for cue: String in cues:
+		var g: Array = goals.get(cue, _silence(cue))
+		var all_out: bool = true
+		for i in cues[cue].size():
+			var p: AudioStreamPlayer = cues[cue][i]
+			if not p.playing:
+				continue
+			p.volume_db = move_toward(p.volume_db, _out_db(g[i]), FADE_DB_PER_S * delta)
+			all_out = all_out and g[i] <= SILENT and p.volume_db <= SILENT + 0.5
+		# A cue that has faded right out stops.
+		if all_out:
+			for p: AudioStreamPlayer in cues[cue]:
+				p.stop()
 	if mode == "":
 		return
 	# The mining music steps aside.
