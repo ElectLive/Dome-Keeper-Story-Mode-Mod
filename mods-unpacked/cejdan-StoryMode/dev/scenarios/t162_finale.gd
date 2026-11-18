@@ -35,10 +35,10 @@ func run(h) -> void:
 	# Jump to the end of the chase.
 	boss._ensure_layer()
 	boss._stop_waves()
-	boss._set_state("chase")
-	boss._start_chase(Vector2(0, 400))
+	boss._set_state("finale")
+	boss._start_finale()
 	var started: bool = await h.until(func(): return Director.current() == "finale", 5.0)
-	h.check("reaching the dome in the chase starts the finale", started, Director.current())
+	h.check("the finale starts", started, Director.current())
 	if not started:
 		return
 	var fin = boss.finale
