@@ -1,11 +1,11 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 # Ticket 200, the dev key: with `-- --gas`, F10 puts the keeper in a tunnel
-# beside the next gas pocket. Run with -Extra "--gas".
+# beside the next gas pocket. boot() asks for --gas itself (#272).
 
 
 func boot() -> Dictionary:
-	return {"seed": 12345}
+	return {"seed": 12345, "gas": true}
 
 
 func run(h) -> void:

@@ -15,7 +15,8 @@ var _hint_left := 0.0
 
 
 func _ready() -> void:
-	if not "--gas" in OS.get_cmdline_user_args():
+	# A playtest scenario's boot() can ask for it too (`gas: true`, #272).
+	if not Story.has_user_arg("gas"):
 		queue_free()
 		return
 	var layer := CanvasLayer.new()

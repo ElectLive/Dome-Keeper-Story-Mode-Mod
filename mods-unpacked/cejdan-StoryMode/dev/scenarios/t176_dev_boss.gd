@@ -11,7 +11,8 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 #                  drilled, and the shaft is still open when Velle dies and
 #                  the chase begins.
 #
-# t170_dev_chase flies that shaft home with real input.
+# (t170_dev_chase flew that shaft home with real input; dropped in #272, as it
+# expected Laser III and the dev gear has had Laser IV since #195.)
 
 const Director = preload("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 const Dev = preload("res://mods-unpacked/cejdan-StoryMode/dev/boss_dev.gd")
