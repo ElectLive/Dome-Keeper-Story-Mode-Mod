@@ -43,6 +43,7 @@ static func register() -> void:
 		t.add_message("upgrades.storynewgadget%d.desc" % i, "Roll a random gadget for the dome, as if you found one in a cave. Reroll with water. Paid when you pick.")
 	# Story beats (data/beats.gd): story.beat.<id> holds the beat's lines.
 	t.add_message("story.beat.continue", "Continue")
+	t.add_message("story.beat.waiting", "Waiting for the other players...")
 	for b: Dictionary in load("res://mods-unpacked/cejdan-StoryMode/data/beats.gd").BEATS:
 		t.add_message("story.beat." + str(b["id"]), "\n".join(PackedStringArray(b.get("lines", []))))
 	TranslationServer.add_translation(t)

@@ -424,12 +424,10 @@ func dome_lost() -> void:
 		music.stop()
 
 
-# A client: the host won the finale; the saved ending plays here too.
+# A client: the host won the finale. The saved ending comes from the host's
+# game mode node (Storymode.horror_defeated, sent to every client, #229).
 func _client_won() -> void:
 	music.stop()
-	await get_tree().create_timer(1.0, false).timeout
-	if Level.mode != null and Level.mode.has_method("horror_defeated_here"):
-		Level.mode.horror_defeated_here()
 
 
 func _finish_won() -> void:
@@ -630,10 +628,9 @@ func _client_process(delta: float) -> void:
 		if st == "" or st == "won" or st == "lost":
 			music.stop()
 		if st == "lost" and was in ["fight", "chase"]:
+			# The host ran out of hearts; the lost ending comes from the host's
+			# game mode node (Storymode.keeper_lost, sent to every client, #229).
 			_team_down()
-			# The host ran out of hearts: the lost ending here too.
-			if Level.mode != null and Level.mode.has_method("keeper_lost"):
-				Level.mode.keeper_lost()
 		if st == "won":
 			_client_won()
 		if st == "" and _puppet() != null:

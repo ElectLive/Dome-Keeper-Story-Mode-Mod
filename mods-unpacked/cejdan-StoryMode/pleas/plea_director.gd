@@ -110,7 +110,12 @@ func _on_monster_died(m) -> void:
 # Shows one line of `kind` from the current stage's pool (or `forced`). Wave
 # lines go above the dome (or to the top of the screen when the dome is off
 # screen); last words go to `at`. `life` overrides how long it stays up.
-func say(kind: String, at = null, forced: String = "", life: float = -1.0) -> String:
+#
+# Online (#229): the host picks every line and sends it to the clients, so the
+# team reads the same plea; a client's own director only shows the host's.
+func say(kind: String, at = null, forced: String = "", life: float = -1.0, from_host: bool = false) -> String:
+	if _online() and not multiplayer.is_server() and not from_host:
+		return ""
 	# No pleas during the boss sequence (#174); a line the boss itself asks
 	# for (`forced`: the thanks after the finale) still shows.
 	if forced == "" and Story.boss_active():
@@ -126,6 +131,8 @@ func say(kind: String, at = null, forced: String = "", life: float = -1.0) -> St
 			while line == _last_line:
 				line = pool.pick_random()
 	_last_line = line
+	if _online() and multiplayer.is_server():
+		Network.rpc_if_state(_net_say.bind(kind, at, line, life), Network.ConnectionState.LEVEL_STAGE_SYNC)
 	var where: String = "world"
 	var pos: Vector2
 	if at != null:
@@ -143,6 +150,16 @@ func say(kind: String, at = null, forced: String = "", life: float = -1.0) -> St
 	shown.append({"t": snappedf(_time, 0.01), "kind": kind, "stage": st, "line": line, "where": where})
 	plea_shown.emit(kind, line, st)
 	return line
+
+
+static func _online() -> bool:
+	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
+		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_say(kind: String, at, line: String, life: float) -> void:
+	say(kind, at, line, life, true)
 
 
 # The line as it shows: runes for whatever the translators can't read yet (#92).

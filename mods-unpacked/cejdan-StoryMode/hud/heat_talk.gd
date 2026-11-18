@@ -129,6 +129,54 @@ func _say(text: String, color: Color, kind: String) -> void:
 	ModLoaderLog.info("Keeper heat line: " + text, "cejdan-StoryMode")
 	if _holder != null and is_instance_valid(_holder):
 		_holder.queue_free()
+	_holder = _make(text, color, kind)
+	_follow()
+	# Online (#229): the other players see this keeper's line over its head.
+	var k = Keepers.first()
+	if _online() and k != null:
+		if multiplayer.is_server():
+			_relay(k.playerId, text, color, kind, 1)
+		else:
+			_net_line.rpc_id(1, k.playerId, text, color, kind)
+
+
+static func _online() -> bool:
+	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
+		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
+
+
+# Lines over the other players' keepers: playerId -> holder. Every one shown,
+# for checks: [{player, text}]
+var _remote: Dictionary = {}
+var shown_remote: Array = []
+
+
+# A player's heat line: a client sends its own to the host, which passes it on
+# to the other clients; the host sends its own to every client.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_line(player_id: String, text: String, color: Color, kind: String) -> void:
+	var from: int = multiplayer.get_remote_sender_id()
+	if multiplayer.is_server():
+		_relay(player_id, text, color, kind, from)
+	elif from != 1:
+		return
+	var mine = Keepers.first()
+	if mine != null and mine.playerId == player_id:
+		return
+	if _remote.has(player_id) and is_instance_valid(_remote[player_id]):
+		_remote[player_id].queue_free()
+	_remote[player_id] = _make(text, color, kind)
+	shown_remote.append({"player": player_id, "text": text})
+	_follow()
+
+
+func _relay(player_id: String, text: String, color: Color, kind: String, from: int) -> void:
+	for c in Network.clients:
+		if c.peer_id != from and c.connection_state == Network.ConnectionState.LEVEL_STAGE_SYNC:
+			_net_line.rpc_id(c.peer_id, player_id, text, color, kind)
+
+
+func _make(text: String, color: Color, kind: String) -> Node2D:
 	var label: RichTextLabel = RichTextLabel.new()
 	label.name = "HeatLine"
 	label.bbcode_enabled = true
@@ -154,17 +202,21 @@ func _say(text: String, color: Color, kind: String) -> void:
 	label.custom_minimum_size = Vector2(text.length() * 6 + 12, 0)
 	label.reset_size()
 	label.position = Vector2(-label.size.x / 2.0, -label.size.y)
-	_holder = holder
-	_follow()
 	holder.modulate.a = 0.0
 	var t: Tween = holder.create_tween()
 	t.tween_property(holder, "modulate:a", 1.0, 0.2)
 	t.tween_interval(Lines.LIFE - 0.75)
 	t.tween_property(holder, "modulate:a", 0.0, 0.55)
 	t.tween_callback(holder.queue_free)
+	return holder
 
 
 func _follow() -> void:
+	for pid in _remote:
+		var h = _remote[pid]
+		var k = Keepers.getKeeper(pid) if is_instance_valid(h) and Keepers.hasKeeper(pid) else null
+		if k != null and is_instance_valid(k):
+			h.global_position = (k.global_position + OFFSET).round()
 	if _holder == null or not is_instance_valid(_holder):
 		return
 	var keeper = Keepers.first()
