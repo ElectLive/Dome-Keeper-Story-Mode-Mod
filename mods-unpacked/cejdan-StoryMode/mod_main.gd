@@ -87,6 +87,10 @@ func _ready():
 	var gas = load("res://mods-unpacked/cejdan-StoryMode/gas/gas_director.gd").new()
 	gas.name = "GasDirector"
 	add_child(gas)
+	# Dev-only: F10 jumps the keeper to the next gas pocket; needs `-- --gas`.
+	var gas_finder = load("res://mods-unpacked/cejdan-StoryMode/gas/dev_gas_finder.gd").new()
+	gas_finder.name = "DevGasFinder"
+	add_child(gas_finder)
 	# Dev-only lava playtest; does nothing without `-- --lavaprobe=<dir>`.
 	var lava_probe = load("res://mods-unpacked/cejdan-StoryMode/lava/dev_lava_probe.gd").new()
 	lava_probe.name = "DevLavaProbe"
