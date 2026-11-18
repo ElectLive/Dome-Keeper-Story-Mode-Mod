@@ -174,7 +174,16 @@ func _physics_process(delta: float) -> void:
 		"chase":
 			if chase != null and is_instance_valid(chase):
 				music.chase(1.0 - chase.gap / 260.0)
-			if keeper.isInsideDome:
+			# Home counts only once the keeper has been out of the dome: the dev
+			# command starts the chase the moment the keeper is teleported away,
+			# while the dome still counts the keeper as inside (#176).
+			# The flag alone is not enough either: it can flip on a moment
+			# after a teleport out, so the keeper must also be at the dome.
+			var dome = Level.getDome("team1")
+			var at_dome: bool = dome != null and keeper.global_position.distance_to(dome.global_position) < 240.0
+			if not keeper.isInsideDome:
+				_chase_left_dome = true
+			elif _chase_left_dome and at_dome:
 				_chase_done()
 		"finale":
 			music.finale()
@@ -360,9 +369,9 @@ func _keeper_died(cause: String) -> void:
 
 
 # Dev command (editor only): `-- --story --boss` drops the keeper into Velle's
-# chamber; `--boss=chase` starts at the chase (Velle already dead, a winding
-# shaft drilled from the chamber up to the dome), `--boss=finale` at the
-# surface battle. All three start with the gear a keeper has by then
+# chamber; `--boss=chase` starts at the chase (Velle already dead),
+# `--boss=finale` at the surface battle. The first two drill a winding shaft
+# from the chamber up to the dome, the keeper's way home in the chase. All three start with the gear a keeper has by then
 # (dev/boss_dev.gd): Heat Shielding IV, the Suit Blaster, all of the drill and
 # the jetpack, Laser III.
 func _dev_boss(what: String) -> void:
@@ -393,10 +402,11 @@ func _dev_boss(what: String) -> void:
 		Data.apply("team1.story.beatsplayed", ",".join(PackedStringArray(played)))
 	Data.apply(Awakening.AWAKE, true)
 	var start: Vector2i = ch.position + Vector2i(3, 2)
+	# The way home: an open shaft, as the keeper would have drilled it. Dug for
+	# the fight too (#176), or the chase after it could not be finished.
+	dev_path = dev.path_cells(ch, int(Level.levelSeed), dev.pool_cells())
+	dev.carve(dev_path)
 	if what == "chase":
-		# The way home: an open shaft, as the keeper would have drilled it.
-		dev_path = dev.path_cells(ch, int(Level.levelSeed), dev.pool_cells())
-		dev.carve(dev_path)
 		start = Vector2i(dev_path[0].x, ch.position.y + 2)
 	keeper.teleport(Level.map.getTilePos(Vector2(start)))
 	var cam = Level.viewports.getPlayerCam(keeper.playerId) if Level.viewports != null else null
@@ -407,10 +417,10 @@ func _dev_boss(what: String) -> void:
 		health.refill()
 		_set_state("chase")
 		_start_chase(arena.get_center() + Vector2(0, 80))
-		# Tiles far from the keeper are made late, and some come back (a tile
-		# that was mid-reveal when it was cleared): keep the shaft swept for
-		# as long as the chase runs.
-		while current() == "chase" and is_inside_tree():
-			for f in 12:
-				await get_tree().physics_frame
-			dev.carve_leftovers(dev_path)
+	# Tiles far from the keeper are made late, and some come back (a tile
+	# that was mid-reveal when it was cleared): keep the shaft swept until
+	# the keeper is home.
+	while current() in ["", "fight", "chase"] and is_inside_tree():
+		for f in 12:
+			await get_tree().physics_frame
+		dev.carve_leftovers(dev_path)
