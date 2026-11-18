@@ -39,6 +39,32 @@ func _dome():
 	return Level.domesByTeamId.get("team1")
 
 
+# The Tesla Dome aims a reticle in two dimensions and shoots when a held
+# charge is let go.
+func _tesla(dome):
+	for w in dome.find_children("*", "", true, false):
+		if w.get_script() != null and str(w.get_script().resource_path).ends_with("weapons/tesla/Tesla.gd"):
+			return w
+	return null
+
+
+func _tesla_step(h, tesla, fire: String) -> void:
+	var r: Vector2 = tesla.reticle.global_position
+	var best = null
+	for m in Host.monsters(h):
+		if best == null or r.distance_to(Host.aim_point(m)) < r.distance_to(Host.aim_point(best)):
+			best = m
+	if best == null:
+		return
+	var off: Vector2 = Host.aim_point(best) - r
+	Host.hold(h, _held, "ui_left", off.x < -4.0)
+	Host.hold(h, _held, "ui_right", off.x > 4.0)
+	Host.hold(h, _held, "ui_up", off.y < -4.0)
+	Host.hold(h, _held, "ui_down", off.y > 4.0)
+	# Charge until full, then let go once the reticle is on it.
+	Host.hold(h, _held, fire, tesla.shotCharge < tesla.maxCharge or off.length() > 10.0)
+
+
 func run(h) -> void:
 	var d: String = dome_id()
 	var up: String = DOMES[d][0]
@@ -98,11 +124,15 @@ func run(h) -> void:
 	var shots: int = 0
 	while h.now() - t0 < 45.0 and Data.ofOr("team1.monsters.wavepresent", false):
 		var t: float = h.now() - t0
-		# Sweep left and right, firing in bursts (the sword stabs on release).
-		Host.hold(h, _held, "ui_left", fmod(t, 3.0) < 1.5)
-		Host.hold(h, _held, "ui_right", fmod(t, 3.0) >= 1.5)
-		if has_fire:
-			Host.hold(h, _held, fire, fmod(t, 0.8) < 0.5)
+		var tesla = _tesla(dome)
+		if tesla != null:
+			_tesla_step(h, tesla, fire)
+		else:
+			# Sweep left and right, firing in bursts (the sword stabs on release).
+			Host.hold(h, _held, "ui_left", fmod(t, 3.0) < 1.5)
+			Host.hold(h, _held, "ui_right", fmod(t, 3.0) >= 1.5)
+			if has_fire:
+				Host.hold(h, _held, fire, fmod(t, 0.8) < 0.5)
 		for m in Host.monsters(h):
 			var u: int = m.UID
 			if hp.has(u) and m.currentHealth < hp[u]:
@@ -112,11 +142,14 @@ func run(h) -> void:
 		if t > 3.0 + shots * 8.0 and shots < 3:
 			shots += 1
 			await h.shot("wave_%d" % shots)
-	for a in ["ui_left", "ui_right", fire]:
+	for a in ["ui_left", "ui_right", "ui_up", "ui_down", fire]:
 		Host.hold(h, _held, a, false)
 	var by_weapon: bool = not Data.ofOr("team1.monsters.wavepresent", false)
-	h.note("wave", {"damage": dmg, "cleared by the weapon": by_weapon, "left": Host.monsters(h).size()})
-	h.check("the %s's weapon hurts the wave" % d, dmg > 0.0, dmg)
+	# A monster killed in one hit leaves between two frames: count what went.
+	var alive: Array = Host.monsters(h).map(func(m): return m.UID)
+	var killed: int = hp.keys().filter(func(u): return not alive.has(u)).size()
+	h.note("wave", {"damage": dmg, "killed": killed, "cleared by the weapon": by_weapon, "left": alive.size()})
+	h.check("the %s's weapon hurts the wave" % d, dmg > 0.0 or killed > 0, [dmg, killed])
 	if not by_weapon:
 		for mm in h.get_tree().get_nodes_in_group("monster-manager"):
 			mm.instantlyKillWave()

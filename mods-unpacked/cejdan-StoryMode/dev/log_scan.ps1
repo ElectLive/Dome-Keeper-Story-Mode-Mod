@@ -69,7 +69,10 @@ $script:LogScanAllow = @(
     # lines, like "loadout teardown"). The race that left a client without
     # its keeper and logged this every frame (and Keeper.updatePlayerName's
     # 'platform_id' on Nil) is avoided in Story Mode since #251.
-    @{ Name = "keeper choice: freed dummy"; Pattern = 'DeviceSelectionStage/DeviceSelectionStage/player1[0-9][0-9]/KeeperSynchronizer' }
+    @{ Name = "keeper choice: freed dummy"; Pattern = 'DeviceSelectionStage/DeviceSelectionStage/player1[0-9][0-9]/KeeperSynchronizer' },
+    # Engine audio driver (drivers\wasapi\audio_driver_wasapi.cpp): the
+    # machine's audio device hiccups mid-run (seen once in t269_dome2, #269).
+    @{ Name = "engine audio (WASAPI)"; Pattern = 'WASAPI: GetBufferSize error' }
 )
 
 # The engine logs these right after one of the lines above, about the same
