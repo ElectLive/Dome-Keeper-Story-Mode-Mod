@@ -131,7 +131,7 @@ func run(h) -> void:
 	var hearts1: int = health.hearts()
 	var pos1: Vector2 = k.global_position
 	health.invulnerable = 0.0
-	field.heat = field.HEAT_MAX
+	field.heat = field.HEAT_MAX + 1.0   # out of lava the suit cools a little each frame
 	field._update_heat(0.016)
 	await h.frames(3)
 	h.check("overheating costs a heart", health.hearts() == hearts1 - 1, health.hearts())

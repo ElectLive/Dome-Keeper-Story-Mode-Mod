@@ -21,6 +21,7 @@ const SOUNDS := {
 	"die": ["res://content/sounds/monster/Beast/Beast_Death_01.wav"],
 	"eerie": ["res://content/sounds/Locations/RelicRoom/eerie_01.wav"],
 	"seal": ["res://content/sounds/relic-pulse.wav"],
+	"heart": ["res://content/sounds/UI/autoheal.wav"],
 	"keeper_down": ["res://content/sounds/carryline-break.wav"],
 }
 

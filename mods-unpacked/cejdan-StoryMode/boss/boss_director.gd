@@ -226,7 +226,7 @@ func _start_fight() -> void:
 	velle.name = "Velle"
 	layer.add_child(velle)
 	layer.move_child(velle, 0)
-	velle.setup(arena, health)
+	velle.setup(arena, health, _chamber())
 	velle.defeated.connect(_velle_defeated)
 	_seal_flash = 1.0
 	Sfx.play("seal", -4.0, 0.7)
