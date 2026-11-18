@@ -140,7 +140,8 @@ func modInit():
 		Network.chunker.set_process(true)
 		Network.chunker.tally_on = OS.has_feature("editor") and Story.has_user_arg("datasizes")
 		# `--heldchunker` (editor): a small delta waits whole behind queued
-		# Data, as before #261, to show a gadget's keys landing after it.
+		# Data and a big one is chunked whole, as before #261 and #268, to
+		# show a gadget's keys landing after it.
 		Network.chunker.split_on = not (OS.has_feature("editor") and Story.has_user_arg("heldchunker"))
 	# Script extensions: each handles Story Mode and defers to vanilla otherwise.
 	# They are installed here, not in _init(): loading a vanilla script while
