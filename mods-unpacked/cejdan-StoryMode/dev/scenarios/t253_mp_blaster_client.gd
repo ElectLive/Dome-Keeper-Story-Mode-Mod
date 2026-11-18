@@ -25,7 +25,8 @@ func run(h) -> void:
 	h.check("this is a client", not h.multiplayer.is_server())
 	var give: String = Story.user_arg("give", "suitblaster")
 	GameWorld.upgradeAdded.connect(func(id: String, _team: String):
-		if id.ends_with("." + give) and not _at_add.has(id):
+		# A team gadget's RPC carries its bare id ("drill", "team1").
+		if (id == give or id.ends_with("." + give)) and not _at_add.has(id):
 			_at_add[id] = Data.values.keys())
 	var watch := func():
 		for id in _at_add:

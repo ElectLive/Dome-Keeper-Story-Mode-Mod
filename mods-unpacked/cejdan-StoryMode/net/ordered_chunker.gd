@@ -133,8 +133,8 @@ func _send_split(peer: int, callable: Callable) -> bool:
 
 
 # Host -> client: a delta's keys sent ahead of the full syncs `fulls` (request
-# ids) still on their way (#268). Applied as vanilla's delta, and again as each
-# of those lands (receive), since a full sync replaces all of Data. Later
+# ids) still on their way (#268). Applied as vanilla's delta, and put back as
+# each of those lands (receive), since a full sync replaces all of Data. Later
 # changes to these keys come the same way while one is queued (no queued
 # message holds them), so the newest is what goes back in.
 @rpc("authority", "call_remote", "reliable")
@@ -153,10 +153,11 @@ func _ahead(fulls: Array, tick: int, bytes: PackedByteArray) -> void:
 func receive(request_id: int, request_type: int, chunk_index: int, total_chunks: int, chunk: PackedByteArray) -> void:
 	super(request_id, request_type, chunk_index, total_chunks, chunk)
 	if _pinned.has(request_id) and not incoming_rpcs.has(request_id):
+		# Put back as the full sync went in, without telling listeners: they
+		# last heard of these values, and one may read another key of them.
 		var vals: Dictionary = _pinned[request_id]
 		_pinned.erase(request_id)
-		for k in vals:
-			Data.server_apply(k, vals[k])
+		Data.values.merge(vals, true)
 		restored += vals.size()
 
 
