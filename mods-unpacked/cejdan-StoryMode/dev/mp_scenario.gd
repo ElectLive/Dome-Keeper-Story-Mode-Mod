@@ -34,6 +34,16 @@ func host_start(h, players: int = 2) -> bool:
 		return false
 	h.mute_beats()
 	h.disable_waves()
+	# The hazard fields are added a few frames after the map is ready.
+	await h.until(func(): return Level.map.has_node("StoryGasField"), 20.0)
+	# Vanilla sends tile reveals and breaks only to clients it sees in sync.
+	var t0: float = h.now()
+	var synced: bool = await h.until(func():
+		for c in Network.clients:
+			if c.connection_state != Network.ConnectionState.LEVEL_STAGE_SYNC:
+				return false
+		return true, 90.0)
+	h.check("clients in sync", synced, {"states": Network.clients.map(func(c): return c.connection_state), "waited": h.now() - t0})
 	return true
 
 

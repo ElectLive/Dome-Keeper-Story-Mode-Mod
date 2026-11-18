@@ -326,6 +326,10 @@ func clear_tiles(coords: Array) -> void:
 	var v: Array = []
 	for c in coords:
 		v.append(Vector2(c))
+	# Online, a client breaks only tiles it has made: reveal them there too (#227).
+	if Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER and multiplayer.is_server():
+		for c in v:
+			Level.map.networkRevealTile(c, 0.0)
 	Level.map.freeTiles(v)
 	await frames(3)
 

@@ -15,6 +15,13 @@ $root = Split-Path $project -Parent
 $engine = Join-Path $root "custom_godot_for_windows\godot.windows.editor.x86_64.exe"
 if (-not (Test-Path (Join-Path $project "override.cfg"))) { Write-Error "override.cfg missing: refusing to launch"; exit 3 }
 $w = [int]($Res.Split("x")[0])
+# The machine-wide playtest lock (playtest_out/run_locked.ps1 takes the same
+# one): only one playtest at a time, and the ENet port is shared.
+$lock = New-Object System.Threading.Mutex($false, "Global\StoryModePlaytest")
+$waited = [System.Diagnostics.Stopwatch]::StartNew()
+try { [void]$lock.WaitOne() } catch [System.Threading.AbandonedMutexException] { }
+if ($waited.Elapsed.TotalSeconds -gt 2) { Write-Output ("(waited {0:N0} s for another playtest to finish)" -f $waited.Elapsed.TotalSeconds) }
+try {
 function Start-Instance($scenario, $pos) {
     $out = Join-Path $root "playtest_out\$scenario"
     if (Test-Path $out) { Remove-Item -Recurse -Force $out }
@@ -44,4 +51,8 @@ foreach ($pair in @(@($HostScenario, $hostProc), @($ClientScenario, $clientProc)
         $errs | Select-Object -First 25 | ForEach-Object { Write-Output ("  L" + $_.LineNumber + ": " + $_.Line) }
         Select-String -Path $log -Pattern "^\[harness\] (PASS|FAIL)" | ForEach-Object { Write-Output $_.Line }
     }
+}
+} finally {
+    $lock.ReleaseMutex()
+    $lock.Dispose()
 }
