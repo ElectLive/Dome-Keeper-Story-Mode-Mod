@@ -688,7 +688,7 @@ func _update_fire(delta: float) -> void:
 		if burning_here:
 			in_fire = true
 			var LavaData = _lava.LavaData
-			_lava.set_heat_of(keeper, minf(LavaData.HEAT_MAX, _lava.heat_of(keeper) + GasData.FIRE_HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId) * delta))
+			_lava.set_heat_of(keeper, minf(LavaData.HEAT_MAX, _lava.heat_of(keeper) + GasData.FIRE_HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper) * delta))
 
 
 func _on_screen_cell(c: Vector2i) -> bool:

@@ -43,7 +43,7 @@ func run(h) -> void:
 
 	# ---- gear
 	var gear: Dictionary = {"drill": Data.of(k.playerId + ".keeper1.drillStrength"), "speed": Data.of(k.playerId + ".keeper1.maxSpeed"),
-		"laser dps": Data.of("team1.laser.dps"), "dome health": Data.of("team1.dome.maxhealth"), "heat shield": Data.of("team1.suit.heatshield"),
+		"laser dps": Data.of("team1.laser.dps"), "dome health": Data.of("team1.dome.maxhealth"), "heat shield": Data.ofOr(k.playerId + ".suit.heatshield", 0),
 		"suit blaster": GameWorld.boughtUpgrades.has(k.playerId + ".suitblaster")}
 	h.note("gear", gear)
 	h.check("max drill (102) and max speed (140)", int(gear["drill"]) == 102 and int(gear["speed"]) == 140, gear)

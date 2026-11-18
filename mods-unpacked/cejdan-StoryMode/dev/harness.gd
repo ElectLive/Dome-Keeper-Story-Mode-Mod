@@ -568,15 +568,20 @@ func deliver(type: String, count: int = 1) -> void:
 
 # Buys an upgrade the way the shop does. Returns false when it is unknown or
 # cannot be afforded (vanilla refuses it the same way).
-func buy(upgrade_id: String) -> bool:
+# Buys `upgrade_id` as keeper `k` (default: the first local keeper) would in the
+# shop: the team's entry, or `k`'s own (keeper-tree upgrades are per player,
+# player2.drill1, player2.storyheatshield1; #265).
+func buy(upgrade_id: String, k = null) -> bool:
+	if k == null:
+		k = keeper()
 	var id: String = upgrade_id.to_lower()
 	if not GameWorld.upgrades.has(id):
-		for prefix: String in ["team1.", "player1."]:
+		for prefix: String in ["team1.", k.playerId + "."]:
 			if GameWorld.upgrades.has(prefix + id):
 				id = prefix + id
 				break
 	var ok: bool = GameWorld.upgrades.has(id) and GameWorld.canAfford(GameWorld.upgrades[id].get("cost", {}), "team1")
-	GameWorld.buyUpgrade(id, "team1", keeper().playerId)
+	GameWorld.buyUpgrade(id, "team1", k.playerId)
 	await frames(3)
 	note("buy " + id, {"ok": ok, "cost": GameWorld.upgrades.get(id, {}).get("cost", {})})
 	return ok

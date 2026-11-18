@@ -726,7 +726,7 @@ func _dev_boss(what: String) -> void:
 		return
 	var dev = load(Story.MOD_DIR + "dev/boss_dev.gd")
 	var keeper = Story.local_keeper()
-	Data.apply("team1.suit.heatshield", 4)
+	# Every keeper's gear, Heat Shielding IV included (#265: per keeper).
 	var gear: Array = dev.give_gear()
 	ModLoaderLog.info("Dev command: gear " + ", ".join(PackedStringArray(gear)), Story.LOG)
 	if what == "finale":

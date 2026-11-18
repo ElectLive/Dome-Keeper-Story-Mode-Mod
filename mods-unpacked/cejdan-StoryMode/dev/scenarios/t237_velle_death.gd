@@ -45,8 +45,7 @@ func _log_errors(h) -> Array:
 func run(h) -> void:
 	h.disable_waves()
 	var dev = load("res://mods-unpacked/cejdan-StoryMode/dev/boss_dev.gd")
-	Data.apply("team1.suit.heatshield", 4)
-	dev.give_gear()
+	dev.give_gear()   # every keeper's gear, Heat Shielding IV too (#265)
 	var ch: Rect2i = Level.map.tileData.get_meta("story_boss_chamber")
 	var area: Array = []
 	for y in range(ch.position.y - 3, ch.end.y + 2):

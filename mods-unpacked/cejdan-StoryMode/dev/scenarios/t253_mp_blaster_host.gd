@@ -3,8 +3,8 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/mp_scenario.gd"
 # #253, host half: both keepers get the Suit Blaster while a client watches,
 # and the client must log no script error or unknown Data key for it
 # (t253_mp_blaster_client; dev/log_scan.ps1 counts them).
-#   default:          Story Mode's shop: the team buys the Suit Blaster entry
-#                     (gamemode/Storymode.gd grants it to every keeper)
+#   default:          Story Mode's shop: each keeper's Suit Blaster entry is
+#                     bought (gamemode/Storymode.gd grants it to the buyer, #265)
 #   --devgear:        the boss dev gear (dev/boss_dev.gd: max drill, jetpack,
 #                     Laser IV, ... in one frame), then the client's keeper's
 #   --vanilla:        a Relic Hunt run, each keeper picking it as a gadget
@@ -63,7 +63,9 @@ func run(h) -> void:
 	else:
 		Data.apply("team1.inventory.money", 5000)
 		await h.wait(0.5)
-		GameWorld.buyUpgrade("team1.storysuitblaster", "team1", Keepers.first().playerId)
+		# Each keeper's own entry since #265 (it grants the buyer's blaster only).
+		for k in keepers:
+			GameWorld.buyUpgrade(k.playerId + ".storysuitblaster", "team1", k.playerId)
 	var all: bool = await h.until(func(): return keepers.all(func(k): return GameWorld.boughtUpgrades.has(k.playerId + "." + give)), 10.0)
 	h.check("every keeper has the %s (%s)" % [give, path], all, keepers.map(func(k): return [k.playerId, GameWorld.boughtUpgrades.has(k.playerId + "." + give)]))
 	var ahead: int = OrderedChunker.sent_ahead - ahead0

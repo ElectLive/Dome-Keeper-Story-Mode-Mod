@@ -33,6 +33,8 @@ const LOCAL_ONLY := ["story_seed"]
 
 # The settled resend (#242): see _host_resend.
 const RESEND_PREFIXES := ["team1.story.", "story.", "team1.inventory.", "team1.suit."]
+# Per-keeper Story Mode keys (#265): <playerId> + one of these (player2.suit.heatshield).
+const RESEND_PLAYER_PARTS := [".suit."]
 # The host's own save blobs (save_blob): never sent.
 const HOST_ONLY := ["story.lava", "story.gas"]
 # Keys net/ordered_chunker.gd takes out of every big Data message to a client
@@ -180,7 +182,8 @@ func _host_map_data():
 # client once more, as vanilla's own delta message, every key whose value now
 # differs from what those messages carried (and, after a full sync, keys that
 # weren't in it). After the client reaches LEVEL_STAGE_SYNC it also gets every
-# Story Mode key (story, money and inventory, suit) whatever they carried.
+# Story Mode key (story, money and inventory, suit; each keeper's suit since
+# #265) whatever they carried.
 # The resend goes in messages small enough to be sent whole, so they keep their
 # order with later deltas.
 
@@ -408,6 +411,11 @@ static func _story_key(k: String) -> bool:
 	for pre: String in RESEND_PREFIXES:
 		if k.begins_with(pre):
 			return true
+	if k.begins_with("player"):
+		var at: int = k.find(".")
+		for part: String in RESEND_PLAYER_PARTS:
+			if at > 0 and k.substr(at).begins_with(part):
+				return true
 	return false
 
 

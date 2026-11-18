@@ -137,7 +137,8 @@ static func mass_in(masses: Dictionary, r: Array) -> float:
 
 
 # Host: sets up a run under way: money, a played beat, the translator stage,
-# two heat shield tiers bought, lava in one sealed room and gas in another.
+# two heat shield tiers bought (by the host's keeper: per keeper since #265),
+# lava in one sealed room and gas in another.
 # Returns the rooms as shared ({"lava": [..], "gas": [..]}), or {} if none.
 func setup_run_state(h) -> Dictionary:
 	var rooms: Array = find_rooms(2)
@@ -176,7 +177,10 @@ func facts(rooms: Dictionary) -> Dictionary:
 		"marker beat": Array(str(Data.ofOr("team1.story.beatsplayed", "")).split(",")).has(MARKER_BEAT),
 		"beats played": Array(str(Data.ofOr("team1.story.beatsplayed", "")).split(",", false)).size(),
 		"translation": int(Data.ofOr("team1.story.translation", 0)),
-		"heat shield": int(Data.ofOr("team1.suit.heatshield", 0)),
+		# Per keeper since #265: the host's keeper (player1) bought two tiers in
+		# setup_run_state; "heat shields" is both keepers'.
+		"heat shield": int(Data.ofOr("player1.suit.heatshield", 0)),
+		"heat shields": "%d,%d" % [int(Data.ofOr("player1.suit.heatshield", 0)), int(Data.ofOr("player2.suit.heatshield", 0))],
 		"boss": str(Data.ofOr("team1.story.boss", "")),
 		"hearts": int(Data.ofOr("team1.story.hearts", -1)),
 		"map meta": load("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd").map_meta_ready(Level.map),
@@ -205,7 +209,7 @@ func facts(rooms: Dictionary) -> Dictionary:
 # Client: compares its facts with the host's shared ones; `rel` is the
 # tolerance for the moving fields (lava and gas totals, a share of the value).
 func check_facts(h, mine: Dictionary, host: Dictionary, what: String, rel: float = 0.05) -> void:
-	for k in ["seed", "money", "marker beat", "translation", "heat shield", "boss", "hearts", "ocean", "gas rock"]:
+	for k in ["seed", "money", "marker beat", "translation", "heat shield", "heat shields", "boss", "hearts", "ocean", "gas rock"]:
 		if host.has(k):
 			h.check("%s: %s is the host's" % [what, k], str(mine.get(k)) == str(host[k]) or (mine.get(k) is int and host[k] is float and int(host[k]) == mine[k]), {"mine": mine.get(k), "host": host[k]})
 	for k in ["lava room", "gas room", "lava total", "gas total", "lava cells"]:

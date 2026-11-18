@@ -239,6 +239,12 @@ func prepareGameMode(modeId: String, levelStartData: LevelStartData) -> void:
 			ModLoaderLog.info("Loaded run: level seed %d restored (was rolled as %d)" % [saved, Level.levelSeed], Story.LOG)
 			Level.levelSeed = saved
 	levelStartData.loadout.modeConfig[Story.MODE_FLAG] = true
+	# Story Mode's per-keeper shop entries (#265): a limit per player, as vanilla
+	# makes <playerId>.mining available just before this for every keeper.
+	var pids: Array = []
+	for lk in levelStartData.loadout.keepers:
+		pids.append(lk.playerId)
+	load(Story.MOD_DIR + "gamemode/keeper_upgrades.gd").add_limits(pids)
 	# Story Mode's gentler tile health growth with depth (#148). Vanilla's
 	# prepareCleanData sets 2.1 again before every run.
 	Data.apply("map.tileHealthMultiplierPerLayer", MapConfig.TILE_HEALTH_PER_BIOME)

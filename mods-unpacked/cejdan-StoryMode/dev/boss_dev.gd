@@ -15,29 +15,39 @@ const GEAR: Array = [
 ]
 
 
-# Gives the keeper GEAR for free. Returns the ids that were added.
+# Gives every keeper GEAR for free (#265: the keeper upgrades are per player,
+# so each keeper gets its own drill, jetpack, Heat Shielding IV and Suit
+# Blaster; the team's dome upgrades once). Returns the ids that were added.
 # `laser_level` 0..4 stops the laser's strength there (playtests of weaker domes).
 static func give_gear(extra: Array = [], laser_level: int = 4) -> Array:
-	var keeper = Keepers.first()
+	var KeeperUpgrades = load("res://mods-unpacked/cejdan-StoryMode/gamemode/keeper_upgrades.gd")
+	var keepers: Array = Keepers.getAll().filter(func(k): return k != null and is_instance_valid(k))
 	var given: Array = []
 	for raw: String in GEAR + extra:
 		if raw.begins_with("laserstrength") and int(raw.substr(13)) > laser_level:
 			continue
-		var id: String = raw
-		if not GameWorld.upgrades.has(id):
-			for prefix: String in [keeper.teamId + ".", keeper.playerId + "."]:
-				if GameWorld.upgrades.has(prefix + raw):
-					id = prefix + raw
-					break
-		if not GameWorld.upgrades.has(id) or GameWorld.boughtUpgrades.has(id):
-			continue
-		GameWorld.serverAddUpgrade(id, keeper.teamId)
-		given.append(raw)
-	# The Suit Blaster is a keeper gadget, kept under the player's own id.
-	var blaster: String = keeper.playerId + ".suitblaster"
-	if not GameWorld.boughtUpgrades.has(blaster):
-		GameWorld.serverAddUpgrade(blaster, keeper.teamId)
-		given.append("suitblaster")
+		for keeper in keepers:
+			var id: String = raw
+			if not GameWorld.upgrades.has(id):
+				for prefix: String in [keeper.teamId + ".", keeper.playerId + "."]:
+					if GameWorld.upgrades.has(prefix + raw):
+						id = prefix + raw
+						break
+			if not GameWorld.upgrades.has(id) or GameWorld.boughtUpgrades.has(id):
+				continue
+			GameWorld.serverAddUpgrade(id, keeper.teamId)
+			if not given.has(raw):
+				given.append(raw)
+	for keeper in keepers:
+		if not KeeperUpgrades.give_heat_shield(keeper.playerId, KeeperUpgrades.TIERS).is_empty() and not given.has("heatshield4"):
+			given.append("heatshield4")
+		# The Suit Blaster is a keeper gadget, kept under the player's own id.
+		var blaster: String = keeper.playerId + ".suitblaster"
+		if not GameWorld.boughtUpgrades.has(blaster):
+			GameWorld.serverAddUpgrade(blaster, keeper.teamId)
+			if not given.has("suitblaster"):
+				given.append("suitblaster")
+	KeeperUpgrades.mark_blaster_entries()
 	return given
 
 

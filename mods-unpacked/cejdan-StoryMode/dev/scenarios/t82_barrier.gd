@@ -18,7 +18,7 @@ func run(h) -> void:
 	var ch: Rect2i = td.get_meta("story_boss_chamber")
 	h.check("the run has a boss chamber", ch.size == Vector2i(20, 10), ch)
 	h.check("no barrier while the crust is whole", field.barrier_columns().is_empty(), field.barrier_columns())
-	Data.apply("team1." + LavaData.HEAT_SHIELD_KEY, 4)
+	Data.apply(LavaData.shield_key(), 4)
 
 	# Reveal the chamber and the ocean above a few crust columns, then break two.
 	var area: Array = []

@@ -737,13 +737,14 @@ func passive_rate_of(keeper) -> float:
 	return passive_rates.get(keeper.playerId, 0.0)
 
 
-# Passive heat per second at a tile for this team's suit (#187): by biome, the
-# lava ocean counting as B8.
-func passive_rate_at(tile: Vector2i, teamId: String = "team1") -> float:
+# Passive heat per second at a tile for `who`'s suit (#187): by biome, the
+# lava ocean counting as B8. `who`: a keeper or playerId (#265), null for the
+# first local keeper.
+func passive_rate_at(tile: Vector2i, who = null) -> float:
 	var b: int = map.tileData.get_biomev(tile)
 	if not _ocean.is_empty() and tile.y > int(_ocean["ceiling"]):
 		b = LavaData.PASSIVE_HEAT_LAST_BIOME
-	return LavaData.passive_rate(b, teamId)
+	return LavaData.passive_rate(b, who)
 
 
 func _update_heat(delta: float) -> void:
@@ -765,13 +766,13 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 	var sealed: bool = str(Data.ofOr("team1.story.boss", "")) == "fight" or BossDirector.jams_recall()
 	if not keeper.isInsideDome and not keeper.disabled and not sealed:
-		rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper.teamId)
+		rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper)
 	passive_rates[pid] = rate
 	var h: float = heats.get(pid, 0.0)
 	if keeper_in_lava(keeper) and not keeper.disabled:
 		# Heat Shielding (#44) slows lava heat but never stops it; deep enough,
 		# the depth itself is hotter than the lava (#187).
-		h = min(HEAT_MAX, h + maxf(HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId), rate) * delta)
+		h = min(HEAT_MAX, h + maxf(HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper), rate) * delta)
 	elif keeper.isInsideDome:
 		h = max(0.0, h - COOL_DOME_PER_SECOND * delta)
 	elif rate > 0.0:

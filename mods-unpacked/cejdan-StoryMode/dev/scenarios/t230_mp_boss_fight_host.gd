@@ -54,9 +54,8 @@ func run(h) -> void:
 	# The run as it stands when a team reaches Velle: the chamber found, the
 	# horror awake, its beat read, the gear bought (dev/boss_dev.gd).
 	var dev = load("res://mods-unpacked/cejdan-StoryMode/dev/boss_dev.gd")
-	Data.apply("team1.suit.heatshield", 4)
+	# Every keeper's gear: Heat Shielding IV and the Suit Blaster too (#265).
 	dev.give_gear()
-	GameWorld.serverAddUpgrade(ck.playerId + ".suitblaster", "team1")
 	var ch: Rect2i = Level.map.tileData.get_meta("story_boss_chamber")
 	var cells: Array = []
 	for y in range(ch.position.y - 3, ch.end.y + 2):
