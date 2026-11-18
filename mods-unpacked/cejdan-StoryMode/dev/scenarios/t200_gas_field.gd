@@ -12,7 +12,7 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 #   #GGG.....#######
 
 const SLOT := 11
-const TIMEOUT := 300
+const TIMEOUT := 480
 
 var OX := 0
 var OY := 30
@@ -131,7 +131,7 @@ func run(h) -> void:
 	h.check("gas is conserved while it flows", absf(_accounted() - volume) < 0.01, [_accounted(), volume])
 
 	# ---- 4. it settles under the ceiling and the field sleeps
-	var slept: bool = await h.until(func(): return field.stats()["awake"] == 0 and field.sources.is_empty(), 60.0)
+	var slept: bool = await h.until(func(): return field.stats()["awake"] == 0 and field.sources.is_empty(), 180.0)
 	h.check("the settled field sleeps", slept, field.stats())
 	await h.shot("settled")
 	# The pocket's own top row is a dead end too, and keeps a cell of gas each.
@@ -180,7 +180,7 @@ func run(h) -> void:
 	# ---- 6. a vent drilled above the alcove lets its gas out
 	await h.clear_tiles([_c(3, -2)])
 	field.wake_all()
-	await h.wait(0.5)
+	await h.wait(4.0)
 	h.check("the vent cell took the alcove's gas", field.mass.get(_c(3, -2), 0.0) > 0.5, field.mass.get(_c(3, -2), 0.0))
 	await h.shot("vent_open")
 
@@ -202,7 +202,7 @@ func run(h) -> void:
 	field.fill([Vector2i(col, 3), Vector2i(col, 2)], 2.0)
 	await h.wait(0.15)
 	await h.shot("surface_venting")
-	await h.wait(2.0)
+	await h.wait(10.0)
 	h.check("the shaft's gas left through the surface", field.vented - vented0 > 3.9, [field.vented - vented0, field.total() - had])
 	h.check("none of it is left in the shaft", field.mass.get(Vector2i(col, 0), 0.0) < 0.01 and field.mass.get(Vector2i(col, 3), 0.0) < 0.01)
 	h.check("gas is conserved to the end", absf(_accounted() - volume - 4.0) < 0.02, _accounted())

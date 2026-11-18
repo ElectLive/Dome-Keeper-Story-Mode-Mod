@@ -51,6 +51,7 @@ var phys_frames := 0
 
 var _acc := 0.0
 var _time := 0.0
+var prev_mass: Dictionary = {}     # the gas before the last step: the look blends from it (#211)
 var _awake: Dictionary = {}
 var _wake_all := true
 var _chamber: Rect2i = Rect2i()
@@ -222,6 +223,7 @@ func _physics_process(delta: float) -> void:
 	while _acc >= GasData.TICK:
 		_acc -= GasData.TICK
 		if not freeze_flow:
+			prev_mass = mass.duplicate()
 			_step()
 	_update_fire(delta)
 	_update_toxin(delta)
@@ -244,6 +246,20 @@ func _burst(delta: float) -> void:
 			map.destroyTile("team1", "", tile)   # fires tile_destroyed -> breach
 		else:
 			rock.erase(c)
+
+
+# The gas steps a few times a second (#211); the look shows it gliding from
+# one step to the next, a step behind. 0..1: how far into that glide it is.
+func step_blend() -> float:
+	return clampf(_acc / GasData.TICK, 0.0, 1.0)
+
+
+# A cell's gas as drawn: between its last two steps.
+func shown_mass(c: Vector2i) -> float:
+	var now: float = mass.get(c, 0.0)
+	if freeze_flow:
+		return now
+	return lerpf(prev_mass.get(c, now), now, step_blend())
 
 
 # How much of `total` the upper of two stacked cells should hold.
@@ -310,7 +326,11 @@ func _step() -> void:
 			var sc: Vector2i = c + side
 			if not _is_open(sc):
 				continue
-			var flow: float = clampf((m - mass.get(sc, 0.0)) / div, 0.0, minf(max_flow, rem))
+			var ms: float = mass.get(sc, 0.0)
+			var flow: float = clampf((m - ms) / div, 0.0, minf(max_flow, rem))
+			# No slivers into empty cells: they would be dropped as too thin.
+			if ms <= 0.0 and flow < GasData.MIN_PACKET:
+				continue
 			if flow > GasData.MIN_FLOW:
 				dm[c] = dm.get(c, 0.0) - flow
 				dm[sc] = dm.get(sc, 0.0) + flow
@@ -350,7 +370,7 @@ func _step() -> void:
 
 # Notes gas moving from `c` to `n`, for the look: a running sum that halves
 # about every FLUX_HALF_LIFE seconds.
-const FLUX_HALF_LIFE := 0.12
+const FLUX_HALF_LIFE := 0.3              # (0.12 before #211's slower clock)
 
 
 func _flux(c: Vector2i, n: Vector2i, flow: float) -> void:

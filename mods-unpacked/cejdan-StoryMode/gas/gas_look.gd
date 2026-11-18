@@ -207,7 +207,9 @@ func _update_window() -> void:
 func _update_tiles() -> void:
 	var vis: Dictionary = map.visibleTileCoords
 	var flux_now: bool = not field.flux.is_empty()
-	if field.revision == _built_rev and c0 == _built_c0 and vis.size() == _built_seen and not flux_now and not _flux_live:
+	# Gas between two steps glides, so it is redrawn every frame while there is any (#211).
+	var gliding: bool = not field.mass.is_empty() or not field.prev_mass.is_empty()
+	if field.revision == _built_rev and c0 == _built_c0 and vis.size() == _built_seen and not flux_now and not _flux_live and not gliding:
 		return
 	_built_rev = field.revision
 	_built_c0 = c0
@@ -218,7 +220,6 @@ func _update_tiles() -> void:
 	var fdata := PackedByteArray()
 	fdata.resize(WIN.x * WIN.y * 2)
 	fdata.fill(128)
-	var mass: Dictionary = field.mass
 	var i := 0
 	var j := 0
 	var any_flux := false
@@ -228,7 +229,7 @@ func _update_tiles() -> void:
 			var c := Vector2i(x, y)
 			if field._is_open(c):
 				data[i] = 255
-				data[i + 1] = int(clampf(mass.get(c, 0.0) / 4.0, 0.0, 1.0) * 255.0)
+				data[i + 1] = int(clampf(field.shown_mass(c) / 4.0, 0.0, 1.0) * 255.0)
 				if flux_now and field.flux.has(c):
 					var f: Vector2 = (field.flux_at(c) / FLUX_FULL).limit_length(1.0)
 					if f != Vector2.ZERO:
