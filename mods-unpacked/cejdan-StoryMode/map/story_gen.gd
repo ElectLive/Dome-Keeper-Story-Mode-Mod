@@ -94,8 +94,8 @@ static func fill_bottom(map_data, rand: RandomNumberGenerator) -> int:
 
 # The lava ocean (#43): added below the generated map, under B8 (biome index 7).
 # Rows, top to bottom: one rock ceiling row; OCEAN_AIR_ROWS of open air (#149);
-# OCEAN_ROWS open rows across the
-# map's full width (the lava field fills them), with unobtainium clumps inside
+# OCEAN_ROWS open rows across the middle OCEAN_WIDTH_SHARE of the map's width,
+# centred under the dome (#175; the lava field fills them), with unobtainium clumps inside
 # and on the floor; OCEAN_FLOOR_ROWS of rock (just one, and soft, over the
 # chamber); and a sealed BOSS_CHAMBER inside rock walls. Vanilla's border pass
 # runs after this, so it wraps the new rows too. Meta: "story_ocean" (rows and
@@ -109,6 +109,12 @@ static func place_ocean(map_data, rand: RandomNumberGenerator) -> Dictionary:
 		x0 = mini(x0, c.x)
 		x1 = maxi(x1, c.x)
 		yb = maxi(yb, c.y)
+	# The ocean is narrower than the map (#175): the columns beside it end at
+	# the map's own bottom, in border wall. It always spans the boss chamber.
+	var ch_half: int = LavaData.BOSS_CHAMBER.x / 2 + LavaData.BOSS_CHAMBER_WALL + 2
+	var half: int = maxi(ch_half, int(round((x1 - x0 + 1) * LavaData.OCEAN_WIDTH_SHARE * 0.5)))
+	x0 = maxi(x0, -half)
+	x1 = mini(x1, half)
 	var biome: int = MapConfig.BIOMES - 1
 	var ceiling: int = yb + 1
 	var top: int = ceiling + 1 + LavaData.OCEAN_AIR_ROWS
