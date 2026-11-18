@@ -125,6 +125,10 @@ static func carve(cells: Array) -> void:
 	var v: Array = []
 	for c: Vector2i in cells:
 		v.append(Vector2(c))
+	# Online, a client breaks only tiles it has made: reveal them there first (#230).
+	if Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER and map.multiplayer.is_server():
+		for c: Vector2 in v:
+			map.networkRevealTile(c, 0.0)
 	map.freeTiles(v)
 
 
