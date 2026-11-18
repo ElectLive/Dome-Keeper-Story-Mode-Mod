@@ -224,12 +224,12 @@ func run(h) -> void:
 	pd = load("res://mods-unpacked/cejdan-StoryMode/pleas/plea_director.gd").instance()
 	h.check("lava field and plea director are in the run", field != null and pd != null)
 
-	# Heat Shielding IV first: depth heat can't recall the keeper.
+	# Heat Shielding IV first: depth heat is gone down to B7 and slow in B8 (#187).
 	h.set_inv("money", 10000000)
 	for n in range(1, 5):
 		await h.buy("storyheatshield%d" % n)
 	h.set_inv("money", 0)
-	h.check("Heat Shielding IV bought", LavaData.shield_tier() == 4 and LavaData.passive_heat_mult() == 0.0, LavaData.shield_tier())
+	h.check("Heat Shielding IV bought", LavaData.shield_tier() == 4 and LavaData.passive_rate(6) == 0.0, LavaData.shield_tier())
 	await h.shot("start")
 	await _plea(h, "start", "A")
 

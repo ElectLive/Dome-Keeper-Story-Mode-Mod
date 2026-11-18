@@ -47,7 +47,7 @@ func run(h) -> void:
 		# And no lava in or beside the shaft (pools are pre-filled caverns).
 		var drained: int = 0
 		for c in field.mass.keys():
-			if absi(c.x - x) <= 3 and c.y >= start and c.y < ceiling:
+			if absi(c.x - x) <= 8 and c.y >= start and c.y < ceiling:
 				field.mass.erase(c)
 				drained += 1
 		await h.dig_room(Vector2i(x, start), Vector2i(x, start))

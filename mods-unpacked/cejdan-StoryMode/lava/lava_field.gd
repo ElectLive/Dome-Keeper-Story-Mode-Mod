@@ -659,33 +659,16 @@ func lava_at(world_pos: Vector2) -> float:
 	return mass.get(map.getTileCoord(world_pos), 0.0)
 
 
-# Rows between which passive heat ramps from 0 to its full rate (cached).
-var _heat_top := -1
-var _heat_bottom := -1
 var passive_rate := 0.0            # passive heat per second right now (after Heat Shielding)
 
 
-func _heat_rows() -> void:
-	_heat_top = 1 << 20
-	_heat_bottom = -(1 << 20)
-	for c in map.tileData.get_used_biome_cells():
-		if map.tileData.get_resourcev(c) == Data.TILE_BORDER:
-			continue
-		_heat_bottom = maxi(_heat_bottom, c.y)
-		if map.tileData.get_biomev(c) >= LavaData.PASSIVE_HEAT_START_BIOME:
-			_heat_top = mini(_heat_top, c.y)
-	if not _ocean.is_empty():
-		_heat_bottom = int(_ocean["ceiling"])
-
-
-# Passive heat per second at a tile, before Heat Shielding: 0 above B4.
-func passive_rate_at(tile: Vector2i) -> float:
-	if _heat_top < 0:
-		_heat_rows()
-	if map.tileData.get_biomev(tile) < LavaData.PASSIVE_HEAT_START_BIOME:
-		return 0.0
-	var f: float = clampf(float(tile.y - _heat_top) / maxf(1.0, float(_heat_bottom - _heat_top)), 0.0, 1.0)
-	return LavaData.PASSIVE_HEAT_RATE_AT_BOTTOM * f
+# Passive heat per second at a tile for this team's suit (#187): by biome, the
+# lava ocean counting as B8.
+func passive_rate_at(tile: Vector2i, teamId: String = "team1") -> float:
+	var b: int = map.tileData.get_biomev(tile)
+	if not _ocean.is_empty() and tile.y > int(_ocean["ceiling"]):
+		b = LavaData.PASSIVE_HEAT_LAST_BIOME
+	return LavaData.passive_rate(b, teamId)
 
 
 func _update_heat(delta: float) -> void:
@@ -696,19 +679,19 @@ func _update_heat(delta: float) -> void:
 		recall_pos = keeper.global_position
 	# Passive heat from depth (#46), out of the dome, scaled by Heat Shielding.
 	passive_rate = 0.0
-	var passive_zone := false
-	# The sealed boss chamber keeps the depth's heat out while Velle fights (#160).
-	var sealed: bool = str(Data.ofOr("team1.story.boss", "")) == "fight"
+	# The boss sequence keeps the depth's heat out (#160; #187: the chase and
+	# finale play as they did when only Heat Shielding IV reached them).
+	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
+	var sealed: bool = str(Data.ofOr("team1.story.boss", "")) == "fight" or BossDirector.jams_recall()
 	if not keeper.isInsideDome and not keeper.disabled and not sealed:
-		var raw: float = passive_rate_at(map.getTileCoord(keeper.global_position))
-		passive_zone = raw > 0.0 or map.tileData.get_biomev(map.getTileCoord(keeper.global_position)) >= LavaData.PASSIVE_HEAT_START_BIOME
-		passive_rate = raw * LavaData.passive_heat_mult(keeper.teamId)
+		passive_rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper.teamId)
 	if keeper_in_lava(keeper) and not keeper.disabled:
-		# Heat Shielding (#44) slows lava heat but never stops it.
-		heat = min(HEAT_MAX, heat + (HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId) + passive_rate) * delta)
+		# Heat Shielding (#44) slows lava heat but never stops it; deep enough,
+		# the depth itself is hotter than the lava (#187).
+		heat = min(HEAT_MAX, heat + maxf(HEAT_PER_SECOND * LavaData.lava_heat_mult(keeper.teamId), passive_rate) * delta)
 	elif keeper.isInsideDome:
 		heat = max(0.0, heat - COOL_DOME_PER_SECOND * delta)
-	elif passive_zone and LavaData.passive_heat_mult(keeper.teamId) > 0.0:
+	elif passive_rate > 0.0:
 		# Deep and out of lava: heat only rises.
 		heat = min(HEAT_MAX, heat + passive_rate * delta)
 	else:
@@ -716,7 +699,6 @@ func _update_heat(delta: float) -> void:
 	if heat >= HEAT_MAX:
 		# Velle jams the suit's recall through the boss sequence (#160):
 		# overheating costs a heart there, not a trip home.
-		var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
 		if BossDirector.jams_recall():
 			heat = HEAT_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
 			BossDirector.overheated()
