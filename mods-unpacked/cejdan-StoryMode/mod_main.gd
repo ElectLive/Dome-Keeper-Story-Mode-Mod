@@ -146,6 +146,7 @@ func modInit():
 	if Network.chunker != null and not (OS.has_feature("editor") and Story.has_user_arg("vanillachunker")):
 		Network.chunker.set_script(load(Story.MOD_DIR + "net/ordered_chunker.gd"))
 		Network.chunker.set_process(true)
+		Network.chunker.tally_on = OS.has_feature("editor") and Story.has_user_arg("datasizes")
 	# Script extensions: each handles Story Mode and defers to vanilla otherwise.
 	# They are installed here, not in _init(): loading a vanilla script while
 	# ModLoader is still starting up pulls its dependencies in too early, and
