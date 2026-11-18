@@ -41,7 +41,6 @@ extends Node2D
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
-const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 
 signal defeated
 signal phase_changed(phase: int)

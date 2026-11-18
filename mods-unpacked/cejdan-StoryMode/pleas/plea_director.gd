@@ -120,7 +120,7 @@ func _on_monster_died(m) -> void:
 # Online (#229): the host picks every line and sends it to the clients, so the
 # team reads the same plea; a client's own director only shows the host's.
 func say(kind: String, at = null, forced: String = "", life: float = -1.0, from_host: bool = false) -> String:
-	if _online() and not multiplayer.is_server() and not from_host:
+	if not Network.is_offline_mode() and not multiplayer.is_server() and not from_host:
 		return ""
 	# No pleas during the boss sequence (#174); a line the boss itself asks
 	# for (`forced`: the thanks after the finale) still shows.
@@ -137,7 +137,7 @@ func say(kind: String, at = null, forced: String = "", life: float = -1.0, from_
 			while line == _last_line:
 				line = pool.pick_random()
 	_last_line = line
-	if _online() and multiplayer.is_server():
+	if not Network.is_offline_mode() and multiplayer.is_server():
 		Network.rpc_if_state(_net_say.bind(kind, at, line, life), Network.ConnectionState.LEVEL_STAGE_SYNC)
 	var where: String = "world"
 	var pos: Vector2
@@ -179,11 +179,6 @@ func say(kind: String, at = null, forced: String = "", life: float = -1.0, from_
 	return line
 
 
-static func _online() -> bool:
-	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
-		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
-
-
 @rpc("authority", "call_remote", "reliable")
 func _net_say(kind: String, at, line: String, life: float) -> void:
 	say(kind, at, line, life, true)
@@ -205,17 +200,8 @@ func _split() -> bool:
 
 
 func _keeper_sees(k, world_pos: Vector2, grow: float) -> bool:
-	var r = _view_of(k)
-	return r == null or (r as Rect2).grow(grow).has_point(world_pos)
-
-
-# Keeper `k`'s view in the world, or null without a camera.
-func _view_of(k):
-	var cam = Level.viewports.getPlayerCam(k.playerId) if Level.viewports != null else null
-	if cam == null or not is_instance_valid(cam) or not cam.is_inside_tree():
-		return null
-	var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-	return Rect2(cam.get_screen_center_position() - vs / 2.0, vs)
+	var r: Rect2 = Story.view_rect(k.playerId, grow)
+	return not r.has_area() or r.has_point(world_pos)
 
 
 # The on-screen lines in splitscreen sit in the world on their keeper's camera,
@@ -229,13 +215,10 @@ func _place_pins() -> void:
 		if not is_instance_valid(pin) or not is_instance_valid(k):
 			_pins.remove_at(i)
 			continue
-		var cam = Level.viewports.getPlayerCam(k.playerId) if Level.viewports != null else null
-		if cam == null or not is_instance_valid(cam):
-			continue
-		var r = _view_of(k)
-		if r != null:
-			pin.global_position = (r as Rect2).position
-			pin.scale = Vector2.ONE / cam.zoom
+		var r: Rect2 = Story.view_rect(k.playerId)
+		if r.has_area():
+			pin.global_position = r.position
+			pin.scale = Vector2.ONE / Level.viewports.getPlayerCam(k.playerId).zoom
 
 
 func _make(line: String, st: String, kind: String, pos: Vector2, where: String, life_override: float = -1.0, keeper = null) -> Node:

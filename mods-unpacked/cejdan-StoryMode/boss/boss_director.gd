@@ -24,13 +24,11 @@ extends Node
 # instance holds its own keeper in (once it is in), and a client builds the
 # boss layer with a puppet Velle that draws what the host sends (_net_velle,
 # _net_events) and reports its own keeper's overheat (_net_overheated). The
-# host also repeats the state and the hearts to clients (_net_boss). It began
-# as the workaround for a Data change lost on a client that was just coming
-# into sync; StoryNet's settled resend (#242) fixes that for every key now, and
-# the repeat stays as cheap insurance (two values every 2 s, during the boss
-# sequence only) for the keys a client can't play without. In the chase the tentacles hunt one keeper
-# out in the mine at a time and a touch on any keeper costs a heart; a client
-# draws a puppet chase from the host's trail and tips (_net_chase). The chase
+# host also repeats the state and the hearts to clients every 2 s (_net_boss):
+# cheap insurance on top of StoryNet's resend (#242) for the two keys a client
+# can't play without. In the chase the tentacles hunt one keeper out in the
+# mine at a time and a touch on any keeper costs a heart; a client draws a
+# puppet chase from the host's trail and tips (_net_chase). The chase
 # is over when every keeper is home (in the dome, at the dome) and at least
 # one of them has been out in it. In the finale any keeper taking the dome's
 # weapon starts the bells (_net_battle); a client draws a puppet finale with
@@ -53,7 +51,7 @@ const KeeperHealth = preload("res://mods-unpacked/cejdan-StoryMode/boss/keeper_h
 const Chase = preload("res://mods-unpacked/cejdan-StoryMode/boss/chase.gd")
 
 const GROUP := "story-boss"
-const STATE := "team1.story.boss"
+const STATE := Story.BOSS_STATE
 const TILE := 24.0
 const NET_HZ := 15.0          # Velle's state to clients, times a second
 const NET_REPEAT := 2.0       # seconds between repeats of the state and hearts
@@ -94,12 +92,8 @@ static func current() -> String:
 	return str(Data.ofOr(STATE, ""))
 
 
-static func active() -> bool:
-	return current() in ["fight", "chase", "finale"]
-
-
 static func jams_recall() -> bool:
-	return instance() != null and active()
+	return instance() != null and Story.boss_active()
 
 
 # A keeper of this instance overheated during the boss sequence: a heart, not a
@@ -107,18 +101,13 @@ static func jams_recall() -> bool:
 # first local one (splitscreen passes the one that overheated, #231).
 static func overheated(keeper = null) -> void:
 	var n = instance()
-	var k = keeper if keeper != null and is_instance_valid(keeper) else me()
+	var k = keeper if keeper != null and is_instance_valid(keeper) else Story.local_keeper()
 	if n == null or k == null:
 		return
-	if StoryNet.is_client():
+	if Network.is_client():
 		n.rpc_id(1, "_net_overheated", k.playerId)
 	else:
 		n._overheat(k)
-
-
-# This instance's own (first) keeper.
-static func me():
-	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
 
 
 static func explosion_at(global_pos: Vector2, kind: String, radius_px: float = 0.0) -> void:
@@ -186,7 +175,7 @@ func _ensure_layer() -> bool:
 
 
 func _physics_process(delta: float) -> void:
-	if StoryNet.is_client():
+	if Network.is_client():
 		_client_process(delta)
 		return
 	if not _ready_to_run() or GameWorld.paused:
@@ -397,7 +386,7 @@ func _chase_done() -> void:
 	if chase != null and is_instance_valid(chase):
 		chase.running = false
 		# Where the tentacles stopped, for the clients' copies.
-		if StoryNet.online():
+		if not Network.is_offline_mode():
 			_to_clients(_net_chase.bind(chase.net_state()))
 	_set_state("finale")
 	_start_finale()
@@ -424,7 +413,7 @@ func _finale_done() -> void:
 
 # The dome fell in the finale (the game mode's own loss): the lost ending.
 func dome_lost() -> void:
-	if active():
+	if Story.boss_active():
 		_set_state("lost")
 		music.stop()
 
@@ -443,7 +432,7 @@ func _finish_won() -> void:
 
 
 func _keeper_died(cause: String) -> void:
-	if not active():
+	if not Story.boss_active():
 		return
 	_set_state("lost")
 	music.stop()
@@ -470,7 +459,7 @@ func _team_down() -> void:
 
 
 func _overheat(keeper) -> void:
-	if health == null or not is_instance_valid(health) or not active():
+	if health == null or not is_instance_valid(health) or not Story.boss_active():
 		return
 	health.set_safe(keeper, 0.0)
 	health.hurt(health.to_local(keeper.global_position) + Vector2(0, 10), "overheat", keeper)
@@ -485,7 +474,7 @@ func _to_clients(call: Callable) -> void:
 # The host's side, every physics frame of a run.
 func _net_host(delta: float) -> void:
 	var has_velle: bool = velle != null and is_instance_valid(velle)
-	if not StoryNet.online() or Network.clients.is_empty():
+	if Network.is_offline_mode() or Network.clients.is_empty():
 		if has_velle:
 			velle.collect_events = false
 		return
@@ -515,12 +504,12 @@ func _net_host(delta: float) -> void:
 
 # Velle's state for certain (its death, the team's): the stream may drop one.
 func _net_velle_now() -> void:
-	if StoryNet.online() and velle != null and is_instance_valid(velle):
+	if not Network.is_offline_mode() and velle != null and is_instance_valid(velle):
 		_to_clients(_net_velle_sure.bind(velle.net_state()))
 
 
 func _keeper_hit(keeper, push: Vector2) -> void:
-	if StoryNet.online():
+	if not Network.is_offline_mode():
 		_to_clients(_net_hurt.bind(keeper.playerId, push))
 
 
@@ -549,7 +538,7 @@ func _net_events(ev: Array) -> void:
 # The state and the hearts, repeated: see the note at the top.
 @rpc("authority", "call_remote", "reliable")
 func _net_boss(st: String, hearts: int) -> void:
-	if not StoryNet.is_client():
+	if not Network.is_client():
 		return
 	if current() != st:
 		Data.server_apply(STATE, st)
@@ -624,7 +613,7 @@ func _client_process(delta: float) -> void:
 		return
 	if Level.map == null or not is_instance_valid(Level.map) or not Level.map.isMapReady() or not StoryNet.map_meta_ready(Level.map):
 		return
-	if me() == null:
+	if Story.local_keeper() == null:
 		return
 	var st: String = current()
 	if st != _client_state:

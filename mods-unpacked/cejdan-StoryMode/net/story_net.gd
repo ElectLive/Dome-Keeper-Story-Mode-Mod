@@ -70,15 +70,6 @@ static var resend_on := true
 static var resends: Array = []
 
 
-static func online() -> bool:
-	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
-		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
-
-
-static func is_client() -> bool:
-	return Network.is_client()
-
-
 # A session closed (the chunker's reset): its request and peer ids start over
 # in the next one.
 static func reset() -> void:
@@ -98,7 +89,7 @@ static func reset() -> void:
 # A loaded save puts the blobs back into Data, and a full sync sends all of
 # Data: net/ordered_chunker.gd takes them out of every big Data message (#247).
 static func save_blob(key: String, blob: String) -> void:
-	if online() and not is_client():
+	if not Network.is_offline_mode() and not Network.is_client():
 		Data.server_apply(key, blob)
 	else:
 		Data.apply(key, blob)
@@ -107,15 +98,15 @@ static func save_blob(key: String, blob: String) -> void:
 # True once `map`'s story meta can be read: always on the host and offline; on
 # a client, once the host's copy has arrived.
 static func map_meta_ready(map) -> bool:
-	if not is_client():
+	if not Network.is_client():
 		return true
 	return map != null and map.tileData != null and map.tileData.has_meta(SYNCED)
 
 
 func _process(_delta: float) -> void:
-	if not online():
+	if Network.is_offline_mode():
 		return
-	if is_client():
+	if Network.is_client():
 		_client_prices()
 		if Story.is_story():
 			_client_meta()
@@ -524,7 +515,7 @@ static func lava_full_request() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _lava_full_request() -> void:
-	if is_client():
+	if Network.is_client():
 		return
 	var f = _lava()
 	if f != null and not f.net_client:
@@ -533,7 +524,7 @@ func _lava_full_request() -> void:
 
 # Host -> every client: lava water turned to rock.
 static func lava_harden(cells: PackedVector2Array) -> void:
-	if _inst != null and online():
+	if _inst != null and not Network.is_offline_mode():
 		_inst.rpc("_lava_harden", cells)
 
 
@@ -552,7 +543,7 @@ static func lava_died(player_id: String) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _lava_died(player_id: String) -> void:
-	if is_client():
+	if Network.is_client():
 		return
 	var f = _lava()
 	var k = Keepers.getKeeper(player_id) if Keepers.hasKeeper(player_id) else null
@@ -569,7 +560,7 @@ static func chamber_reached() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _chamber_reached() -> void:
-	if not is_client() and Story.is_story():
+	if not Network.is_client() and Story.is_story():
 		load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
@@ -603,7 +594,7 @@ static func gas_full_request() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _gas_full_request() -> void:
-	if is_client():
+	if Network.is_client():
 		return
 	var f = _gas()
 	if f != null and not f.net_client:
@@ -616,7 +607,7 @@ func _gas_full_request() -> void:
 # too. A client only breaks tiles it has made, and one deep in rock may be
 # unrevealed there, so it is revealed everywhere first, as vanilla does.
 static func tile_break(map, c: Vector2i) -> void:
-	if _inst == null or not online() or is_client():
+	if _inst == null or Network.is_offline_mode() or Network.is_client():
 		return
 	map.networkRevealTile(Vector2(c), 0.0)
 	_inst.rpc("_tile_break", c)

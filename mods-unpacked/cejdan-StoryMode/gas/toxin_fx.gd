@@ -128,10 +128,8 @@ func _sync_views() -> Array:
 			views[k.playerId] = _make_view(k, split)
 		if split:
 			# Over the keeper's camera view, a margin past its edges.
-			var cam = Level.viewports.getPlayerCam(k.playerId)
-			if cam != null and is_instance_valid(cam):
-				var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-				var r := Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(8.0)
+			var r: Rect2 = Story.view_rect(k.playerId, 8.0)
+			if r.has_area():
 				var rect: ColorRect = views[k.playerId]["rect"]
 				rect.position = to_local(r.position)
 				rect.size = r.size

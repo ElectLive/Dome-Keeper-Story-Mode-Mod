@@ -11,6 +11,7 @@ extends "res://content/monster/Monster.gd"
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
+const BossMonster = preload("res://mods-unpacked/cejdan-StoryMode/boss/boss_monster.gd")
 
 const TECH := "storyeyeflyer"
 const CHARGE := 0.7
@@ -37,47 +38,18 @@ var _net_seen: bool = false
 
 
 static func register(hp: float) -> void:
-	Data.apply(TECH + ".health", hp)
-	Data.apply(TECH + ".tier", 2)
-	Data.apply(TECH + ".size", CONST.MONSTER_SMALL)
-	Data.apply(TECH + ".fullstunthreshold", 100000.0)
-	Data.apply(TECH + ".stunpriority", 0)
-	Data.apply(TECH + ".minstunlevel", 0.85)
+	BossMonster.register(TECH, hp, 2, CONST.MONSTER_SMALL)
 
 
 # A new flyer at `pos` (global), not yet in the tree; `p_perch` is where over
 # the dome it will hover (radians; 0 right, PI/2 straight above, PI left).
 static func make(pos: Vector2, p_perch: float):
-	var m: Area2D = Area2D.new()
-	m.set_script(load("res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd"))
-	m.name = "StoryEyeFlyer"
-	m.techId = TECH
-	m.teamId = "team1"
-	m.perch = p_perch
-	m.radius = randf_range(Boss.FINALE_FLYER_RADIUS[0], Boss.FINALE_FLYER_RADIUS[1])
-	m.seed_f = randf() * TAU
-	m.collision_layer = 128
-	m.collision_mask = 0
-	m.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	m.add_to_group("monster")
-	_uid += 1
-	m.UID = _uid
-	var spr := AnimatedSprite2D.new()
-	spr.name = "Sprite2D"
-	var frames := SpriteFrames.new()
-	var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	frames.add_frame("default", ImageTexture.create_from_image(img))
-	spr.sprite_frames = frames
-	spr.material = load("res://content/monster/FlashMaterial.tres")
-	m.add_child(spr)
-	m.sprite = spr
-	var box := CollisionShape2D.new()
-	box.name = "HitboxDefault"
 	var shape := CircleShape2D.new()
 	shape.radius = 11.0
-	box.shape = shape
-	m.add_child(box)
+	_uid += 1
+	var m = BossMonster.make("res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd", "StoryEyeFlyer", TECH, _uid, shape)
+	m.perch = p_perch
+	m.radius = randf_range(Boss.FINALE_FLYER_RADIUS[0], Boss.FINALE_FLYER_RADIUS[1])
 	m.global_position = pos
 	return m
 

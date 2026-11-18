@@ -36,7 +36,6 @@ const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const TENTACLE := "res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"
 const FLYER := "res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd"
 const GREAT := "res://mods-unpacked/cejdan-StoryMode/boss/great_eye.gd"
-const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 
 signal finished
 signal step_changed(step: String)
@@ -561,7 +560,7 @@ static func _synchronizer():
 # every peer: a client's weapon hits it there, and the host's health and
 # death reach the client's copy.
 func _net_register(m) -> void:
-	if not StoryNet.online():
+	if Network.is_offline_mode():
 		return
 	var sync = _synchronizer()
 	if sync == null:
@@ -573,7 +572,7 @@ func _net_register(m) -> void:
 # The host's battle for clients: the step and its clock, and what the copies
 # need to look the same.
 func net_state() -> Array:
-	return [Time.get_ticks_msec() / 1000.0, step, t, round_i, fury, fall_side, eye_at, _thanks_i, bells_by, _crack_seeds, flyers_made]
+	return [Time.get_ticks_msec() / 1000.0, step, t, round_i, fury, fall_side, eye_at, bells_by, _crack_seeds, flyers_made]
 
 
 # Every monster of the battle still here: net_record() of each.
@@ -586,7 +585,7 @@ func net_monsters() -> Array:
 
 
 func net_apply(d: Array) -> void:
-	if not puppet or d.size() < 11 or float(d[0]) < _net_time:
+	if not puppet or d.size() < 10 or float(d[0]) < _net_time:
 		return
 	_net_time = float(d[0])
 	var s: String = str(d[1])
@@ -594,10 +593,10 @@ func net_apply(d: Array) -> void:
 	fury = float(d[4])
 	fall_side = float(d[5])
 	eye_at = d[6]
-	bells_by = str(d[8])
-	for k in d[9]:
-		_crack_seeds[k] = d[9][k]
-	flyers_made = int(d[10])
+	bells_by = str(d[7])
+	for k in d[8]:
+		_crack_seeds[k] = d[8][k]
+	flyers_made = int(d[9])
 	if s != step:
 		var was: String = step
 		step = s
@@ -605,9 +604,6 @@ func net_apply(d: Array) -> void:
 		_net_step(was)
 	elif absf(t - float(d[2])) > 0.4:
 		t = float(d[2])
-	while _thanks_i < int(d[7]) and _thanks_i < BossText.THANKS.size():
-		_say(_thanks_i)
-		_thanks_i += 1
 
 
 # A client's copy enters the host's new step.

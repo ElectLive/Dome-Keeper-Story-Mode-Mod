@@ -28,6 +28,7 @@ extends "res://content/monster/Monster.gd"
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
+const BossMonster = preload("res://mods-unpacked/cejdan-StoryMode/boss/boss_monster.gd")
 
 const TECH := "storytentacle"
 
@@ -70,58 +71,29 @@ const POP_WARN := 0.8            # seconds an eye swells before it tears free
 const EARTH: Array = [Color("2a2130"), Color("3b2f44"), Color("1c1622"), Color("4a3d52")]
 
 
-# Registers the monster data.
 static func register(tentacle_hp: float) -> void:
-	Data.apply(TECH + ".health", tentacle_hp)
-	Data.apply(TECH + ".tier", 3)
-	Data.apply(TECH + ".size", CONST.MONSTER_MEDIUM)
-	Data.apply(TECH + ".fullstunthreshold", 100000.0)
-	Data.apply(TECH + ".stunpriority", 0)
-	Data.apply(TECH + ".minstunlevel", 0.85)
+	BossMonster.register(TECH, tentacle_hp, 3, CONST.MONSTER_MEDIUM)
 
 
 # A new tentacle at `pos` (global), not yet in the tree. `p_crack_seed` is the
 # seed the finale drew its warning cracks from, so the break matches them.
 static func make(pos: Vector2, dome_x: float, p_crack_seed: int = 0):
-	var m: Area2D = Area2D.new()
-	m.set_script(load("res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"))
-	m.name = "StoryTentacle"
-	m.techId = TECH
-	m.teamId = "team1"
+	_uid += 1
+	var m = BossMonster.make("res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd", "StoryTentacle", TECH, _uid, RectangleShape2D.new())
 	m.height = randf_range(88.0, 108.0)
 	m.eyes_total = Boss.FINALE_TENTACLE_EYES
 	m.eyes_left = m.eyes_total
 	m.dome_dir = 1.0 if dome_x > pos.x else -1.0
-	m.seed_f = randf() * TAU
 	m.crack_seed = p_crack_seed
-	m.collision_layer = 128
-	m.collision_mask = 0
-	m.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	m.add_to_group("monster")
-	_uid += 1
-	m.UID = _uid
-	# The vanilla Monster wants an animated sprite with the flash material; the
-	# tentacle draws itself, so the sprite is one clear pixel.
-	var spr := AnimatedSprite2D.new()
-	spr.name = "Sprite2D"
-	var frames := SpriteFrames.new()
-	var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	frames.add_frame("default", ImageTexture.create_from_image(img))
-	spr.sprite_frames = frames
-	spr.material = load("res://content/monster/FlashMaterial.tres")
-	m.add_child(spr)
-	m.sprite = spr
-	var box := CollisionShape2D.new()
-	box.name = "HitboxDefault"
-	var shape := RectangleShape2D.new()
-	shape.size = Vector2(22.0, m.height)
-	box.shape = shape
-	box.position = Vector2(0, -m.height * 0.5)
-	m.add_child(box)
-	m._hitbox = box
+	m._hitbox = m.get_node("HitboxDefault")
+	m._fit_hitbox()
 	m.global_position = pos
 	return m
+
+
+func _fit_hitbox() -> void:
+	_hitbox.shape.size = Vector2(22.0, height)
+	_hitbox.position = Vector2(0, -height * 0.5)
 
 
 # ---------------------------------------------------------------- the break
@@ -390,8 +362,7 @@ static func make_copy(r: Array):
 	m.eyes_left = m.eyes_total
 	m.seed_f = float(r[7])
 	m.dome_dir = float(r[8])
-	m._hitbox.shape.size = Vector2(22.0, m.height)
-	m._hitbox.position = Vector2(0, -m.height * 0.5)
+	m._fit_hitbox()
 	return m
 
 

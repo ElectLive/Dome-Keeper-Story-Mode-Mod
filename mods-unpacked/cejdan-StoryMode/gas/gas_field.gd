@@ -38,13 +38,13 @@ var caverns_skipped := 0           # caverns left empty because something opened
 var toxins: Dictionary = {}
 var toxin: float:
 	get:
-		return toxins.get(_pid0(), 0.0)
+		return toxins.get(Story.local_pid(), 0.0)
 	set(v):
-		toxins[_pid0()] = v
+		toxins[Story.local_pid()] = v
 var breaths: Dictionary = {}       # playerId -> the densest gas that keeper is in right now
 var breathing: float:
 	get:
-		return breaths.get(_pid0(), 0.0)
+		return breaths.get(Story.local_pid(), 0.0)
 var gassed := 0                    # times the bar filled this run
 var fx = null                      # the ToxinFx child: bar, vignette, muffled sound
 var _cracks: Dictionary = {}       # gas rock about to burst -> seconds left
@@ -106,7 +106,7 @@ func setup(p_map) -> void:
 	dome.name = "DomeGas"
 	add_child(dome)
 	dome.setup(self)
-	net_client = StoryNet.is_client()
+	net_client = Network.is_client()
 	if net_client:
 		# Pockets, caverns and what has leaked so far all come from the host.
 		StoryNet.gas_full_request()
@@ -776,12 +776,6 @@ func _gassed(keeper, teleport: bool = true) -> void:
 	toxins[keeper.playerId] = GasData.TOXIN_MAX * _lava.OVERHEAT_AFTER if jammed else 0.0
 
 
-# The first local keeper's playerId ("player1" while there is none).
-func _pid0() -> String:
-	var k = Story.local_keeper()
-	return k.playerId if k != null and is_instance_valid(k) else "player1"
-
-
 # One GasLook per local keeper's split view (#231): a look simulates a window
 # of tiles around one camera, so each view gets its own, shown in that view
 # only. With one local keeper there is one, shown everywhere, as before.
@@ -963,7 +957,7 @@ func _net_pack(cells: Array, fire_on: Array, fire_off: Array, vents: Array, full
 # Host, after every step: what changed since the last send.
 func _net_send() -> void:
 	var amount: float = dome.amount if dome != null else 0.0
-	if not StoryNet.online() or Network.clients.is_empty():
+	if Network.is_offline_mode() or Network.clients.is_empty():
 		_net_dirty.clear()
 		_net_fire_on.clear()
 		_net_fire_off.clear()

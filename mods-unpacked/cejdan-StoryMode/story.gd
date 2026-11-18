@@ -10,6 +10,8 @@ const MOD_DIR := "res://mods-unpacked/cejdan-StoryMode/"
 const MODE_FLAG := "cejdan-storymode"
 # Map-data meta holding the run's level seed, so a load can restore it (#116).
 const SEED_META := "story_seed"
+# The boss sequence's step (boss/boss_director.gd).
+const BOSS_STATE := "team1.story.boss"
 
 
 static func is_story() -> bool:
@@ -52,7 +54,7 @@ static func has_user_arg(name: String) -> bool:
 # True through the boss sequence (the chamber fight, the chase and the surface
 # finale; boss/boss_director.gd keeps the state). Text holds off meanwhile.
 static func boss_active() -> bool:
-	return str(Data.ofOr("team1.story.boss", "")) in ["fight", "chase", "finale"]
+	return str(Data.ofOr(BOSS_STATE, "")) in ["fight", "chase", "finale"]
 
 
 # This instance's first keeper, or null while it has none (between stages, or
@@ -60,6 +62,12 @@ static func boss_active() -> bool:
 # error when the list is empty, so `Keepers.first() == null` never guards (#249).
 static func local_keeper():
 	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
+
+
+# local_keeper()'s playerId, "player1" while there is none.
+static func local_pid() -> String:
+	var k = local_keeper()
+	return str(k.playerId) if k != null and is_instance_valid(k) else "player1"
 
 
 # Every keeper this instance plays (#231): one per device in splitscreen, one
@@ -70,18 +78,25 @@ static func local_keepers() -> Array:
 	return Keepers.local.keepers.filter(func(k): return k != null and is_instance_valid(k))
 
 
-# The world rects the local keepers' split views show (#231), grown by `grow`
-# px. Empty when there are no views yet (headless, between stages).
+# The world rect player `pid`'s view shows, grown by `grow` px; an empty rect
+# without a camera (headless, between stages).
+static func view_rect(pid: String, grow: float = 0.0) -> Rect2:
+	if Level.viewports == null or not is_instance_valid(Level.viewports):
+		return Rect2()
+	var cam = Level.viewports.getPlayerCam(pid)
+	if cam == null or not is_instance_valid(cam) or not cam.is_inside_tree():
+		return Rect2()
+	var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
+	return Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(grow)
+
+
+# The world rects the local keepers' split views show (#231).
 static func view_rects(grow: float = 0.0) -> Array:
 	var out: Array = []
-	if Level.viewports == null or not is_instance_valid(Level.viewports):
-		return out
 	for k in local_keepers():
-		var cam = Level.viewports.getPlayerCam(k.playerId)
-		if cam == null or not is_instance_valid(cam) or not cam.is_inside_tree():
-			continue
-		var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-		out.append(Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(grow))
+		var r: Rect2 = view_rect(k.playerId, grow)
+		if r.has_area():
+			out.append(r)
 	return out
 
 

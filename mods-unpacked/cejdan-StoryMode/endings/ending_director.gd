@@ -9,9 +9,8 @@ extends Node
 # "The Planet Is Lost". Still a won run with the $1M.
 #
 # Saved (the horror defeated): narration cards, then the end screen "The Planet
-# Is Saved". The future boss fight calls Storymode.horror_defeated(); until it
-# exists only a dev command reaches it (`-- --horror-defeated`, or the harness
-# calling Level.mode.horror_defeated()).
+# Is Saved". The won boss finale calls Storymode.horror_defeated(); so does
+# `-- --horror-defeated`.
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Endings = preload("res://mods-unpacked/cejdan-StoryMode/data/endings.gd")
@@ -81,7 +80,7 @@ func close_cards() -> void:
 
 
 func _cards(cards: Array, mood: String) -> void:
-	if StoryBeats._online() and multiplayer.is_server():
+	if not Network.is_offline_mode() and multiplayer.is_server():
 		Network.rpc_if_state(_net_cards.bind(cards, mood), Network.ConnectionState.LEVEL_STAGE_SYNC)
 	cards_shown += 1
 	var box = load(Story.MOD_DIR + "endings/CardBox.gd").new()

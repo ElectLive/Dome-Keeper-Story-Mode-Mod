@@ -23,6 +23,7 @@ extends "res://content/monster/Monster.gd"
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
+const BossMonster = preload("res://mods-unpacked/cejdan-StoryMode/boss/boss_monster.gd")
 
 const TECH := "storygreateye"
 
@@ -72,44 +73,15 @@ const EARTH: Array = [Color("2a2130"), Color("3b2f44"), Color("1c1622"), Color("
 
 
 static func register(hp: float) -> void:
-	Data.apply(TECH + ".health", hp)
-	Data.apply(TECH + ".tier", 3)
-	Data.apply(TECH + ".size", CONST.MONSTER_LARGE)
-	Data.apply(TECH + ".fullstunthreshold", 100000.0)
-	Data.apply(TECH + ".stunpriority", 0)
-	Data.apply(TECH + ".minstunlevel", 0.85)
+	BossMonster.register(TECH, hp, 3, CONST.MONSTER_LARGE)
 
 
 # A new great eye, not yet in the tree. It places itself over the dome.
 static func make():
-	var m: Area2D = Area2D.new()
-	m.set_script(load("res://mods-unpacked/cejdan-StoryMode/boss/great_eye.gd"))
-	m.name = "StoryGreatEye"
-	m.techId = TECH
-	m.teamId = "team1"
-	m.seed_f = randf() * TAU
-	m.collision_layer = 128
-	m.collision_mask = 0
-	m.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	m.add_to_group("monster")
-	_uid += 1
-	m.UID = _uid
-	var spr := AnimatedSprite2D.new()
-	spr.name = "Sprite2D"
-	var frames := SpriteFrames.new()
-	var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	frames.add_frame("default", ImageTexture.create_from_image(img))
-	spr.sprite_frames = frames
-	spr.material = load("res://content/monster/FlashMaterial.tres")
-	m.add_child(spr)
-	m.sprite = spr
-	var box := CollisionShape2D.new()
-	box.name = "HitboxDefault"
 	var shape := CircleShape2D.new()
 	shape.radius = 22.0
-	box.shape = shape
-	m.add_child(box)
+	_uid += 1
+	var m = BossMonster.make("res://mods-unpacked/cejdan-StoryMode/boss/great_eye.gd", "StoryGreatEye", TECH, _uid, shape)
 	# The stalk: drawn behind the dome, whatever this node's own layer.
 	var st := Node2D.new()
 	st.name = "Stalk"

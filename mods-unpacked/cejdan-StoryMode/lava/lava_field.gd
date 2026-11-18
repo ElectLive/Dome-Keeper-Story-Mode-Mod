@@ -75,9 +75,9 @@ var melt_timers: Dictionary = {}   # Vector2i -> seconds of lava contact
 var heats: Dictionary = {}
 var heat: float:
 	get:
-		return heats.get(_pid0(), 0.0)
+		return heats.get(Story.local_pid(), 0.0)
 	set(v):
-		heats[_pid0()] = v
+		heats[Story.local_pid()] = v
 var recalls := 0
 var last_penalty := 0
 var hardened := 0                 # lava cells water turned to rock this run
@@ -97,12 +97,12 @@ var breaches := 0
 var recall_spots: Dictionary = {}
 var recall_pos:
 	get:
-		return recall_spots.get(_pid0(), null)
+		return recall_spots.get(Story.local_pid(), null)
 	set(v):
 		if v == null:
-			recall_spots.erase(_pid0())
+			recall_spots.erase(Story.local_pid())
 		else:
-			recall_spots[_pid0()] = v
+			recall_spots[Story.local_pid()] = v
 var _acc := 0.0
 var _time := 0.0
 var _glow: Node2D
@@ -178,7 +178,7 @@ func setup(p_map) -> void:
 	_ocean = map.tileData.get_meta("story_ocean", {})
 	var ch = map.tileData.get_meta("story_boss_chamber", null)
 	_chamber = ch if ch is Rect2i else Rect2i()
-	net_client = StoryNet.is_client()
+	net_client = Network.is_client()
 	# A loaded run brings its lava back from the save; a new run places pockets.
 	if not _restore(str(Data.ofOr(SAVE_KEY, ""))):
 		_place_pockets()
@@ -718,14 +718,7 @@ func lava_at(world_pos: Vector2) -> float:
 var passive_rates: Dictionary = {}
 var passive_rate: float:
 	get:
-		return passive_rates.get(_pid0(), 0.0)
-
-
-# The first local keeper's playerId: the one the single-keeper fields
-# (heat, recall_pos, passive_rate) stand for. "player1" while there is none.
-func _pid0() -> String:
-	var k = Story.local_keeper()
-	return k.playerId if k != null and is_instance_valid(k) else "player1"
+		return passive_rates.get(Story.local_pid(), 0.0)
 
 
 func heat_of(keeper) -> float:
@@ -767,7 +760,7 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 	# The boss sequence keeps the depth's heat out (#160; #187: the chase and
 	# finale play as they did when only Heat Shielding IV reached them).
 	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
-	var sealed: bool = str(Data.ofOr("team1.story.boss", "")) == "fight" or BossDirector.jams_recall()
+	var sealed: bool = BossDirector.current() == "fight" or BossDirector.jams_recall()
 	if not keeper.isInsideDome and not keeper.disabled and not sealed:
 		rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper)
 	passive_rates[pid] = rate
@@ -883,7 +876,7 @@ func _net_send(delta: float) -> void:
 	if _net_t < NET_EVERY:
 		return
 	_net_t = 0.0
-	if not StoryNet.online() or Network.clients.is_empty():
+	if Network.is_offline_mode() or Network.clients.is_empty():
 		_net_dirty.clear()
 		_net_resync = true
 		return

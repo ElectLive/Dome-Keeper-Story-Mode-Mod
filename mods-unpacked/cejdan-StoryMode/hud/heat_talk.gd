@@ -157,16 +157,11 @@ func _say(k, text: String, color: Color, kind: String) -> void:
 	t["holder"] = _make(text, color, kind)
 	_follow()
 	# Online (#229): the other players see this keeper's line over its head.
-	if _online():
+	if not Network.is_offline_mode():
 		if multiplayer.is_server():
 			_relay(k.playerId, text, color, kind, 1)
 		else:
 			_net_line.rpc_id(1, k.playerId, text, color, kind)
-
-
-static func _online() -> bool:
-	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
-		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
 
 
 # Lines over the other players' keepers: playerId -> holder. Every one shown,

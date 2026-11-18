@@ -36,7 +36,7 @@ func init() -> void:
 	GameWorld.upgradeBought.connect(_on_upgrade_bought)
 	# Online (#229): vanilla tells the host of a client's purchase only through
 	# upgradeAdded, so Retire Rich or the Suit Blaster bought by a client count.
-	if StoryBeats._online() and multiplayer.is_server():
+	if not Network.is_offline_mode() and multiplayer.is_server():
 		GameWorld.upgradeAdded.connect(_on_upgrade_bought.bind(""))
 	# Per-keeper shop entries (#265): a loaded save gets its keepers' limits, and
 	# one from before #265 has the team's Heat Shielding tier moved to every
@@ -181,8 +181,8 @@ func _win() -> void:
 # cards), then ends the run as a win on the end screen "The Planet Is Saved".
 # Returns false, and does nothing, when the run is already won, lost or playing
 # an ending; true when the ending started. The ending runs on its own; the
-# caller need not await it. Normal play never calls it yet; the dev command
-# `-- --story --horror-defeated` does once keeper input has started.
+# caller need not await it. The boss director calls it when the finale is won;
+# so does `-- --story --horror-defeated` once keeper input has started.
 func horror_defeated() -> bool:
 	if not multiplayer.is_server() or not _can_end():
 		return false
@@ -218,7 +218,7 @@ func is_ending() -> bool:
 # way instead: every instance sees team1.dome.health reach 0 and runs _lose().
 # Clients in the level get `call`; offline there are none.
 func _to_clients(call: Callable) -> void:
-	if StoryBeats._online() and multiplayer.is_server():
+	if not Network.is_offline_mode() and multiplayer.is_server():
 		Network.rpc_if_state(call, Network.ConnectionState.LEVEL_STAGE_SYNC)
 
 
@@ -313,7 +313,7 @@ func _lose() -> void:
 	_lost = true
 	# The dome fell while it fought Velle's tentacles (#162): the lost ending.
 	var boss = get_node_or_null("StoryBoss")
-	var fallen: bool = boss != null and boss.active()
+	var fallen: bool = boss != null and Story.boss_active()
 	if fallen and multiplayer.is_server():
 		boss.dome_lost()
 	Level.moveHudOut()
