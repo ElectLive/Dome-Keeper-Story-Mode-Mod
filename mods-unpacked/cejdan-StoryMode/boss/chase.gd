@@ -388,13 +388,12 @@ func _mark_for(k) -> Node2D:
 # The mark for keeper `k`'s view, drawn on `ci` (this node or a child at its
 # origin, so both share its space).
 func _draw_warning_on(ci: CanvasItem, k) -> void:
-	if not _ok(k) or Level.viewports == null or float(heads[0]) <= 2.0:
+	if not _ok(k) or float(heads[0]) <= 2.0:
 		return
-	var cam = Level.viewports.getPlayerCam(k.playerId)
-	if cam == null:
+	var r: Rect2 = Story.view_rect(k.playerId, -10.0)
+	if not r.has_area():
 		return
-	var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-	var view: Rect2 = Rect2(to_local(cam.get_screen_center_position()) - vs * 0.5, vs).grow(-10.0)
+	var view := Rect2(to_local(r.position), r.size)
 	var lead: Vector2 = lead_pos()
 	if view.has_point(lead):
 		return

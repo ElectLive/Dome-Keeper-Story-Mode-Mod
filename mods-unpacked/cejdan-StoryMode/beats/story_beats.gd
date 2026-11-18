@@ -202,7 +202,7 @@ static func deepest() -> int:
 
 
 func _process(delta: float) -> void:
-	if _online():
+	if not Network.is_offline_mode():
 		_follow_team(delta)
 	_watch_t += delta
 	if _watch_t >= WATCH_EVERY and not GameWorld.paused:
@@ -242,7 +242,7 @@ func _can_show() -> bool:
 		return false
 	# Online: a client's own queue check never opens a beat (the host's OPEN key
 	# does), and the host gives clients still loading a moment to arrive.
-	if _online():
+	if not Network.is_offline_mode():
 		if not multiplayer.is_server() or str(Data.ofOr(OPEN, "")) != "":
 			return false
 		if _sync_waited < SYNC_WAIT:
@@ -268,7 +268,7 @@ func _show(id: String) -> void:
 		_store(QUEUED, q)
 		return
 	open_id = id
-	if _online():
+	if not Network.is_offline_mode():
 		# The host opens the beat for the team; _follow_team pauses everyone.
 		_serial += 1
 		_acks = {}
@@ -297,7 +297,7 @@ func _open_box(id: String, beat: Dictionary) -> void:
 	i.connect("onStop", _on_closed.bind(id))
 	i.integrate(Level.stage)
 	_input = i
-	if _online():
+	if not Network.is_offline_mode():
 		return
 	Level.stage.pause()
 	_hide_pause_label()
@@ -311,7 +311,7 @@ func _hide_pause_label() -> void:
 
 
 func _on_closed(id: String) -> void:
-	if _online():
+	if not Network.is_offline_mode():
 		_on_closed_online(id)
 		return
 	var q: Array = _list(QUEUED)
@@ -331,14 +331,9 @@ func _on_closed(id: String) -> void:
 
 # ---------------------------------------------------------------- online (#229)
 
-static func _online() -> bool:
-	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
-		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
-
-
 # True while a beat is open for the team (this player may have closed theirs).
 static func team_open() -> bool:
-	return _online() and str(Data.ofOr(OPEN, "")) != ""
+	return not Network.is_offline_mode() and str(Data.ofOr(OPEN, "")) != ""
 
 
 # Every instance, every frame of an online run: follows the host's OPEN key.
@@ -505,8 +500,6 @@ func _set_waiting(on: bool) -> void:
 	_waiting = Label.new()
 	_waiting.name = "StoryBeatWaiting"
 	_waiting.text = tr("story.beat.waiting")
-	if _waiting.text == "story.beat.waiting":
-		_waiting.text = "Waiting for the other players..."
 	_waiting.label_settings = load("res://gui/fontsettings/NormalFontSettings.tres")
 	_waiting.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_waiting.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)

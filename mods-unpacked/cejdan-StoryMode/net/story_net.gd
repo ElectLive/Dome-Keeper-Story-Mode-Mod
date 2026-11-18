@@ -1,29 +1,18 @@
 extends Node
 
-# Story Mode in online multiplayer (#222). Vanilla's netcode carries the map's
-# tiles, Data, the shop and the keepers to clients; this node carries the rest
-# of a run's setup that only the host does (#225):
-#
-# - The map generator's facts (map/story_gen.gd: the lava ocean, the boss
-#   chamber, pools, gas caverns, ...) are meta on the map data, and vanilla
-#   sends clients only the tile layers. The host sends them to every client, a
-#   late joiner too, in small reliable RPCs of its own (_host_meta; they were a
-#   13-16 KB Data key until #247); a client copies them onto its map. Whatever
-#   reads them on a client waits for map_meta_ready().
-# - GameWorld.prepareLevelStart (and with it mod_main.prepareGameMode) runs
-#   only on the host. A client applies Story Mode's prices and iron drop itself.
-# - Data a client got from a big message could be older than a small change
-#   that overtook it; the host sends what went stale again (#242, _host_resend).
-#
-# Lives under the mod's main node (same path on every peer), and polls like the
-# lava director. Offline runs (single player, splitscreen) skip all of it.
+# Story Mode in online multiplayer (#222): the run's setup that only the host
+# does and vanilla's netcode doesn't carry (#225). The map generator's facts go
+# to every client in small RPCs (_host_meta, #247; readers wait for
+# map_meta_ready()); a client applies Story Mode's prices and iron drop itself;
+# Data that went stale behind a big message is sent again (#242,
+# _host_resend). It also relays the lava, gas and tile breaks the host runs.
+# Lives under the mod's main node, the same path on every peer.
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Prices = preload("res://mods-unpacked/cejdan-StoryMode/data/prices.gd")
 const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd")
 
-# The Data key the map facts went out in before #247. A save from then still
-# has it; the host drops it, and the chunker never sends it.
+# The map facts' Data key before #247: dropped from Data and never sent.
 const MAP_META := "story.mapmeta"
 # Set on a client's map data once the host's meta is on it.
 const SYNCED := "story_meta_synced"
@@ -70,13 +59,15 @@ static var resend_on := true
 static var resends: Array = []
 
 
-static func online() -> bool:
-	return Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
-		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
-
-
-static func is_client() -> bool:
-	return Network.is_client()
+# A session closed (the chunker's reset): its request and peer ids start over
+# in the next one.
+static func reset() -> void:
+	if _inst == null:
+		return
+	_inst._meta_sent.clear()
+	_inst._resend_wait.clear()
+	_inst._resend_read.clear()
+	_inst._resend_synced.clear()
 
 
 # The lava's and the gas's save blob (story.lava, story.gas: tens of KB) goes
@@ -87,7 +78,7 @@ static func is_client() -> bool:
 # A loaded save puts the blobs back into Data, and a full sync sends all of
 # Data: net/ordered_chunker.gd takes them out of every big Data message (#247).
 static func save_blob(key: String, blob: String) -> void:
-	if online() and not is_client():
+	if not Network.is_offline_mode() and not Network.is_client():
 		Data.server_apply(key, blob)
 	else:
 		Data.apply(key, blob)
@@ -96,15 +87,15 @@ static func save_blob(key: String, blob: String) -> void:
 # True once `map`'s story meta can be read: always on the host and offline; on
 # a client, once the host's copy has arrived.
 static func map_meta_ready(map) -> bool:
-	if not is_client():
+	if not Network.is_client():
 		return true
 	return map != null and map.tileData != null and map.tileData.has_meta(SYNCED)
 
 
 func _process(_delta: float) -> void:
-	if not online():
+	if Network.is_offline_mode():
 		return
-	if is_client():
+	if Network.is_client():
 		_client_prices()
 		if Story.is_story():
 			_client_meta()
@@ -166,26 +157,13 @@ func _host_map_data():
 
 
 # --- the settled resend (#242) -------------------------------------------------
-# Vanilla sends Data to a client in two ways: a full copy of Data.values when it
-# reaches a stage (Network: client.full_data_sync; at the start of a run and on
-# a late join), and each network tick a delta of what changed (DataSynchronizer;
-# what changed while the client was loading goes out in one go when it reaches
-# LEVEL_STAGE_SYNC). Both go through the chunker: a message under 900 bytes is
-# sent at once, a bigger one a few chunks a frame. So a small delta the host
-# sends after a big message can reach the client first, and the big message's
-# older values then overwrite it; vanilla doesn't send the key again until it
-# changes. Seen: the boss state, money and water set as a client came into sync
-# read "" and 0 there for good.
-#
-# So the host reads every chunked Data message to a client while it is in
-# flight, and once none is left and they have had a moment to land, sends that
-# client once more, as vanilla's own delta message, every key whose value now
-# differs from what those messages carried (and, after a full sync, keys that
-# weren't in it). After the client reaches LEVEL_STAGE_SYNC it also gets every
-# Story Mode key (story, money and inventory, suit; each keeper's suit since
-# #265) whatever they carried.
-# The resend goes in messages small enough to be sent whole, so they keep their
-# order with later deltas.
+# A small Data delta can reach a client before a big (chunked) message sent
+# earlier, whose older values then win; vanilla doesn't send that key again
+# until it changes. So the host reads each chunked Data message to a client in
+# flight and, once they have landed, sends that client every key whose value
+# now differs (after a full sync, also keys it didn't hold), and every Story
+# Mode key once it reaches LEVEL_STAGE_SYNC. In messages under the chunk size,
+# so they keep their order with later deltas.
 
 func _host_resend() -> void:
 	var now: int = Time.get_ticks_msec()
@@ -193,7 +171,7 @@ func _host_resend() -> void:
 	var outgoing: Dictionary = Network.chunker.outgoing_rpcs
 	for id in outgoing:
 		var r = outgoing[id]
-		if r.is_sent() or (r.request_type != Chunker.ChunkRequestType.DATA_FULL_SYNC and r.request_type != Chunker.ChunkRequestType.DATA_DELTA_SYNC):
+		if r.is_sent() or not is_data(r.request_type):
 			continue
 		flying[r.target_peer_id] = true
 		if _resend_read.has(id):
@@ -201,7 +179,7 @@ func _host_resend() -> void:
 		_resend_read[id] = true
 		var w: Dictionary = _wait(r.target_peer_id)
 		var full: bool = r.request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC
-		var vals: Dictionary = _message_values(r, full)
+		var vals: Dictionary = queued_values(r)
 		_log_message(r, full, vals)
 		if full:
 			w["full"] = true
@@ -247,23 +225,31 @@ func _wait(peer: int) -> Dictionary:
 	return _resend_wait[peer]
 
 
-# The Data values a chunked message carries: its bound arguments are
-# (tick, var_to_bytes(changes)) for a delta, (size, zstd bytes) or (tick, size,
-# zstd bytes) for a full sync.
-func _message_values(r, full: bool) -> Dictionary:
-	var buf := PackedByteArray()
-	for ch: PackedByteArray in r.chunks:
-		buf.append_array(ch)
-	var args = bytes_to_var(buf)
+static func is_data(request_type: int) -> bool:
+	return request_type == Chunker.ChunkRequestType.DATA_DELTA_SYNC or request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC
+
+
+# The Data values a Data message's bound arguments carry: (tick,
+# var_to_bytes(changes)) for a delta, (size, zstd bytes) or (tick, size, zstd
+# bytes) for a full sync. Empty when they hold none.
+static func data_values(request_type: int, args) -> Dictionary:
 	if not args is Array or args.size() < 2 or not args[-1] is PackedByteArray:
 		return {}
 	var bytes: PackedByteArray = args[-1]
-	if full:
+	if request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC:
 		if not args[-2] is int:
 			return {}
 		bytes = bytes.decompress(args[-2], FileAccess.CompressionMode.COMPRESSION_ZSTD)
 	var vals = bytes_to_var(bytes)
 	return vals if vals is Dictionary else {}
+
+
+# data_values() of a queued message.
+static func queued_values(r) -> Dictionary:
+	var buf := PackedByteArray()
+	for ch: PackedByteArray in r.chunks:
+		buf.append_array(ch)
+	return data_values(r.request_type, bytes_to_var(buf))
 
 
 func _resend(peer: int, w: Dictionary) -> void:
@@ -301,7 +287,8 @@ func _resend(peer: int, w: Dictionary) -> void:
 	if not batch.is_empty():
 		_send_delta(peer, batch)
 		messages += 1
-	resends.append({"peer": peer, "keys": keys.size(), "stale": stale, "messages": messages, "story": w["story"], "msec": Time.get_ticks_msec()})
+	if OS.has_feature("editor"):
+		resends.append({"peer": peer, "keys": keys.size(), "stale": stale, "messages": messages, "story": w["story"], "msec": Time.get_ticks_msec()})
 	ModLoaderLog.info("Data resent to peer %d once its big messages landed: %d keys (%d changed since), %d messages" % [peer, keys.size(), stale, messages], Story.LOG)
 
 
@@ -356,7 +343,8 @@ func _log_message(r, full: bool, vals: Dictionary) -> void:
 			shares.append([row[0], zall - var_to_bytes(rest).compress(FileAccess.CompressionMode.COMPRESSION_ZSTD).size()])
 		entry["zstd"] = zall
 		entry["zstd_shares"] = shares
-	measured.append(entry)
+	if OS.has_feature("editor"):
+		measured.append(entry)
 	ModLoaderLog.info("Data message to peer %d (%s): %s, %d bytes sent, %d keys, %d bytes raw; groups: %s; biggest: %s" % [
 		r.target_peer_id, state, entry["kind"], sent, vals.size(), raw, _rows_text(grows.slice(0, 6)), _rows_text(rows.slice(0, 6))], Story.LOG)
 	if dev:
@@ -511,6 +499,8 @@ static func lava_full_request() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _lava_full_request() -> void:
+	if Network.is_client():
+		return
 	var f = _lava()
 	if f != null and not f.net_client:
 		rpc_id(multiplayer.get_remote_sender_id(), "_lava_cells", f.net_full(), true)
@@ -518,7 +508,7 @@ func _lava_full_request() -> void:
 
 # Host -> every client: lava water turned to rock.
 static func lava_harden(cells: PackedVector2Array) -> void:
-	if _inst != null and online():
+	if _inst != null and not Network.is_offline_mode():
 		_inst.rpc("_lava_harden", cells)
 
 
@@ -537,6 +527,8 @@ static func lava_died(player_id: String) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _lava_died(player_id: String) -> void:
+	if Network.is_client():
+		return
 	var f = _lava()
 	var k = Keepers.getKeeper(player_id) if Keepers.hasKeeper(player_id) else null
 	if f == null or k == null or k.peerId != multiplayer.get_remote_sender_id():
@@ -552,7 +544,7 @@ static func chamber_reached() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _chamber_reached() -> void:
-	if Story.is_story():
+	if not Network.is_client() and Story.is_story():
 		load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
@@ -586,23 +578,11 @@ static func gas_full_request() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _gas_full_request() -> void:
+	if Network.is_client():
+		return
 	var f = _gas()
 	if f != null and not f.net_client:
 		rpc_id(multiplayer.get_remote_sender_id(), "_gas_cells", f.net_full(), true)
-
-
-# Client -> host: I bought Vent the Dome (vanilla tells only the buyer's
-# instance that an upgrade was bought; the dome's gas is the host's).
-static func gas_vent() -> void:
-	if _inst != null:
-		_inst.rpc_id(1, "_gas_vent")
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _gas_vent() -> void:
-	var f = _gas()
-	if f != null and not f.net_client and f.dome != null:
-		f.dome.vent()
 
 
 # --- tiles the host breaks itself (#228) ---------------------------------------
@@ -611,7 +591,7 @@ func _gas_vent() -> void:
 # too. A client only breaks tiles it has made, and one deep in rock may be
 # unrevealed there, so it is revealed everywhere first, as vanilla does.
 static func tile_break(map, c: Vector2i) -> void:
-	if _inst == null or not online() or is_client():
+	if _inst == null or Network.is_offline_mode() or Network.is_client():
 		return
 	map.networkRevealTile(Vector2(c), 0.0)
 	_inst.rpc("_tile_break", c)

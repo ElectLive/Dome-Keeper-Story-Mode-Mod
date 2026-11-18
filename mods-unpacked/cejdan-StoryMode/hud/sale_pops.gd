@@ -64,15 +64,10 @@ static func pop(amount: int, color: Color = GOLD) -> float:
 	if n == null or amount <= 0:
 		return 0.0
 	# Online (#229): the host alone hears of sales; its pops go to every client.
-	if n._is_online_host():
+	if n.multiplayer.is_server() and not Network.is_offline_mode():
 		Network.rpc_if_state(n._net_pop.bind(amount, color), Network.ConnectionState.LEVEL_STAGE_SYNC)
 	n._waiting.append([amount, color])
 	return maxf(n._wait_t, 0.0) + GAP * (n._waiting.size() - 1)
-
-
-func _is_online_host() -> bool:
-	return multiplayer.is_server() and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SINGLEPLAYER \
-		and Network.multiplayer_mode != Network.MultiplayerMode.OFFLINE_SPLITSCREEN
 
 
 @rpc("authority", "call_remote", "reliable")

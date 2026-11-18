@@ -23,47 +23,17 @@ var _dome = null
 var _mats: Array = []              # one per haze sprite: [material, share of the haze it shows]
 var _sprites: Array = []
 
-const HAZE := """shader_type canvas_item;
-uniform float amount;
-
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float vnoise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-float bayer(vec2 p) {
-	int x = int(mod(p.x, 4.0));
-	int y = int(mod(p.y, 4.0));
-	int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-	return (float(m[y * 4 + x]) + 0.5) / 16.0;
-}
-
-void fragment() {
-	float inside = step(0.5, texture(TEXTURE, UV).a);
-	// In 2-pixel blocks, dithered in steps, to sit with the pixel art.
-	vec2 px = floor(UV / TEXTURE_PIXEL_SIZE / 2.0);
-	vec2 q = px * 0.07;
-	float n = 0.6 * vnoise(q + vec2(TIME * 0.11, -TIME * 0.19)) + 0.4 * vnoise(q * 2.3 + vec2(-TIME * 0.17, -TIME * 0.08));
-	// Gas rises: thicker toward the top of the dome.
-	float rise = 1.15 - 0.45 * UV.y;
-	float d = clamp(amount * (0.5 + 0.6 * n) * rise, 0.0, 1.0);
-	float lvl = floor(d * 6.0 + bayer(px)) / 6.0;
-	vec3 col = mix(vec3(0.30, 0.56, 0.12), vec3(0.62, 0.86, 0.26), n);
-	COLOR = vec4(col, inside * clamp(lvl * 0.9, 0.0, 0.88));
-}
-"""
+const HAZE := preload("res://mods-unpacked/cejdan-StoryMode/gas/look/dome_haze.gdshader")
 
 
 func setup(p_field) -> void:
 	field = p_field
-	GameWorld.upgradeBought.connect(_on_upgrade_bought)
+	GameWorld.upgradeAdded.connect(_on_upgrade_added)
 
 
 func _exit_tree() -> void:
-	if GameWorld.upgradeBought.is_connected(_on_upgrade_bought):
-		GameWorld.upgradeBought.disconnect(_on_upgrade_bought)
+	if GameWorld.upgradeAdded.is_connected(_on_upgrade_added):
+		GameWorld.upgradeAdded.disconnect(_on_upgrade_added)
 	for s in _sprites:
 		if is_instance_valid(s):
 			s.queue_free()
@@ -107,14 +77,16 @@ func vent() -> void:
 	GasSfx.play("vent", 0.0, 0.8)
 
 
-func _on_upgrade_bought(id: String, _team: String, _player: String) -> void:
+# Vent the Dome bought by any player: upgradeAdded is the one signal the host
+# gets for a client's purchase too (#228), and every client gets it as well.
+func _on_upgrade_added(id: String, _team: String) -> void:
 	if id.get_slice(".", id.get_slice_count(".") - 1) != VENT_ID:
 		return
 	if field.net_client:
-		# The dome's gas is the host's (#228): it clears it and sends the new amount.
+		# The dome's gas is the host's: it clears it and sends the new amount.
 		GasSfx.play("vent", 0.0, 0.8)
-		load("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd").gas_vent()
-	else:
+	elif amount > 0.0:
+		# (The host gets the signal twice for a purchase of its own.)
 		vent()
 
 
@@ -147,8 +119,6 @@ func _attach() -> void:
 	_sprites.clear()
 	_dome = dome
 	_mats.clear()
-	var sh := Shader.new()
-	sh.code = HAZE
 	# Gas rises: the cellar under the dome gets less of it than the dome.
 	for pair in [["Background", 1.0], ["Cellar", 0.6]]:
 		var path: String = pair[0]
@@ -170,7 +140,7 @@ func _attach() -> void:
 		s.z_as_relative = false
 		s.z_index = HAZE_Z
 		var mat := ShaderMaterial.new()
-		mat.shader = sh
+		mat.shader = HAZE
 		s.material = mat
 		_mats.append([mat, pair[1]])
 		s.visible = false

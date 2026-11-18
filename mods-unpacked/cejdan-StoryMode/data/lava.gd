@@ -3,6 +3,8 @@ extends RefCounted
 # Shared lava numbers for the user to tune. lava/lava_field.gd and the map
 # generator (map/story_gen.gd) read them. All are starting values.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
+
 # --- pockets -------------------------------------------------------------------
 const POCKET_MIN_DEPTH := 7            # first tile row that may hold magma
 const POCKET_CELLS_PER_POCKET := 150   # one pocket per this many plain rock cells
@@ -134,8 +136,7 @@ static func player_id(who = null) -> String:
 		return who
 	if who is Object and is_instance_valid(who) and "playerId" in who:
 		return str(who.playerId)
-	var k = Keepers.local.keepers[0] if Keepers.local != null and not Keepers.local.keepers.is_empty() else null
-	return str(k.playerId) if k != null and is_instance_valid(k) else "player1"
+	return Story.local_pid()
 
 
 static func lava_heat_mult(who = null) -> float:

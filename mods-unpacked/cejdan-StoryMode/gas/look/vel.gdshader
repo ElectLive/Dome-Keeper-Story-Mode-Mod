@@ -28,21 +28,10 @@ const float DT = 0.15;
 const float K = 0.2;
 const float VISC = 0.3;
 
+#include "res://mods-unpacked/cejdan-StoryMode/gas/look/common.gdshaderinc"
+
 bool solid(vec2 uv) {
 	return texture(tiles, uv).r < 0.5;
-}
-
-float hash(vec2 p) {
-	p = fract(p * vec2(123.34, 456.21));
-	p += dot(p, p + 45.32);
-	return fract(p.x * p.y);
-}
-
-float noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
 
 // A swirling push with no sources or sinks: the curl of a noise field.
@@ -58,26 +47,6 @@ vec4 at(vec2 uv_new, vec2 uv_old, vec4 c) {
 		return vec4(0.0, 0.0, c.z, 0.0);
 	}
 	return texture(prev, uv_old);
-}
-
-// The grid's gas density here: blended between the four nearest tiles, open
-// ones only, so gas never shows through a wall.
-float coarse_at(vec2 uv) {
-	vec2 ts = vec2(textureSize(tiles, 0));
-	vec2 p = uv * ts - 0.5;
-	vec2 i = floor(p);
-	vec2 f = p - i;
-	float sum = 0.0;
-	float wsum = 0.0;
-	for (int y = 0; y < 2; y++) {
-		for (int x = 0; x < 2; x++) {
-			vec4 t = texture(tiles, (i + vec2(float(x), float(y)) + 0.5) / ts);
-			float w = (x == 0 ? 1.0 - f.x : f.x) * (y == 0 ? 1.0 - f.y : f.y) * step(0.5, t.r);
-			sum += t.g * 4.0 * w;
-			wsum += w;
-		}
-	}
-	return wsum > 0.0 ? sum / wsum : 0.0;
 }
 
 void fragment() {
@@ -130,7 +99,7 @@ void fragment() {
 			}
 
 			// Gas under pressure in the grid pushes outward; everything eases back to rest.
-			data.z += jet * max(0.0, coarse_at(UV) - 1.0);
+			data.z += jet * max(0.0, open_mix(tiles, UV, vec4(0.0, 4.0, 0.0, 0.0)) - 1.0);
 			float hot = texture(tiles, UV).a;
 			data.z += 0.12 * hot;
 			data.y -= 0.6 * hot;

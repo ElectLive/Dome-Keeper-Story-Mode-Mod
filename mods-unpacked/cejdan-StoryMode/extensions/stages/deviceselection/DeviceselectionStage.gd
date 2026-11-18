@@ -1,19 +1,11 @@
 extends "res://stages/deviceselection/DeviceselectionStage.gd"
 
-# Vanilla's keeper choice (loading an online save, joining a run under way),
-# in a Story Mode save: a keeper taken while a client is still spawning the
-# choice's keepers waits until that client is in sync (#251).
-#
-# The host tells clients about a taken keeper only once they are in
-# DEVICE_SELECTION_STAGE_SYNC (LoadoutKeeperSpawner.network_replace_player_id).
-# A client still in DEVICE_SELECTION_STAGE_SPAWN misses it, and the catch-up
-# vanilla sends when it gets there (ensurePeerKeeperCorrect) replaces the
-# client's own keeper with the host's: the client's keeper is gone (it can't
-# take one), the host's shows up twice, and the client logs Keeper.
-# updatePlayerName reading a lobby member that isn't there and the host's
-# KeeperSynchronizer packets for a node it never made. A vanilla Relic Hunt
-# save does the same (t251_mp_load_* -Extra "--vanilla --instantpick").
-# Vanilla modes are left as they are.
+# Vanilla's keeper choice in a Story Mode save (loading an online save, a
+# drop-in): a keeper taken while a client is still spawning the choice's
+# keepers waits until that client is in sync. Vanilla tells a client of a taken
+# keeper only once it is in DEVICE_SELECTION_STAGE_SYNC, and its catch-up then
+# replaces the client's own keeper with the host's (#251; vanilla Relic Hunt
+# does the same: t251_mp_load_* -Extra "--vanilla --instantpick").
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 

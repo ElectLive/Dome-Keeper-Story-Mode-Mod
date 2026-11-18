@@ -20,18 +20,7 @@ const vec3 C3 = vec3(0.62, 0.86, 0.25);
 const vec3 C4 = vec3(0.88, 0.99, 0.50);
 const vec3 MOTE = vec3(0.96, 1.0, 0.72);
 
-float hash(vec2 p) {
-	p = fract(p * vec2(123.34, 456.21));
-	p += dot(p, p + 45.32);
-	return fract(p.x * p.y);
-}
-
-float noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
-}
+#include "res://mods-unpacked/cejdan-StoryMode/gas/look/common.gdshaderinc"
 
 float fbm(vec2 p) {
 	float a = 0.5;
@@ -44,32 +33,6 @@ float fbm(vec2 p) {
 	return s / 0.9375;
 }
 
-// How hot the gas burns here (#204): the grid's fire, blended over open tiles.
-float fire_at(vec2 uv) {
-	vec2 ts = vec2(textureSize(tiles, 0));
-	vec2 p = uv * ts - 0.5;
-	vec2 i = floor(p);
-	vec2 f = p - i;
-	float sum = 0.0;
-	float wsum = 0.0;
-	for (int y = 0; y < 2; y++) {
-		for (int x = 0; x < 2; x++) {
-			vec4 t = texture(tiles, (i + vec2(float(x), float(y)) + 0.5) / ts);
-			float w = (x == 0 ? 1.0 - f.x : f.x) * (y == 0 ? 1.0 - f.y : f.y) * step(0.5, t.r);
-			sum += t.a * w;
-			wsum += w;
-		}
-	}
-	return wsum > 0.0 ? sum / wsum : 0.0;
-}
-
-float bayer(vec2 p) {
-	int x = int(mod(p.x, 4.0));
-	int y = int(mod(p.y, 4.0));
-	int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-	return (float(m[y * 4 + x]) + 0.5) / 16.0;
-}
-
 void fragment() {
 	vec2 px = floor(UV * size_px);
 	vec2 uv = (px + 0.5) / size_px;
@@ -80,7 +43,7 @@ void fragment() {
 		COLOR = vec4(abs(q) * 0.25, 0.0, 1.0);
 	} else if (raw > 0.5) {
 		COLOR = vec4(d.x, abs(d.y) * 0.5, abs(d.z) * 0.5, 1.0);
-	} else if (t.r < 0.5 || t.b < 0.5 || (d.x < 0.03 && fire_at(uv) < 0.02)) {
+	} else if (t.r < 0.5 || t.b < 0.5 || (d.x < 0.03 && open_mix(tiles, uv, vec4(0.0, 0.0, 0.0, 1.0)) < 0.02)) {
 		COLOR = vec4(0.0);
 	} else {
 		// Where this bit of gas's pattern lives (world tiles), after the flow's twist.
@@ -117,7 +80,7 @@ void fragment() {
 			}
 		}
 		// Fire (#204): flames that lick upward, hottest where the gas is thickest.
-		float f = fire_at(uv);
+		float f = open_mix(tiles, uv, vec4(0.0, 0.0, 0.0, 1.0));
 		if (f > 0.02) {
 			vec2 fq = origin_tiles + uv * win_tiles;
 			float lick = fbm(fq * vec2(2.6, 1.7) + vec2(0.0, time * 5.5));

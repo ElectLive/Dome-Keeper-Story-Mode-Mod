@@ -12,6 +12,7 @@ extends Node2D
 # `hit` tells the director, which sends it on, and a client plays it with
 # net_hit(). Each keeper has its own safe moment after a hit.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 
@@ -21,10 +22,13 @@ signal hurt_taken(hearts_left: int, cause: String)
 signal died(cause: String)
 signal hit(keeper, push: Vector2)   # host: a keeper was hit, for its own instance to play
 
-# Seconds this instance's first keeper is still safe; the other keepers'
-# are in _safe (playerId -> seconds).
-var invulnerable: float = 0.0
-var _safe: Dictionary = {}
+var _safe: Dictionary = {}      # playerId -> seconds that keeper is still safe
+# This instance's first keeper's (playtests set it).
+var invulnerable: float:
+	get:
+		return float(_safe.get(Story.local_pid(), 0.0))
+	set(v):
+		_safe[Story.local_pid()] = v
 var _pushes: Dictionary = {}    # playerId -> [push, seconds left]
 var dead: bool = false
 var hits: int = 0
@@ -77,13 +81,10 @@ func _flash_for(keeper) -> ColorRect:
 func _place_flashes() -> void:
 	for pid in _flashes:
 		var f = _flashes[pid]
-		var cam = Level.viewports.getPlayerCam(pid) if Level.viewports != null else null
-		if not is_instance_valid(f) or cam == null or not is_instance_valid(cam):
-			continue
-		var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
-		var r := Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(8.0)
-		f.position = to_local(r.position)
-		f.size = r.size
+		var r: Rect2 = Story.view_rect(pid, 8.0)
+		if is_instance_valid(f) and r.has_area():
+			f.position = to_local(r.position)
+			f.size = r.size
 
 
 func hearts() -> int:
@@ -115,19 +116,12 @@ func heal() -> bool:
 	return true
 
 
-func _me():
-	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
-
-
 func safe_left(keeper) -> float:
-	return invulnerable if keeper == _me() else float(_safe.get(keeper.playerId, 0.0))
+	return float(_safe.get(keeper.playerId, 0.0))
 
 
 func set_safe(keeper, sec: float) -> void:
-	if keeper == _me():
-		invulnerable = sec
-	else:
-		_safe[keeper.playerId] = sec
+	_safe[keeper.playerId] = sec
 
 
 # One heart of damage to `keeper` (this instance's own when left out) from
@@ -135,7 +129,7 @@ func set_safe(keeper, sec: float) -> void:
 # safe from its last hit, or the team is already dead. The host's to call.
 func hurt(from: Vector2, cause: String = "", keeper = null) -> bool:
 	if keeper == null:
-		keeper = _me()
+		keeper = Story.local_keeper()
 	if dead or keeper == null or not is_instance_valid(keeper) or not multiplayer.is_server() or safe_left(keeper) > 0.0:
 		return false
 	var left: int = maxi(0, hearts() - 1)
@@ -179,7 +173,6 @@ func _physics_process(delta: float) -> void:
 	if GameWorld.paused:
 		return
 	_time += delta
-	invulnerable = maxf(0.0, invulnerable - delta)
 	for id: String in _safe:
 		_safe[id] = maxf(0.0, float(_safe[id]) - delta)
 	_lost_flash = maxf(0.0, _lost_flash - delta)

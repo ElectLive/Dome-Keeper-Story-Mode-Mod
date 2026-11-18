@@ -33,11 +33,8 @@ func init() -> void:
 	# The boss sequence: Velle's chamber fight and what follows (#160).
 	add_child(load(Story.MOD_DIR + "boss/boss_director.gd").new())
 	Data.listen(self, "team1.dome.health")
-	GameWorld.upgradeBought.connect(_on_upgrade_bought)
-	# Online (#229): vanilla tells the host of a client's purchase only through
-	# upgradeAdded, so Retire Rich or the Suit Blaster bought by a client count.
-	if StoryBeats._online() and multiplayer.is_server():
-		GameWorld.upgradeAdded.connect(_on_upgrade_bought.bind(""))
+	# upgradeAdded is the host's one signal for every purchase, a client's too (#229).
+	GameWorld.upgradeAdded.connect(_on_upgrade_added)
 	# Per-keeper shop entries (#265): a loaded save gets its keepers' limits, and
 	# one from before #265 has the team's Heat Shielding tier moved to every
 	# keeper, once vanilla has restored the upgrades and Data.
@@ -101,26 +98,23 @@ func _welcome() -> void:
 	StoryBeats.fire(load(Story.MOD_DIR + "data/logs.gd").WELCOME)
 
 
-# The shop's Suit Blaster entry is a stand-in: buying it grants the real gadget
-# the way a gadget chest does (research on #18). Since #265 the entry is per
-# keeper, in each player's own keeper track (player2.storysuitblaster), and
-# grants player2.suitblaster to that keeper only: vanilla gives a keepersuit
-# gadget picked in a run to the keeper who picked it
-# (LevelStage.addGadgetUpgrade, "keeper exclusive gadget").
-const SUITBLASTER_ENTRY := "storysuitblaster"
 # Retire Rich (#31, #54): the only way to win a Story Mode run until the boss.
 const RETIRE_ENTRY := "storyretirerich"
 # Retire Rich's own root, the shop's top section (#144).
 const WIN_ROOT := "storywin"
 
 
-func _on_upgrade_bought(id: String, teamId: String, _playerId: String) -> void:
+# The shop's Suit Blaster entry is a stand-in: buying it grants the real gadget
+# the way a gadget chest does (#18), to that keeper only (#265: the entry is
+# per keeper, player2.storysuitblaster -> player2.suitblaster), as vanilla
+# gives a keepersuit gadget to the keeper who picked it.
+func _on_upgrade_added(id: String, teamId: String) -> void:
 	if not multiplayer.is_server():
 		return
 	if id == teamId + "." + RETIRE_ENTRY:
 		_win()
 		return
-	if not id.begins_with("player") or not id.ends_with("." + SUITBLASTER_ENTRY):
+	if not id.begins_with("player") or not id.ends_with("." + KeeperUpgrades.BLASTER_ENTRY):
 		return
 	var pid: String = id.substr(0, id.find("."))
 	var gid: String = pid + ".suitblaster"
@@ -181,8 +175,8 @@ func _win() -> void:
 # cards), then ends the run as a win on the end screen "The Planet Is Saved".
 # Returns false, and does nothing, when the run is already won, lost or playing
 # an ending; true when the ending started. The ending runs on its own; the
-# caller need not await it. Normal play never calls it yet; the dev command
-# `-- --story --horror-defeated` does once keeper input has started.
+# caller need not await it. The boss director calls it when the finale is won;
+# so does `-- --story --horror-defeated` once keeper input has started.
 func horror_defeated() -> bool:
 	if not multiplayer.is_server() or not _can_end():
 		return false
@@ -218,7 +212,7 @@ func is_ending() -> bool:
 # way instead: every instance sees team1.dome.health reach 0 and runs _lose().
 # Clients in the level get `call`; offline there are none.
 func _to_clients(call: Callable) -> void:
-	if StoryBeats._online() and multiplayer.is_server():
+	if not Network.is_offline_mode() and multiplayer.is_server():
 		Network.rpc_if_state(call, Network.ConnectionState.LEVEL_STAGE_SYNC)
 
 
@@ -313,7 +307,7 @@ func _lose() -> void:
 	_lost = true
 	# The dome fell while it fought Velle's tentacles (#162): the lost ending.
 	var boss = get_node_or_null("StoryBoss")
-	var fallen: bool = boss != null and boss.active()
+	var fallen: bool = boss != null and Story.boss_active()
 	if fallen and multiplayer.is_server():
 		boss.dome_lost()
 	Level.moveHudOut()

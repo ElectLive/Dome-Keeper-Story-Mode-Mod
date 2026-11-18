@@ -16,10 +16,10 @@ const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
 const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
+const FieldUtil = preload("res://mods-unpacked/cejdan-StoryMode/util/field_util.gd")
 const SAVE_KEY := "story.gas"
 const LAVA_FIELD := "StoryLavaField"
 const TILE := 24.0
-const KEEPER_BOX := Vector2(10, 16)
 const WAKE_EPS := 0.00005
 const DIRS := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 
@@ -38,13 +38,13 @@ var caverns_skipped := 0           # caverns left empty because something opened
 var toxins: Dictionary = {}
 var toxin: float:
 	get:
-		return toxins.get(_pid0(), 0.0)
+		return toxins.get(Story.local_pid(), 0.0)
 	set(v):
-		toxins[_pid0()] = v
+		toxins[Story.local_pid()] = v
 var breaths: Dictionary = {}       # playerId -> the densest gas that keeper is in right now
 var breathing: float:
 	get:
-		return breaths.get(_pid0(), 0.0)
+		return breaths.get(Story.local_pid(), 0.0)
 var gassed := 0                    # times the bar filled this run
 var fx = null                      # the ToxinFx child: bar, vignette, muffled sound
 var _cracks: Dictionary = {}       # gas rock about to burst -> seconds left
@@ -66,6 +66,7 @@ var phys_frames := 0
 var _acc := 0.0
 var _time := 0.0
 var prev_mass: Dictionary = {}     # the gas before the last step: the look blends from it (#211)
+var moving := false                # the last step (or host packet) changed some gas: the look glides
 var rise: Dictionary = {}          # cell -> momentum of its gas, in tiles climbed (#217); not saved
 var drift: Dictionary = {}         # cell -> which way that momentum runs along a ceiling, -1 left .. 1 right
 var _awake: Dictionary = {}
@@ -105,7 +106,7 @@ func setup(p_map) -> void:
 	dome.name = "DomeGas"
 	add_child(dome)
 	dome.setup(self)
-	net_client = StoryNet.is_client()
+	net_client = Network.is_client()
 	if net_client:
 		# Pockets, caverns and what has leaked so far all come from the host.
 		StoryNet.gas_full_request()
@@ -273,6 +274,7 @@ func _physics_process(delta: float) -> void:
 		_burst(delta)
 		while _acc >= GasData.TICK:
 			_acc -= GasData.TICK
+			moving = false
 			if not freeze_flow:
 				prev_mass = mass.duplicate()
 				_step()
@@ -336,6 +338,7 @@ func _step() -> void:
 			mass[c] = mass.get(c, 0.0) + out
 			sources[c] -= out
 			_net_dirty[c] = true
+			moving = true
 			_wake(c)
 			revision += 1
 		if sources[c] <= 0.001:
@@ -546,6 +549,7 @@ func flux_at(c: Vector2i) -> Vector2:
 func _set_mass(c: Vector2i, o: float, m: float, woke: Dictionary) -> void:
 	if m != o:
 		_net_dirty[c] = true
+		moving = true
 	if m > GasData.MIN_MASS:
 		mass[c] = m
 	else:
@@ -677,7 +681,7 @@ func _update_fire(delta: float) -> void:
 	for keeper in Story.local_keepers():
 		if keeper.killed or keeper.disabled:
 			continue
-		var r: Rect2 = keeper_rect(keeper)
+		var r: Rect2 = FieldUtil.keeper_rect(keeper)
 		var a: Vector2i = map.getTileCoord(r.position)
 		var b: Vector2i = map.getTileCoord(r.end)
 		var burning_here := false
@@ -692,7 +696,7 @@ func _update_fire(delta: float) -> void:
 
 
 func _on_screen_cell(c: Vector2i) -> bool:
-	if not _seen(c):
+	if not FieldUtil.seen(map, c):
 		return false
 	for l in looks.values():
 		if is_instance_valid(l) and c.x >= l.c0.x and c.y >= l.c0.y and c.x < l.c0.x + l.WIN.x and c.y < l.c0.y + l.WIN.y:
@@ -704,7 +708,7 @@ func _ember(c: Vector2i) -> void:
 	if _puffs.size() >= PUFF_MAX:
 		return
 	var p: Vector2 = _cell_origin(c) + Vector2(_puff_rng.randf_range(2.0, TILE - 2.0), _puff_rng.randf_range(2.0, TILE - 2.0))
-	_puffs.append([p.x, p.y, _time, _puff_rng.randf_range(0.5, 1.1), _puff_rng.randf(), _puff_rng.randf_range(14.0, 40.0), 1.0, 1])
+	_puffs.append([p.x, p.y, _time, _puff_rng.randf_range(0.5, 1.1), _puff_rng.randf(), _puff_rng.randf_range(14.0, 40.0), 1.0, EMBER])
 
 
 # --- toxin (#202) ----------------------------------------------------------------
@@ -743,7 +747,7 @@ func _update_keeper_toxin(keeper, delta: float) -> void:
 		return
 	if keeper.disabled:
 		return
-	breaths[pid] = gas_in(keeper_rect(keeper), true)
+	breaths[pid] = gas_in(FieldUtil.keeper_rect(keeper), true)
 	var rate: float = GasData.toxin_share(breaths[pid])
 	if rate > 0.0:
 		t = minf(GasData.TOXIN_MAX, t + GasData.TOXIN_PER_SECOND * rate * delta)
@@ -753,37 +757,23 @@ func _update_keeper_toxin(keeper, delta: float) -> void:
 	if t < GasData.TOXIN_MAX:
 		return
 	gassed += 1
-	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
-	if BossDirector.jams_recall():
-		# Velle jams the suit's recall through the boss sequence (#160): a full
-		# bar costs a heart there, not a trip home.
-		toxins[pid] = GasData.TOXIN_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
-		BossDirector.overheated(keeper)
-	else:
-		# The same recall as an overheat in lava: cargo dropped, half the money,
-		# and it counts toward the same deaths (until gas deaths get their own lines).
-		toxins[pid] = 0.0
-		if _lava != null:
-			_lava._recall(keeper)
-		ModLoaderLog.info("Gassed (%s): recall %d" % [pid, gassed], "cejdan-StoryMode")
+	_gassed(keeper)
+	ModLoaderLog.info("Gassed (%s): death %d" % [pid, gassed], "cejdan-StoryMode")
 
 
-# A full bar in the dome (#213): a gas death like one in the mine (the same
-# count, the horror's line, half the money, cargo dropped), but the keeper is
-# already home, so no trip; the bar starts over.
+# A full bar in the dome (#213): a gas death like one in the mine, but the
+# keeper is already home, so no trip.
 func _gassed_in_dome(keeper) -> void:
 	gassed += 1
-	toxins[keeper.playerId] = 0.0
+	_gassed(keeper, false)
 	ModLoaderLog.info("Gassed in the dome: death %d" % gassed, "cejdan-StoryMode")
-	if _lava == null:
-		return
-	_lava._recall(keeper, false)
 
 
-# The first local keeper's playerId ("player1" while there is none).
-func _pid0() -> String:
-	var k = Story.local_keeper()
-	return k.playerId if k != null and is_instance_valid(k) else "player1"
+# The same death as an overheat in lava (cargo dropped, half the money, the
+# same count and lines), or a heart in the boss sequence.
+func _gassed(keeper, teleport: bool = true) -> void:
+	var jammed: bool = _lava != null and _lava.overheat(keeper, teleport)
+	toxins[keeper.playerId] = GasData.TOXIN_MAX * _lava.OVERHEAT_AFTER if jammed else 0.0
 
 
 # One GasLook per local keeper's split view (#231): a look simulates a window
@@ -828,10 +818,6 @@ func _sync_looks() -> void:
 
 
 # The keeper's body for gas contact: the same box the lava uses.
-func keeper_rect(keeper) -> Rect2:
-	return Rect2(keeper.global_position - KEEPER_BOX * 0.5, KEEPER_BOX)
-
-
 # The densest gas in the cells a rect (world space) touches.
 func gas_in(world_rect: Rect2, not_burning: bool = false) -> float:
 	var a: Vector2i = map.getTileCoord(world_rect.position)
@@ -854,11 +840,11 @@ func gas_at(world_pos: Vector2) -> float:
 # vanilla writes into the save; vanilla's loader skips this node's own entry.
 
 func serialize() -> Dictionary:
+	if net_client:
+		return {"meta.priority": 9001, "meta.kind": "storygas"}   # the run's gas is the host's to save
 	var cells: Array = []
 	for c in mass:
 		cells.append([c.x, c.y, snappedf(mass[c], 0.0001)])
-	if net_client:
-		return {"meta.priority": 9001, "meta.kind": "storygas"}   # the run's gas is the host's to save
 	var src: Array = []
 	for c in sources:
 		src.append([c.x, c.y, snappedf(sources[c], 0.0001)])
@@ -909,13 +895,7 @@ func _restore(blob: String) -> bool:
 
 
 func _restore_extra(d: Dictionary) -> void:
-	toxins.clear()
-	var ts = d.get("toxins", {})
-	if ts is Dictionary and not ts.is_empty():
-		for pid in ts:
-			toxins[str(pid)] = float(ts[pid])
-	else:
-		toxin = float(d.get("toxin", 0.0))
+	toxins = FieldUtil.per_player(d, "toxins", "toxin")
 	gassed = int(d.get("gassed", 0))
 	if dome != null:
 		dome.amount = float(d.get("dome", 0.0))
@@ -967,7 +947,7 @@ func _net_pack(cells: Array, fire_on: Array, fire_off: Array, vents: Array, full
 # Host, after every step: what changed since the last send.
 func _net_send() -> void:
 	var amount: float = dome.amount if dome != null else 0.0
-	if not StoryNet.online() or Network.clients.is_empty():
+	if Network.is_offline_mode() or Network.clients.is_empty():
 		_net_dirty.clear()
 		_net_fire_on.clear()
 		_net_fire_off.clear()
@@ -999,6 +979,7 @@ func net_apply(data: PackedByteArray, full: bool) -> void:
 	# The look glides from the gas before this packet to the gas after it.
 	prev_mass = mass.duplicate()
 	_acc = 0.0
+	moving = true
 	if full:
 		mass.clear()
 		flux.clear()
@@ -1044,10 +1025,6 @@ func _noise(c: Vector2i, i: int) -> float:
 	return fposmod(sin(float(c.x * 157 + c.y * 271 + i * 61)) * 43758.5453, 1.0)
 
 
-func _seen(c: Vector2i) -> bool:
-	return map.visibleTileCoords.has(Vector2(c)) or map.visibleTileCoords.has(c)
-
-
 func _draw() -> void:
 	# Gas rock the player can see: green seeping cracks that breathe.
 	for c in rock:
@@ -1071,7 +1048,7 @@ func _draw_gas() -> void:
 	if look != null:
 		return
 	for c in mass:
-		if not _seen(c):
+		if not FieldUtil.seen(map, c):
 			continue
 		var a: float = clampf(mass[c], 0.0, 1.5) / 1.5
 		draw_rect(Rect2(_cell_origin(c), Vector2(TILE, TILE)), Color(0.45, 0.8, 0.2, 0.15 + 0.6 * a))
@@ -1085,8 +1062,12 @@ func _draw_gas() -> void:
 const PUFF_MAX := 220
 const COL_PUFF := Color("8fd13c")
 const COL_PUFF_LIT := Color("e6ff8a")
+const COL_EMBER := Color("fff2b0")
+const COL_EMBER_OUT := Color("ff7a1c")
+const SMOKE := 0                   # a puff's kind
+const EMBER := 1                   # a spark off burning gas (#204)
 
-var _puffs: Array = []             # [x, y, time born, seconds to live, 0..1 seed, rise px, size]
+var _puffs: Array = []             # [x, y, time born, seconds to live, 0..1 seed, rise px, size, kind]
 var _puff_rng := RandomNumberGenerator.new()
 var _seep_t := 0.0
 
@@ -1094,7 +1075,7 @@ var _seep_t := 0.0
 func _puff(pos: Vector2, life: float, rise: float, size: float) -> void:
 	if _puffs.size() >= PUFF_MAX:
 		return
-	_puffs.append([pos.x, pos.y, _time, life, _puff_rng.randf(), rise, size])
+	_puffs.append([pos.x, pos.y, _time, life, _puff_rng.randf(), rise, size, SMOKE])
 
 
 func _update_puffs(delta: float) -> void:
@@ -1104,7 +1085,7 @@ func _update_puffs(delta: float) -> void:
 		if age > 0.6:
 			vent_marks.erase(c)
 			continue
-		if not _seen(c):
+		if not FieldUtil.seen(map, c):
 			continue
 		if age < 0.1:
 			GasSfx.play("vent", -8.0, 1.5)
@@ -1123,7 +1104,7 @@ func _update_puffs(delta: float) -> void:
 			var first: int = _puff_rng.randi() % 4
 			for k in 4:
 				var cand: Vector2i = DIRS[(first + k) % 4]
-				if map.is_tile_empty(c + cand) and _seen(c + cand):
+				if map.is_tile_empty(c + cand) and FieldUtil.seen(map, c + cand):
 					d = cand
 					break
 			if d == Vector2i.ZERO:
@@ -1145,9 +1126,11 @@ func _draw_puffs() -> void:
 		var s: float = q[4]
 		var x: float = round(q[0] + sin(age * 2.2 + s * TAU) * (1.0 + 5.0 * t) + (s - 0.5) * 14.0 * t)
 		var y: float = round(q[1] - q[5] * (1.0 - (1.0 - t) * (1.0 - t)))
-		var col := Color(COL_PUFF_LIT.lerp(COL_PUFF, minf(1.0, t * 2.0)), 0.6 * pow(1.0 - t, 1.2) * minf(1.0, age * 12.0))
-		if q.size() > 7:
-			col = Color(Color("fff2b0").lerp(Color("ff7a1c"), minf(1.0, t * 1.6)), 1.0 - t * t)
+		var col: Color
+		if q[7] == EMBER:
+			col = Color(COL_EMBER.lerp(COL_EMBER_OUT, minf(1.0, t * 1.6)), 1.0 - t * t)
+		else:
+			col = Color(COL_PUFF_LIT.lerp(COL_PUFF, minf(1.0, t * 2.0)), 0.6 * pow(1.0 - t, 1.2) * minf(1.0, age * 12.0))
 		var r: float = floor(q[6] * (0.6 + 1.2 * t))
 		if r < 1.0:
 			draw_rect(Rect2(x, y, 1.0, 1.0), col)

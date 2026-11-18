@@ -23,23 +23,7 @@ uniform float untwist;
 
 const float DT = 0.15;
 
-float coarse_at(vec2 uv) {
-	vec2 ts = vec2(textureSize(tiles, 0));
-	vec2 p = uv * ts - 0.5;
-	vec2 i = floor(p);
-	vec2 f = p - i;
-	float sum = 0.0;
-	float wsum = 0.0;
-	for (int y = 0; y < 2; y++) {
-		for (int x = 0; x < 2; x++) {
-			vec4 t = texture(tiles, (i + vec2(float(x), float(y)) + 0.5) / ts);
-			float w = (x == 0 ? 1.0 - f.x : f.x) * (y == 0 ? 1.0 - f.y : f.y) * step(0.5, t.r);
-			sum += t.g * 4.0 * w;
-			wsum += w;
-		}
-	}
-	return wsum > 0.0 ? sum / wsum : 0.0;
-}
+#include "res://mods-unpacked/cejdan-StoryMode/gas/look/common.gdshaderinc"
 
 void fragment() {
 	vec2 old = UV + shift;
@@ -64,7 +48,7 @@ void fragment() {
 		if (tw > 2.5) {
 			d.yz *= 2.5 / tw;
 		}
-		float target = min(coarse_at(UV), 1.6);
+		float target = min(open_mix(tiles, UV, vec4(0.0, 4.0, 0.0, 0.0)), 1.6);
 		d.x += (target - d.x) * (d.x > target ? clear_rate : fill_rate);
 		COLOR = vec4(max(d.x, 0.0), d.y, d.z, 1.0);
 	}

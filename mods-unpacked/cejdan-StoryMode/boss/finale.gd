@@ -36,7 +36,6 @@ const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const TENTACLE := "res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"
 const FLYER := "res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd"
 const GREAT := "res://mods-unpacked/cejdan-StoryMode/boss/great_eye.gd"
-const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 
 signal finished
 signal step_changed(step: String)
@@ -220,7 +219,7 @@ func _spawn_round(i: int) -> void:
 		add_child(great)
 		alive.append(great)
 		_net_register(great)
-		_slow(0.3, 0.35)
+		Sfx.hitstop(0.3, 0.35)
 
 
 # The spots of round `i`: px left (-) or right (+) of the dome.
@@ -266,17 +265,6 @@ func flyers_alive() -> int:
 		if is_instance_valid(m) and not m.dead and m.techId == load(FLYER).TECH:
 			n += 1
 	return n
-
-
-# A beat of slow motion (real seconds). Left alone when a playtest has changed
-# the game speed.
-func _slow(scale: float, real_sec: float) -> void:
-	if not is_equal_approx(Engine.time_scale, 1.0) or not is_inside_tree():
-		return
-	Engine.time_scale = scale
-	await get_tree().create_timer(real_sec, true, false, true).timeout
-	if is_equal_approx(Engine.time_scale, scale):
-		Engine.time_scale = 1.0
 
 
 func living() -> int:
@@ -572,7 +560,7 @@ static func _synchronizer():
 # every peer: a client's weapon hits it there, and the host's health and
 # death reach the client's copy.
 func _net_register(m) -> void:
-	if not StoryNet.online():
+	if Network.is_offline_mode():
 		return
 	var sync = _synchronizer()
 	if sync == null:
@@ -584,7 +572,7 @@ func _net_register(m) -> void:
 # The host's battle for clients: the step and its clock, and what the copies
 # need to look the same.
 func net_state() -> Array:
-	return [Time.get_ticks_msec() / 1000.0, step, t, round_i, fury, fall_side, eye_at, _thanks_i, bells_by, _crack_seeds, flyers_made]
+	return [Time.get_ticks_msec() / 1000.0, step, t, round_i, fury, fall_side, eye_at, bells_by, _crack_seeds, flyers_made]
 
 
 # Every monster of the battle still here: net_record() of each.
@@ -597,7 +585,7 @@ func net_monsters() -> Array:
 
 
 func net_apply(d: Array) -> void:
-	if not puppet or d.size() < 11 or float(d[0]) < _net_time:
+	if not puppet or d.size() < 10 or float(d[0]) < _net_time:
 		return
 	_net_time = float(d[0])
 	var s: String = str(d[1])
@@ -605,10 +593,10 @@ func net_apply(d: Array) -> void:
 	fury = float(d[4])
 	fall_side = float(d[5])
 	eye_at = d[6]
-	bells_by = str(d[8])
-	for k in d[9]:
-		_crack_seeds[k] = d[9][k]
-	flyers_made = int(d[10])
+	bells_by = str(d[7])
+	for k in d[8]:
+		_crack_seeds[k] = d[8][k]
+	flyers_made = int(d[9])
 	if s != step:
 		var was: String = step
 		step = s
@@ -616,9 +604,6 @@ func net_apply(d: Array) -> void:
 		_net_step(was)
 	elif absf(t - float(d[2])) > 0.4:
 		t = float(d[2])
-	while _thanks_i < int(d[7]) and _thanks_i < BossText.THANKS.size():
-		_say(_thanks_i)
-		_thanks_i += 1
 
 
 # A client's copy enters the host's new step.
@@ -660,7 +645,7 @@ func apply_monsters(list: Array) -> void:
 			_net_register(m)
 			if r[0] == "great":
 				great = m
-				_slow(0.3, 0.35)
+				Sfx.hitstop(0.3, 0.35)
 		if m.dead and r[0] != "great":
 			continue
 		# (The dead great eye still takes its fall from the host.)

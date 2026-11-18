@@ -1,7 +1,9 @@
 extends RefCounted
 
-# One-shot sounds for the boss (#160, #163), all from the game's own files.
+# One-shot sounds for the boss (#160, #163), all from the game's own files,
+# and its beats of slow motion.
 #   Sfx.play("roar", volume_db, pitch)
+#   Sfx.hitstop(time_scale, real_seconds)
 
 const SOUNDS := {
 	"roar": ["res://content/sounds/monster/Beast/Beast_roar_01.wav", "res://content/sounds/monster/Beast/Beast_roar_02.wav", "res://content/sounds/monster/Beast/Beast_roar_03.wav"],
@@ -55,6 +57,19 @@ static func play(name: String, volume_db: float = 0.0, pitch: float = 1.0) -> vo
 	# a freed capture and log "Lambda capture at index 0 was freed" (#237).
 	var secs: float = stream.get_length() / maxf(0.05, pitch) + 0.5 if stream.get_length() > 0.0 else 10.0
 	tree.create_timer(secs).timeout.connect(p.queue_free)
+
+
+# A beat of slow motion on a big hit (real seconds, whatever the time scale).
+# Left alone when something else, a playtest say, has changed the game speed.
+# Not online: the host's clock is the whole team's.
+static func hitstop(scale: float, real_sec: float) -> void:
+	var tree = Engine.get_main_loop()
+	if not (tree is SceneTree) or not is_equal_approx(Engine.time_scale, 1.0) or not Network.is_offline_mode():
+		return
+	Engine.time_scale = scale
+	await tree.create_timer(real_sec, true, false, true).timeout
+	if is_equal_approx(Engine.time_scale, scale):
+		Engine.time_scale = 1.0
 
 
 # Some of the game's sounds loop (the charge, the eerie hum): played as a

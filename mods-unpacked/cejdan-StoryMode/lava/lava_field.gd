@@ -15,6 +15,7 @@ extends Node2D
 const LavaData = preload("res://mods-unpacked/cejdan-StoryMode/data/lava.gd")
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
+const FieldUtil = preload("res://mods-unpacked/cejdan-StoryMode/util/field_util.gd")
 const SAVE_KEY := "story.lava"
 
 const POCKET_MIN_DEPTH := LavaData.POCKET_MIN_DEPTH
@@ -41,9 +42,9 @@ const HEAT_PER_SECOND := LavaData.HEAT_PER_SECOND
 const COOL_MINE_PER_SECOND := LavaData.COOL_MINE_PER_SECOND
 const COOL_DOME_PER_SECOND := LavaData.COOL_DOME_PER_SECOND
 const HEAT_MAX := LavaData.HEAT_MAX
+const OVERHEAT_AFTER: float = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
 
 const TILE := 24.0
-const KEEPER_BOX := Vector2(10, 16)
 const BURN_TOLERANCE := 1.5
 const COL_CORE := Color("ffd23e")
 const COL_HOT := Color("ff8a1c")
@@ -74,9 +75,9 @@ var melt_timers: Dictionary = {}   # Vector2i -> seconds of lava contact
 var heats: Dictionary = {}
 var heat: float:
 	get:
-		return heats.get(_pid0(), 0.0)
+		return heats.get(Story.local_pid(), 0.0)
 	set(v):
-		heats[_pid0()] = v
+		heats[Story.local_pid()] = v
 var recalls := 0
 var last_penalty := 0
 var hardened := 0                 # lava cells water turned to rock this run
@@ -96,12 +97,12 @@ var breaches := 0
 var recall_spots: Dictionary = {}
 var recall_pos:
 	get:
-		return recall_spots.get(_pid0(), null)
+		return recall_spots.get(Story.local_pid(), null)
 	set(v):
 		if v == null:
-			recall_spots.erase(_pid0())
+			recall_spots.erase(Story.local_pid())
 		else:
-			recall_spots[_pid0()] = v
+			recall_spots[Story.local_pid()] = v
 var _acc := 0.0
 var _time := 0.0
 var _glow: Node2D
@@ -137,6 +138,7 @@ const NET_EPS := 0.001
 var net_client := false            # this instance draws the host's lava
 var _net_dirty: Dictionary = {}    # host: cells whose mass may have changed since the last send
 var _net_sent: Dictionary = {}     # host: the mass clients last got per cell
+var _net_resync := false           # host: no clients lately; _net_sent is rebuilt when one comes
 var _net_t := 0.0
 
 
@@ -176,6 +178,7 @@ func setup(p_map) -> void:
 	_ocean = map.tileData.get_meta("story_ocean", {})
 	var ch = map.tileData.get_meta("story_boss_chamber", null)
 	_chamber = ch if ch is Rect2i else Rect2i()
+	net_client = Network.is_client()
 	# A loaded run brings its lava back from the save; a new run places pockets.
 	if not _restore(str(Data.ofOr(SAVE_KEY, ""))):
 		_place_pockets()
@@ -183,7 +186,6 @@ func setup(p_map) -> void:
 		_fill_ocean()
 	map.tile_destroyed.connect(_on_tile_destroyed)
 	add_to_group("saveable")
-	net_client = StoryNet.is_client()
 	if net_client:
 		StoryNet.lava_full_request()
 	else:
@@ -276,7 +278,8 @@ func wake_all() -> void:
 
 func _wake(c: Vector2i) -> void:
 	_awake[c] = true
-	_net_dirty[c] = true
+	if not net_client:
+		_net_dirty[c] = true
 	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 		_awake[c + d] = true
 
@@ -586,13 +589,7 @@ func _restore(blob: String) -> bool:
 		magma[Vector2i(int(e[0]), int(e[1]))] = true
 	shown = mass.duplicate()
 	wake_all()
-	heats.clear()
-	var hs = d.get("heats", {})
-	if hs is Dictionary and not hs.is_empty():
-		for pid in hs:
-			heats[str(pid)] = float(hs[pid])
-	else:
-		heat = float(d.get("heat", 0.0))
+	heats = FieldUtil.per_player(d, "heats", "heat")
 	breaches = int(d.get("breaches", 0))
 	recalls = int(d.get("recalls", 0))
 	ocean_cells = int(d.get("ocean_cells", 0))
@@ -715,14 +712,7 @@ func lava_at(world_pos: Vector2) -> float:
 var passive_rates: Dictionary = {}
 var passive_rate: float:
 	get:
-		return passive_rates.get(_pid0(), 0.0)
-
-
-# The first local keeper's playerId: the one the single-keeper fields
-# (heat, recall_pos, passive_rate) stand for. "player1" while there is none.
-func _pid0() -> String:
-	var k = Story.local_keeper()
-	return k.playerId if k != null and is_instance_valid(k) else "player1"
+		return passive_rates.get(Story.local_pid(), 0.0)
 
 
 func heat_of(keeper) -> float:
@@ -764,7 +754,7 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 	# The boss sequence keeps the depth's heat out (#160; #187: the chase and
 	# finale play as they did when only Heat Shielding IV reached them).
 	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
-	var sealed: bool = str(Data.ofOr("team1.story.boss", "")) == "fight" or BossDirector.jams_recall()
+	var sealed: bool = BossDirector.current() == "fight" or BossDirector.jams_recall()
 	if not keeper.isInsideDome and not keeper.disabled and not sealed:
 		rate = passive_rate_at(map.getTileCoord(keeper.global_position), keeper)
 	passive_rates[pid] = rate
@@ -781,14 +771,8 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 	else:
 		h = max(0.0, h - COOL_MINE_PER_SECOND * delta)
 	heats[pid] = h
-	if h >= HEAT_MAX:
-		# Velle jams the suit's recall through the boss sequence (#160):
-		# overheating costs a heart there, not a trip home.
-		if BossDirector.jams_recall():
-			heats[pid] = HEAT_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
-			BossDirector.overheated(keeper)
-		else:
-			_recall(keeper)
+	if h >= HEAT_MAX and overheat(keeper):
+		heats[pid] = HEAT_MAX * OVERHEAT_AFTER
 	if not boss_chamber_reached and _chamber.size != Vector2i.ZERO:
 		if _chamber.has_point(map.getTileCoord(keeper.global_position)):
 			boss_chamber_reached = true
@@ -801,7 +785,19 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 					load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
-# `teleport` false: a death where the keeper stands (gassed in the dome, #213).
+# A full heat or toxin bar: a recall, the suit's death. Velle jams the recall
+# through the boss sequence (#160): there it costs a heart instead, and this
+# returns true (the bar drops to OVERHEAT_AFTER of full). `teleport` false: a
+# death where the keeper stands (gassed in the dome, #213).
+func overheat(keeper, teleport: bool = true) -> bool:
+	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
+	if BossDirector.jams_recall():
+		BossDirector.overheated(keeper)
+		return true
+	_recall(keeper, teleport)
+	return false
+
+
 func _recall(keeper, teleport: bool = true) -> void:
 	# Placeholder for "the keeper dies in the mine": the suit dumps its cargo where
 	# it stands and yanks the keeper back to the dome. This runs on the keeper's
@@ -874,9 +870,15 @@ func _net_send(delta: float) -> void:
 	if _net_t < NET_EVERY:
 		return
 	_net_t = 0.0
-	if not StoryNet.online() or Network.clients.is_empty():
+	if Network.is_offline_mode() or Network.clients.is_empty():
 		_net_dirty.clear()
+		_net_resync = true
+		return
+	if _net_resync:
+		# A client has just come: it asks for all the lava (net_full) once its field is built.
+		_net_resync = false
 		_net_sent = mass.duplicate()
+		_net_dirty.clear()
 		return
 	var buf := StreamPeerBuffer.new()
 	var n := 0
@@ -1004,11 +1006,6 @@ func _visible_cells_now() -> Array:
 					seen[c] = true
 					out.append(c)
 	return out
-
-
-# Lava in a cell the player hasn't revealed yet (an unopened pool) stays hidden.
-func _seen(c: Vector2i) -> bool:
-	return map.visibleTileCoords.has(Vector2(c)) or map.visibleTileCoords.has(c)
 
 
 # The lava in a cell as it is drawn, in this node's space: a pouring stream
@@ -1197,12 +1194,8 @@ func lava_overlaps(world_rect: Rect2) -> bool:
 
 # The keeper's body for lava contact: a fixed box around its position, from its
 # collision shapes (a 5 px circle and two small squares 3.9 px above and below).
-func keeper_rect(keeper) -> Rect2:
-	return Rect2(keeper.global_position - KEEPER_BOX * 0.5, KEEPER_BOX)
-
-
 func keeper_in_lava(keeper) -> bool:
-	return lava_overlaps(keeper_rect(keeper))
+	return lava_overlaps(FieldUtil.keeper_rect(keeper))
 
 
 func _fill_of(c: Vector2i) -> float:
@@ -1226,7 +1219,7 @@ func _draw() -> void:
 
 	for c in _visible_cells():
 		var f := _fill_of(c)
-		if f <= 0.02 or not _seen(c):
+		if f <= 0.02 or not FieldUtil.seen(map, c):
 			continue
 		var o := _cell_origin(c)
 		var sh: Dictionary = _lava_shape(c)
@@ -1276,7 +1269,7 @@ func _draw() -> void:
 	if debug_boxes:
 		var k = Story.local_keeper()
 		if k != null and is_instance_valid(k):
-			var r := keeper_rect(k)
+			var r := FieldUtil.keeper_rect(k)
 			draw_rect(Rect2(to_local(r.position), r.size), Color(0.3, 1.0, 0.4, 0.9), false, 1.0)
 
 
@@ -1346,7 +1339,7 @@ func _draw_stream(c: Vector2i, o: Vector2) -> void:
 # --- steam (#135) -------------------------------------------------------------
 
 func _on_screen(c: Vector2i) -> bool:
-	if not _seen(c):
+	if not FieldUtil.seen(map, c):
 		return false
 	for bx in _view_boxes:
 		if c.x >= bx[0].x and c.x <= bx[1].x and c.y >= bx[0].y and c.y <= bx[1].y:
@@ -1411,7 +1404,7 @@ func barrier_columns() -> Array:
 func _draw_barrier() -> void:
 	for x in barrier_columns():
 		var cell := Vector2i(x, _chamber.position.y)
-		if not (_seen(cell) or _seen(cell + Vector2i.UP)):
+		if not (FieldUtil.seen(map, cell) or FieldUtil.seen(map, cell + Vector2i.UP)):
 			continue
 		var o := _cell_origin(cell)
 		var pulse: float = 0.75 + 0.25 * sin(_time * 3.2 + x * 0.6)
@@ -1438,21 +1431,16 @@ func _draw_heat_bar() -> void:
 		var h: float = heat_of(keeper)
 		if h <= 0.5 and passive_rate_of(keeper) <= 0.0:
 			continue
-		var p: Vector2 = to_local(keeper.global_position) + Vector2(-9, -20)
-		p = p.round()
-		draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
 		var frac: float = h / HEAT_MAX
-		var col: Color = COL_CORE.lerp(Color("ff2a1a"), frac)
-		if frac > 0.7 and fposmod(_time * 8.0, 1.0) < 0.5:
-			col = Color.WHITE
-		draw_rect(Rect2(p, Vector2(round(18.0 * frac), 3)), col)
+		FieldUtil.draw_bar(self, (to_local(keeper.global_position) + Vector2(-9, -20)).round(), frac,
+			COL_CORE.lerp(Color("ff2a1a"), frac), frac > 0.7 and fposmod(_time * 8.0, 1.0) < 0.5)
 
 
 func _draw_glow() -> void:
 	# Soft additive light around lava and around magma rock the player can see.
 	for c in _visible_cells():
 		var f := _fill_of(c)
-		if f <= 0.05 or not _seen(c):
+		if f <= 0.05 or not FieldUtil.seen(map, c):
 			continue
 		var center := _cell_origin(c) + Vector2(TILE, TILE) * 0.5
 		var flick: float = 0.85 + 0.15 * sin(_time * 6.0 + c.x * 2.1 + c.y)
@@ -1466,7 +1454,7 @@ func _draw_glow() -> void:
 	# The chamber barrier's violet glow.
 	for x in barrier_columns():
 		var cell := Vector2i(x, _chamber.position.y)
-		if not (_seen(cell) or _seen(cell + Vector2i.UP)):
+		if not (FieldUtil.seen(map, cell) or FieldUtil.seen(map, cell + Vector2i.UP)):
 			continue
 		var p := _cell_origin(cell) + Vector2(TILE * 0.5, 0)
 		var pulse: float = 0.75 + 0.25 * sin(_time * 3.2 + x * 0.6)

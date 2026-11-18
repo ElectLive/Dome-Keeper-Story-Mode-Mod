@@ -10,7 +10,6 @@
 !/.gitattributes
 !/CLAUDE.md
 !/GLOSSARY.md
-!/.scratch/
 !/docs/
 !/art/
 !/mods-unpacked/
@@ -25,3 +24,6 @@
 # Score previews and Python caches (art/music/score.py --preview)
 /art/music/preview/
 __pycache__/
+
+# Builder notes (handoffs, review drafts): local only
+/.scratch/
