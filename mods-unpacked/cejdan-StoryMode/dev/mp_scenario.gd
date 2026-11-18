@@ -10,7 +10,7 @@ const DEV_SHARE := "story.dev.share"
 # Host: waits in the loadout for `players` lobby members, picks `mode` (Story
 # Mode by default), starts the run and waits until it is playable. False if
 # any step failed.
-func host_start(h, players: int = 2, mode: String = "storymode") -> bool:
+func host_start(h, players: int = 2, mode: String = "storymode", dome: String = "") -> bool:
 	var stage = Level.stage
 	GameWorld.figuredOutMovementInLoadout = true
 	var joined: bool = await h.until(func(): return Lobby.members.size() >= players, 120.0)
@@ -28,6 +28,11 @@ func host_start(h, players: int = 2, mode: String = "storymode") -> bool:
 	stage.gameModeSelected(mode)
 	await h.wait(2.0)
 	h.check(mode + " selected", Level.loadout.modeId == mode, Level.loadout.modeId)
+	if dome != "":
+		# Another dome than the last one picked (#269).
+		stage.domeSelected(dome, "team1", false)
+		await h.wait(1.0)
+		h.check(dome + " selected", Level.loadout.domes.front().domeId == dome, Level.loadout.domes.front().domeId)
 	stage.startRun()
 	var started: bool = await h.until(func(): return Level.stage is LevelStage and Level.stage.get("keeperInputStarted") == true and Level.map != null and Level.map.isMapReady(), 180.0)
 	h.check("run started", started)

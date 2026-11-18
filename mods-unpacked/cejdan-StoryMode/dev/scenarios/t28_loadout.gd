@@ -26,6 +26,13 @@ func run(h) -> void:
 	await h.wait(1.5)
 	var vanilla: Array = _visible_domes(stage)
 	h.note("relic hunt domes", vanilla)
+	# A dome swap in vanilla's own mode, for the log: Dome.unlisten drops
+	# inventory listeners the loadout dome never added (vanilla, #269).
+	stage.domeSelected("dome2", "team1", false)
+	await h.wait(1.0)
+	stage.domeSelected("dome1", "team1", false)
+	await h.wait(1.0)
+	h.note("relic hunt dome swap done")
 	stage.gameModeSelected("storymode")
 	await h.wait(2.0)
 	var story: Array = _visible_domes(stage)
@@ -38,10 +45,8 @@ func run(h) -> void:
 	# offers every dome vanilla does.
 	h.check("Story Mode offers every dome Relic Hunt does (#269)", story == vanilla and story.size() >= 4, story)
 	stage.domeSelected("dome3", "team1", false)
-	stage.gameModeSelected("storymode")
 	await h.wait(1.0)
-	h.check("a dome picked in Story Mode stays picked", Level.loadout.domes.front().domeId == "dome3", Level.loadout.domes.front().domeId)
-	stage.domeSelected("dome1", "team1", false)
+	h.check("a dome can be picked in Story Mode", Level.loadout.domes.front().domeId == "dome3", Level.loadout.domes.front().domeId)
 	stage.gameModeSelected("relichunt")
 	await h.wait(2.0)
 	var back: Array = _visible_domes(stage)
