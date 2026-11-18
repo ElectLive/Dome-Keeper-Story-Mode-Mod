@@ -27,6 +27,8 @@ const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_bea
 const Awakening = preload("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd")
 const Runes = preload("res://mods-unpacked/cejdan-StoryMode/pleas/runes.gd")
 
+# The whole story takes about 335 s on the dev machine, over the default 300 (#272).
+const TIMEOUT := 600
 const UNOB_ID := 47
 const GEM_IDS := [42, 43, 44, 46]
 const GATE_X := 2
@@ -46,8 +48,18 @@ func boot() -> Dictionary:
 
 # ---------------------------------------------------------------- helpers
 
+var _gem_early: bool = false
+
+
 func _expect(h, id: String, label: String, timeout: float = 8.0) -> void:
 	var got: String = await h.read_beat(label, timeout)
+	# Since the #186 mineral ladder, the B4 room this run digs can hold a gem;
+	# the dig breaks it like a drill would and first_gem rightly plays first
+	# (as t26_wired). Read it and go on to the beat asked for (#272).
+	if got == "first_gem" and id != "first_gem" and not _gem_early:
+		_gem_early = true
+		h.note("first_gem played early: the %s room held a gem" % label)
+		got = await h.read_beat(label, timeout)
 	var what: String = "log" if not LogData.by_id(id).is_empty() else "tier %d" % int(BeatData.by_id(id).get("tier", 0))
 	h.check("%s plays (%s)" % [id, what], got == id, got)
 
@@ -114,7 +126,10 @@ func _first_gem(h, gem: Vector2i) -> void:
 	await h.reveal([gem])
 	await h.teleport_tile(gem + Vector2i(0, -1))
 	Level.map.destroyTile("team1", "", Level.map.getTile(Vector2(gem)))
-	await _expect(h, "first_gem", "first_gem")
+	if _gem_early:
+		await _quiet(h, "a gem after first_gem")
+	else:
+		await _expect(h, "first_gem", "first_gem")
 
 
 func _gate(h, top: int) -> void:

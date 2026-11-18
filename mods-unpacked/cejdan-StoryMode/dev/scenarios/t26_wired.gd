@@ -27,8 +27,18 @@ func _cell_in_biome(td, b: int) -> Vector2i:
 	return cells[cells.size() / 2] if cells.size() > 0 else Vector2i(9999, 9999)
 
 
+var _gem_early: bool = false
+
+
 func _expect(h, id: String, label: String) -> void:
 	var got: String = await h.read_beat(label)
+	# Since the #186 mineral ladder, a room this scenario digs (B4's) can hold
+	# a gem; the dig breaks it like a drill would and first_gem plays first,
+	# rightly. Read it and go on to the beat asked for (#272).
+	if got == "first_gem" and id != "first_gem" and not _gem_early:
+		_gem_early = true
+		h.note("first_gem played early: the %s room held a gem" % label)
+		got = await h.read_beat(label)
 	var tier: int = int(BeatData.by_id(id).get("tier", 0))
 	h.check("%s plays (tier %d)" % [id, tier], got == id, got)
 
@@ -79,7 +89,11 @@ func run(h) -> void:
 	await h.reveal([gem])
 	await h.teleport_tile(gem + Vector2i(0, -1))
 	Level.map.destroyTile("team1", "", Level.map.getTile(Vector2(gem)))
-	await _expect(h, "first_gem", "first_gem")
+	if _gem_early:
+		await h.wait(1.5)
+		h.check("first_gem played once already, so this gem plays nothing", not StoryBeats.is_open())
+	else:
+		await _expect(h, "first_gem", "first_gem")
 	# A second gem plays nothing.
 	var gem2: Vector2i = Vector2i(9999, 0)
 	for c: Vector2i in td.get_resource_cells_by_id(td.get_resourcev(gem) if td.get_resourcev(gem) >= 0 else 42):
