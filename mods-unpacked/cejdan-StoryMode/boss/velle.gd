@@ -491,8 +491,10 @@ func _update_orbs(delta: float, kp: Vector2) -> void:
 		if hit != null:
 			_hurt(o["p"] - o["v"].normalized() * 6.0, "orb", hit)
 			_burst(o["p"], 6, Pix.VIOLET_LIGHT, 60.0)
-			# The hit that ends the run clears the orbs.
-			if i >= orbs.size():
+			# The hit that ends the run clears the orbs (the director's
+			# _keeper_died, reached through _hurt): stop, as nothing in the
+			# list is the one being walked any more (#237).
+			if i >= orbs.size() or not is_same(orbs[i], o):
 				return
 			orbs.remove_at(i)
 
