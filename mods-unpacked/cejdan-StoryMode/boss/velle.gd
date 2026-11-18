@@ -1177,7 +1177,11 @@ func _puppet_step(delta: float) -> void:
 		_bomb_scan = 0.4
 		bombs.clear()
 		for b in get_tree().get_nodes_in_group("carryable"):
-			if b is CaveBomb and arena.grow(30.0).has_point(to_local(b.global_position)):
+			# Not `b is CaveBomb`: this script compiles after CaveBomb.gd is
+			# extended (mod_main.gd), and that test then passed every carryable,
+			# so a client drew rings round its resources and _draw read
+			# `activated` off them (#249; the family is #256).
+			if b.get("type") == CONST.CAVEBOMB and "activated" in b and arena.grow(30.0).has_point(to_local(b.global_position)):
 				bombs.append(b)
 
 

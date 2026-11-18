@@ -695,7 +695,7 @@ func passive_rate_at(tile: Vector2i, teamId: String = "team1") -> float:
 
 
 func _update_heat(delta: float) -> void:
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper == null or not is_instance_valid(keeper) or keeper.killed:
 		return
 	if recall_pos == null and Level.stage is LevelStage and Level.stage.keeperInputStarted:
@@ -1196,7 +1196,7 @@ func _draw() -> void:
 	_draw_barrier()
 	_draw_heat_bar()
 	if debug_boxes:
-		var k = Keepers.first()
+		var k = Story.local_keeper()
 		if k != null and is_instance_valid(k):
 			var r := keeper_rect(k)
 			draw_rect(Rect2(to_local(r.position), r.size), Color(0.3, 1.0, 0.4, 0.9), false, 1.0)
@@ -1352,7 +1352,7 @@ func _draw_heat_bar() -> void:
 	# Shown whenever there is heat, and while passive heat is building.
 	if heat <= 0.5 and passive_rate <= 0.0:
 		return
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper == null or not is_instance_valid(keeper):
 		return
 	var p: Vector2 = to_local(keeper.global_position) + Vector2(-9, -20)

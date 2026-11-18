@@ -12,6 +12,7 @@ extends Node2D
 # Its tuning numbers are starting values, game-design calls for the user, and
 # live in data/gas.gd.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
 const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
@@ -661,7 +662,7 @@ func _update_fire(delta: float) -> void:
 		GasSfx.play("ignite", clampf(-10.0 + burning * 0.6, -10.0, 2.0))
 		InputSystem.shake(minf(2.0 + burning * 0.25, 9.0), 0.3, 22.0)
 	# The keeper in the fire: suit heat, as lava gives it.
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper == null or not is_instance_valid(keeper) or keeper.killed or keeper.disabled or _lava == null:
 		return
 	var r: Rect2 = keeper_rect(keeper)
@@ -690,7 +691,7 @@ func _ember(c: Vector2i) -> void:
 # --- toxin (#202) ----------------------------------------------------------------
 
 func _update_toxin(delta: float) -> void:
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper == null or not is_instance_valid(keeper) or keeper.killed or freeze_toxin:
 		return
 	breathing = 0.0

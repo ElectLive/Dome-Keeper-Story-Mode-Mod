@@ -5,6 +5,7 @@ extends Node
 # the next gas pocket (shallowest first, cycling) and puts the keeper in it.
 # From there, drill toward the green cracks to let the gas out.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const FIELD_NAME := "StoryGasField"
 const HINT_SECONDS := 5.0
 
@@ -93,7 +94,7 @@ func jump() -> void:
 	if map == null or not is_instance_valid(map) or not map.has_node(FIELD_NAME):
 		_say("No gas field yet (start a Story Mode run)")
 		return
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper == null or not is_instance_valid(keeper):
 		return
 	var field = map.get_node(FIELD_NAME)

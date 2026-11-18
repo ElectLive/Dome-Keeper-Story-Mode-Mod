@@ -150,11 +150,18 @@ func modInit():
 	# They are installed here, not in _init(): loading a vanilla script while
 	# ModLoader is still starting up pulls its dependencies in too early, and
 	# some of them then fail to parse.
+	# Order matters (#249): loading an extension recompiles its vanilla base,
+	# and a base compiled after another class it names was extended gets that
+	# type unresolved. Vanilla TechTree.gd loops `for techPanel: TechPanel`
+	# and LevelStage.gd has `var dome: Dome`, so installed after Tech2.gd and
+	# Dome.gd each logged "Compiler bug: unresolved assign" at startup (the
+	# assignment then just goes untyped). They go first.
 	for path: String in [
+		"stages/level/LevelStage.gd",
+		"content/techtree/TechTree.gd",
 		"stages/loadout/MultiplayerloadoutStage.gd",
 		"content/hud/inventory/Inventory.gd",
 		"content/techtree/Tech2.gd",
-		"content/techtree/TechTree.gd",
 		"content/techtree/TechTreePopup.gd",
 		"content/map/Map.gd",
 		"content/map/tile/Tile.gd",
@@ -162,7 +169,6 @@ func modInit():
 		"content/dome/Dome.gd",
 		"content/map/generation/TileDataGenerator.gd",
 		"content/gadgets/suitblaster/SuitblasterExplosion.gd",
-		"stages/level/LevelStage.gd",
 		"content/caves/treecave/Iron.gd",
 		"content/gadgets/mineraltree/FruitGrowth.gd",
 		"content/gadgets/mineraltree/MineralTree.gd",

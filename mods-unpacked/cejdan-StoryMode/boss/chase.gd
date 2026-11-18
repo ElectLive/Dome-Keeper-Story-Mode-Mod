@@ -21,6 +21,7 @@ extends Node2D
 # chase; a client's copy is a `puppet` that draws the host's trail and tips
 # (net_state() -> net_apply(), sent by the director).
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
@@ -92,14 +93,14 @@ func _out() -> Array:
 
 
 func _kp() -> Vector2:
-	var k = target if _ok(target) else Keepers.first()
+	var k = target if _ok(target) else Story.local_keeper()
 	return to_local(k.global_position) if k != null and is_instance_valid(k) else trail[trail.size() - 1]
 
 
 # How close the tentacles are to this instance's own keeper: the path gap for
 # the hunted keeper, the straight distance to the lead tip for anyone else.
 func my_gap() -> float:
-	var me = Keepers.first()
+	var me = Story.local_keeper()
 	if me == null or not is_instance_valid(me) or me == target:
 		return gap
 	if float(heads[0]) <= 2.0:
@@ -149,7 +150,7 @@ func _choose_target(delta: float) -> void:
 			best = k
 			best_d = d
 	if not _ok(target):
-		target = best if best != null else Keepers.first()
+		target = best if best != null else Story.local_keeper()
 		return
 	if best == null or best == target or _switch_t > 0.0:
 		return
@@ -348,7 +349,7 @@ func _draw() -> void:
 # When the lead tip is off screen, a mark at the screen edge shows where it is
 # coming from, brighter as it closes in.
 func _draw_warning() -> void:
-	var k = Keepers.first()
+	var k = Story.local_keeper()
 	if k == null or Level.viewports == null or float(heads[0]) <= 2.0:
 		return
 	var cam = Level.viewports.getPlayerCam(k.playerId)

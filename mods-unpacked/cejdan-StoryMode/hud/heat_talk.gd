@@ -13,6 +13,7 @@ extends Node
 #
 # Lives under the Story Mode node; does nothing without the run's lava field.
 
+const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const LavaData = preload("res://mods-unpacked/cejdan-StoryMode/data/lava.gd")
 const Lines = preload("res://mods-unpacked/cejdan-StoryMode/data/heat_lines.gd")
 
@@ -54,7 +55,7 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	_gap_t -= delta
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	var map = Level.map
 	if keeper == null or not is_instance_valid(keeper) or map == null or not is_instance_valid(map):
 		return
@@ -132,7 +133,7 @@ func _say(text: String, color: Color, kind: String) -> void:
 	_holder = _make(text, color, kind)
 	_follow()
 	# Online (#229): the other players see this keeper's line over its head.
-	var k = Keepers.first()
+	var k = Story.local_keeper()
 	if _online() and k != null:
 		if multiplayer.is_server():
 			_relay(k.playerId, text, color, kind, 1)
@@ -160,7 +161,7 @@ func _net_line(player_id: String, text: String, color: Color, kind: String) -> v
 		_relay(player_id, text, color, kind, from)
 	elif from != 1:
 		return
-	var mine = Keepers.first()
+	var mine = Story.local_keeper()
 	if mine != null and mine.playerId == player_id:
 		return
 	if _remote.has(player_id) and is_instance_valid(_remote[player_id]):
@@ -219,6 +220,6 @@ func _follow() -> void:
 			h.global_position = (k.global_position + OFFSET).round()
 	if _holder == null or not is_instance_valid(_holder):
 		return
-	var keeper = Keepers.first()
+	var keeper = Story.local_keeper()
 	if keeper != null and is_instance_valid(keeper):
 		_holder.global_position = (keeper.global_position + OFFSET).round()

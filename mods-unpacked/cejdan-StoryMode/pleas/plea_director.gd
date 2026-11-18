@@ -168,7 +168,7 @@ func render(line: String) -> String:
 
 
 func _on_screen(world_pos: Vector2) -> bool:
-	var k = Keepers.first()
+	var k = Story.local_keeper()
 	if k == null or Level.viewports == null:
 		return true
 	var cam = Level.viewports.getPlayerCam(k.playerId)

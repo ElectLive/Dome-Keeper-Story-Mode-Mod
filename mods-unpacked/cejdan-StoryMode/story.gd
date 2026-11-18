@@ -53,3 +53,10 @@ static func has_user_arg(name: String) -> bool:
 # finale; boss/boss_director.gd keeps the state). Text holds off meanwhile.
 static func boss_active() -> bool:
 	return str(Data.ofOr("team1.story.boss", "")) in ["fight", "chase", "finale"]
+
+
+# This instance's first keeper, or null while it has none (between stages, or
+# while a save loads). Vanilla's Keepers.first() reads index 0 and logs a script
+# error when the list is empty, so `Keepers.first() == null` never guards (#249).
+static func local_keeper():
+	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
