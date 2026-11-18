@@ -41,6 +41,7 @@ const HEAT_PER_SECOND := LavaData.HEAT_PER_SECOND
 const COOL_MINE_PER_SECOND := LavaData.COOL_MINE_PER_SECOND
 const COOL_DOME_PER_SECOND := LavaData.COOL_DOME_PER_SECOND
 const HEAT_MAX := LavaData.HEAT_MAX
+const OVERHEAT_AFTER: float = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
 
 const TILE := 24.0
 const KEEPER_BOX := Vector2(10, 16)
@@ -137,6 +138,7 @@ const NET_EPS := 0.001
 var net_client := false            # this instance draws the host's lava
 var _net_dirty: Dictionary = {}    # host: cells whose mass may have changed since the last send
 var _net_sent: Dictionary = {}     # host: the mass clients last got per cell
+var _net_resync := false           # host: no clients lately; _net_sent is rebuilt when one comes
 var _net_t := 0.0
 
 
@@ -176,6 +178,7 @@ func setup(p_map) -> void:
 	_ocean = map.tileData.get_meta("story_ocean", {})
 	var ch = map.tileData.get_meta("story_boss_chamber", null)
 	_chamber = ch if ch is Rect2i else Rect2i()
+	net_client = StoryNet.is_client()
 	# A loaded run brings its lava back from the save; a new run places pockets.
 	if not _restore(str(Data.ofOr(SAVE_KEY, ""))):
 		_place_pockets()
@@ -183,7 +186,6 @@ func setup(p_map) -> void:
 		_fill_ocean()
 	map.tile_destroyed.connect(_on_tile_destroyed)
 	add_to_group("saveable")
-	net_client = StoryNet.is_client()
 	if net_client:
 		StoryNet.lava_full_request()
 	else:
@@ -276,7 +278,8 @@ func wake_all() -> void:
 
 func _wake(c: Vector2i) -> void:
 	_awake[c] = true
-	_net_dirty[c] = true
+	if not net_client:
+		_net_dirty[c] = true
 	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 		_awake[c + d] = true
 
@@ -781,14 +784,8 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 	else:
 		h = max(0.0, h - COOL_MINE_PER_SECOND * delta)
 	heats[pid] = h
-	if h >= HEAT_MAX:
-		# Velle jams the suit's recall through the boss sequence (#160):
-		# overheating costs a heart there, not a trip home.
-		if BossDirector.jams_recall():
-			heats[pid] = HEAT_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
-			BossDirector.overheated(keeper)
-		else:
-			_recall(keeper)
+	if h >= HEAT_MAX and overheat(keeper):
+		heats[pid] = HEAT_MAX * OVERHEAT_AFTER
 	if not boss_chamber_reached and _chamber.size != Vector2i.ZERO:
 		if _chamber.has_point(map.getTileCoord(keeper.global_position)):
 			boss_chamber_reached = true
@@ -801,7 +798,19 @@ func _update_keeper_heat(keeper, delta: float) -> void:
 					load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
-# `teleport` false: a death where the keeper stands (gassed in the dome, #213).
+# A full heat or toxin bar: a recall, the suit's death. Velle jams the recall
+# through the boss sequence (#160): there it costs a heart instead, and this
+# returns true (the bar drops to OVERHEAT_AFTER of full). `teleport` false: a
+# death where the keeper stands (gassed in the dome, #213).
+func overheat(keeper, teleport: bool = true) -> bool:
+	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
+	if BossDirector.jams_recall():
+		BossDirector.overheated(keeper)
+		return true
+	_recall(keeper, teleport)
+	return false
+
+
 func _recall(keeper, teleport: bool = true) -> void:
 	# Placeholder for "the keeper dies in the mine": the suit dumps its cargo where
 	# it stands and yanks the keeper back to the dome. This runs on the keeper's
@@ -876,7 +885,13 @@ func _net_send(delta: float) -> void:
 	_net_t = 0.0
 	if not StoryNet.online() or Network.clients.is_empty():
 		_net_dirty.clear()
+		_net_resync = true
+		return
+	if _net_resync:
+		# A client has just come: it asks for all the lava (net_full) once its field is built.
+		_net_resync = false
 		_net_sent = mass.duplicate()
+		_net_dirty.clear()
 		return
 	var buf := StreamPeerBuffer.new()
 	var n := 0

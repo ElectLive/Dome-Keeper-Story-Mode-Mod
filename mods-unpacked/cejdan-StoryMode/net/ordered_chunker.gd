@@ -31,6 +31,7 @@ static var restored := 0    # client: keys put back after a full sync landed (#2
 static var split_on := true
 var _keys_cache: Dictionary = {}  # request id -> the Data keys it carries
 var _pinned: Dictionary = {}  # client: full sync request id -> Data sent ahead of it (#268)
+var _landing := -1  # client: the request id receive() is finishing
 static var stripped := 0  # Data messages the host's blobs were taken out of (#247)
 # `--datasizes` (editor, #247): every Data message sent, by size; see tally_text.
 static var tally_on := false
@@ -151,20 +152,28 @@ func _ahead(fulls: Array, tick: int, bytes: PackedByteArray) -> void:
 
 @rpc("reliable", "any_peer")
 func receive(request_id: int, request_type: int, chunk_index: int, total_chunks: int, chunk: PackedByteArray) -> void:
+	_landing = request_id
 	super(request_id, request_type, chunk_index, total_chunks, chunk)
-	if _pinned.has(request_id) and not incoming_rpcs.has(request_id):
-		# Put back as the full sync went in, without telling listeners: they
-		# last heard of these values, and one may read another key of them.
-		var vals: Dictionary = _pinned[request_id]
-		_pinned.erase(request_id)
-		Data.values.merge(vals, true)
-		restored += vals.size()
+	_landing = -1
+
+
+# On Data.full_sync_received, connected in mod_main.modInit before any stage
+# listens: the keys sent ahead of this full sync go back in before a stage
+# reads Data. Silently: listeners last heard of these values.
+func restore_ahead() -> void:
+	var vals = _pinned.get(_landing)
+	if vals == null:
+		return
+	_pinned.erase(_landing)
+	Data.values.merge(vals, true)
+	restored += vals.size()
 
 
 func reset() -> void:
 	super()
 	_keys_cache.clear()
 	_pinned.clear()
+	StoryNet.reset()
 
 
 func _rebind(callable: Callable, args: Array, vals: Dictionary) -> Callable:

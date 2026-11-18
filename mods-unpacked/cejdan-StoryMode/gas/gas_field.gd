@@ -66,6 +66,7 @@ var phys_frames := 0
 var _acc := 0.0
 var _time := 0.0
 var prev_mass: Dictionary = {}     # the gas before the last step: the look blends from it (#211)
+var moving := false                # the last step (or host packet) changed some gas: the look glides
 var rise: Dictionary = {}          # cell -> momentum of its gas, in tiles climbed (#217); not saved
 var drift: Dictionary = {}         # cell -> which way that momentum runs along a ceiling, -1 left .. 1 right
 var _awake: Dictionary = {}
@@ -273,6 +274,7 @@ func _physics_process(delta: float) -> void:
 		_burst(delta)
 		while _acc >= GasData.TICK:
 			_acc -= GasData.TICK
+			moving = false
 			if not freeze_flow:
 				prev_mass = mass.duplicate()
 				_step()
@@ -336,6 +338,7 @@ func _step() -> void:
 			mass[c] = mass.get(c, 0.0) + out
 			sources[c] -= out
 			_net_dirty[c] = true
+			moving = true
 			_wake(c)
 			revision += 1
 		if sources[c] <= 0.001:
@@ -546,6 +549,7 @@ func flux_at(c: Vector2i) -> Vector2:
 func _set_mass(c: Vector2i, o: float, m: float, woke: Dictionary) -> void:
 	if m != o:
 		_net_dirty[c] = true
+		moving = true
 	if m > GasData.MIN_MASS:
 		mass[c] = m
 	else:
@@ -753,31 +757,23 @@ func _update_keeper_toxin(keeper, delta: float) -> void:
 	if t < GasData.TOXIN_MAX:
 		return
 	gassed += 1
-	var BossDirector = load("res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd")
-	if BossDirector.jams_recall():
-		# Velle jams the suit's recall through the boss sequence (#160): a full
-		# bar costs a heart there, not a trip home.
-		toxins[pid] = GasData.TOXIN_MAX * load("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
-		BossDirector.overheated(keeper)
-	else:
-		# The same recall as an overheat in lava: cargo dropped, half the money,
-		# and it counts toward the same deaths (until gas deaths get their own lines).
-		toxins[pid] = 0.0
-		if _lava != null:
-			_lava._recall(keeper)
-		ModLoaderLog.info("Gassed (%s): recall %d" % [pid, gassed], "cejdan-StoryMode")
+	_gassed(keeper)
+	ModLoaderLog.info("Gassed (%s): death %d" % [pid, gassed], "cejdan-StoryMode")
 
 
-# A full bar in the dome (#213): a gas death like one in the mine (the same
-# count, the horror's line, half the money, cargo dropped), but the keeper is
-# already home, so no trip; the bar starts over.
+# A full bar in the dome (#213): a gas death like one in the mine, but the
+# keeper is already home, so no trip.
 func _gassed_in_dome(keeper) -> void:
 	gassed += 1
-	toxins[keeper.playerId] = 0.0
+	_gassed(keeper, false)
 	ModLoaderLog.info("Gassed in the dome: death %d" % gassed, "cejdan-StoryMode")
-	if _lava == null:
-		return
-	_lava._recall(keeper, false)
+
+
+# The same death as an overheat in lava (cargo dropped, half the money, the
+# same count and lines), or a heart in the boss sequence.
+func _gassed(keeper, teleport: bool = true) -> void:
+	var jammed: bool = _lava != null and _lava.overheat(keeper, teleport)
+	toxins[keeper.playerId] = GasData.TOXIN_MAX * _lava.OVERHEAT_AFTER if jammed else 0.0
 
 
 # The first local keeper's playerId ("player1" while there is none).
@@ -999,6 +995,7 @@ func net_apply(data: PackedByteArray, full: bool) -> void:
 	# The look glides from the gas before this packet to the gas after it.
 	prev_mass = mass.duplicate()
 	_acc = 0.0
+	moving = true
 	if full:
 		mass.clear()
 		flux.clear()

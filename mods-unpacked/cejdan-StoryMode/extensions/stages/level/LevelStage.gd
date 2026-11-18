@@ -40,9 +40,9 @@ func requestStoryGadgetChoice(teamId: String, playerId: String) -> void:
 func _open_story_gadget_choice(teamId: String, playerId: String) -> void:
 	if GadgetShop.next_entry(teamId) == "" or GadgetShop.candidates(teamId, playerId).is_empty():
 		return
-	# One shop choice per player at a time: a second, queued one would open
-	# after the first closed and be taken for a found (free) gadget.
-	if story_shop.has(playerId):
+	# Only with no choice open for the player: queued behind one, the mark would
+	# make that open choice (a found gadget, or the shop's own) the shop's.
+	if story_shop.has(playerId) or currentOfferTypeByPlayerId.get(playerId, "") != "":
 		return
 	story_shop[playerId] = true
 	var keeper: Keeper = Keepers.getKeeper(playerId)

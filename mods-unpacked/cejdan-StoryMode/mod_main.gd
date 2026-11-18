@@ -138,6 +138,7 @@ func modInit():
 	if Network.chunker != null and not (OS.has_feature("editor") and Story.has_user_arg("vanillachunker")):
 		Network.chunker.set_script(load(Story.MOD_DIR + "net/ordered_chunker.gd"))
 		Network.chunker.set_process(true)
+		Data.full_sync_received.connect(Network.chunker.restore_ahead)
 		Network.chunker.tally_on = OS.has_feature("editor") and Story.has_user_arg("datasizes")
 		# `--heldchunker` (editor): a small delta waits whole behind queued
 		# Data and a big one is chunked whole, as before #261 and #268, to

@@ -79,6 +79,17 @@ static func is_client() -> bool:
 	return Network.is_client()
 
 
+# A session closed (the chunker's reset): its request and peer ids start over
+# in the next one.
+static func reset() -> void:
+	if _inst == null:
+		return
+	_inst._meta_sent.clear()
+	_inst._resend_wait.clear()
+	_inst._resend_read.clear()
+	_inst._resend_synced.clear()
+
+
 # The lava's and the gas's save blob (story.lava, story.gas: tens of KB) goes
 # into Data for vanilla's save. Online, Data.apply would also send it to every
 # client as one big delta at each autosave (every wave's start and end), which
@@ -301,7 +312,8 @@ func _resend(peer: int, w: Dictionary) -> void:
 	if not batch.is_empty():
 		_send_delta(peer, batch)
 		messages += 1
-	resends.append({"peer": peer, "keys": keys.size(), "stale": stale, "messages": messages, "story": w["story"], "msec": Time.get_ticks_msec()})
+	if OS.has_feature("editor"):
+		resends.append({"peer": peer, "keys": keys.size(), "stale": stale, "messages": messages, "story": w["story"], "msec": Time.get_ticks_msec()})
 	ModLoaderLog.info("Data resent to peer %d once its big messages landed: %d keys (%d changed since), %d messages" % [peer, keys.size(), stale, messages], Story.LOG)
 
 
@@ -356,7 +368,8 @@ func _log_message(r, full: bool, vals: Dictionary) -> void:
 			shares.append([row[0], zall - var_to_bytes(rest).compress(FileAccess.CompressionMode.COMPRESSION_ZSTD).size()])
 		entry["zstd"] = zall
 		entry["zstd_shares"] = shares
-	measured.append(entry)
+	if OS.has_feature("editor"):
+		measured.append(entry)
 	ModLoaderLog.info("Data message to peer %d (%s): %s, %d bytes sent, %d keys, %d bytes raw; groups: %s; biggest: %s" % [
 		r.target_peer_id, state, entry["kind"], sent, vals.size(), raw, _rows_text(grows.slice(0, 6)), _rows_text(rows.slice(0, 6))], Story.LOG)
 	if dev:
@@ -511,6 +524,8 @@ static func lava_full_request() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _lava_full_request() -> void:
+	if is_client():
+		return
 	var f = _lava()
 	if f != null and not f.net_client:
 		rpc_id(multiplayer.get_remote_sender_id(), "_lava_cells", f.net_full(), true)
@@ -537,6 +552,8 @@ static func lava_died(player_id: String) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _lava_died(player_id: String) -> void:
+	if is_client():
+		return
 	var f = _lava()
 	var k = Keepers.getKeeper(player_id) if Keepers.hasKeeper(player_id) else null
 	if f == null or k == null or k.peerId != multiplayer.get_remote_sender_id():
@@ -552,7 +569,7 @@ static func chamber_reached() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _chamber_reached() -> void:
-	if Story.is_story():
+	if not is_client() and Story.is_story():
 		load("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd").wake()
 
 
@@ -586,23 +603,11 @@ static func gas_full_request() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _gas_full_request() -> void:
+	if is_client():
+		return
 	var f = _gas()
 	if f != null and not f.net_client:
 		rpc_id(multiplayer.get_remote_sender_id(), "_gas_cells", f.net_full(), true)
-
-
-# Client -> host: I bought Vent the Dome (vanilla tells only the buyer's
-# instance that an upgrade was bought; the dome's gas is the host's).
-static func gas_vent() -> void:
-	if _inst != null:
-		_inst.rpc_id(1, "_gas_vent")
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _gas_vent() -> void:
-	var f = _gas()
-	if f != null and not f.net_client and f.dome != null:
-		f.dome.vent()
 
 
 # --- tiles the host breaks itself (#228) ---------------------------------------

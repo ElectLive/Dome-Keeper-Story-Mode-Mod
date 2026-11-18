@@ -802,7 +802,7 @@ func _damage_core(amount: float) -> void:
 	_burst(eye_pos(), 12, Pix.SCLERA, 180.0)
 	_shake(22.0, 0.45, 22.0)
 	_sfx("hurt", -2.0, _rng.randf_range(0.8, 1.0))
-	_hitstop(0.05, 0.07)
+	Sfx.hitstop(0.05, 0.07)
 	ModLoaderLog.info("Velle hit for %.0f: %.0f / %.0f" % [amount, hp, Boss.CORE_HP], "cejdan-StoryMode")
 	if hp <= 0.0:
 		attacks.clear()
@@ -813,7 +813,7 @@ func _damage_core(amount: float) -> void:
 		_set_state("dying")
 		pickups.clear()
 		_white = 1.0
-		_hitstop(0.2, 0.9)
+		Sfx.hitstop(0.2, 0.9)
 		_sfx("roar", 0.0, 0.6)
 		return
 	var new_phase: int = phase
@@ -826,25 +826,13 @@ func _damage_core(amount: float) -> void:
 		orbs.clear()
 		_shock = 0.0
 		_white = 0.8
-		_hitstop(0.25, 0.45)
+		Sfx.hitstop(0.25, 0.45)
 		_drop_heart()
 		_set_state("roar")
 		_shake(30.0, 1.0, 16.0)
 		_sfx("roar", -1.0, 0.85 - 0.1 * phase)
 		ModLoaderLog.info("Velle: phase %d" % (phase + 1), "cejdan-StoryMode")
 		phase_changed.emit(phase)
-
-
-# A beat of slow motion on a big hit (real seconds, whatever the time scale).
-# Left alone when something else, a playtest say, has changed the game speed.
-# Not online: the host's clock is the whole team's.
-func _hitstop(scale: float, real_sec: float) -> void:
-	if not is_equal_approx(Engine.time_scale, 1.0) or not is_inside_tree() or StoryNet.online():
-		return
-	Engine.time_scale = scale
-	await get_tree().create_timer(real_sec, true, false, true).timeout
-	if is_equal_approx(Engine.time_scale, scale):
-		Engine.time_scale = 1.0
 
 
 # ---------------------------------------------------------------- hearts

@@ -459,9 +459,11 @@ func _keeper_died(cause: String) -> void:
 		Level.mode.keeper_lost()
 
 
-# The hearts are the team's: at zero every keeper is gone.
+# The hearts are the team's: at zero every keeper is gone, and the chase with them.
 func _team_down() -> void:
 	Sfx.play("keeper_down", 0.0, 0.7)
+	if chase != null and is_instance_valid(chase):
+		chase.running = false
 	for k in Keepers.getAll():
 		if k != null and is_instance_valid(k):
 			k.visible = false

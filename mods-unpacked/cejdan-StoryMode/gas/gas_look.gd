@@ -54,6 +54,7 @@ var _built_rev := -1
 var _built_c0 := Vector2i(1 << 20, 0)
 var _built_seen := -1
 var _flux_live := false
+var _glided := false
 
 
 func setup(p_field) -> void:
@@ -238,9 +239,12 @@ func _update_window() -> void:
 func _update_tiles() -> void:
 	var vis: Dictionary = map.visibleTileCoords
 	var flux_now: bool = not field.flux.is_empty()
-	# Gas between two steps glides, so it is redrawn every frame while there is any (#211).
-	var gliding: bool = not field.mass.is_empty() or not field.prev_mass.is_empty()
-	if field.revision == _built_rev and c0 == _built_c0 and vis.size() == _built_seen and not flux_now and not _flux_live and not gliding:
+	# Gas between two steps glides (#211): redrawn every frame while the last
+	# step moved some, and once more when the glide ends.
+	var gliding: bool = field.moving and field.step_blend() < 1.0
+	var glided: bool = _glided
+	_glided = gliding
+	if field.revision == _built_rev and c0 == _built_c0 and vis.size() == _built_seen and not flux_now and not _flux_live and not gliding and not glided:
 		return
 	_built_rev = field.revision
 	_built_c0 = c0

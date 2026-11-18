@@ -220,7 +220,7 @@ func _spawn_round(i: int) -> void:
 		add_child(great)
 		alive.append(great)
 		_net_register(great)
-		_slow(0.3, 0.35)
+		Sfx.hitstop(0.3, 0.35)
 
 
 # The spots of round `i`: px left (-) or right (+) of the dome.
@@ -266,17 +266,6 @@ func flyers_alive() -> int:
 		if is_instance_valid(m) and not m.dead and m.techId == load(FLYER).TECH:
 			n += 1
 	return n
-
-
-# A beat of slow motion (real seconds). Left alone when a playtest has changed
-# the game speed.
-func _slow(scale: float, real_sec: float) -> void:
-	if not is_equal_approx(Engine.time_scale, 1.0) or not is_inside_tree():
-		return
-	Engine.time_scale = scale
-	await get_tree().create_timer(real_sec, true, false, true).timeout
-	if is_equal_approx(Engine.time_scale, scale):
-		Engine.time_scale = 1.0
 
 
 func living() -> int:
@@ -660,7 +649,7 @@ func apply_monsters(list: Array) -> void:
 			_net_register(m)
 			if r[0] == "great":
 				great = m
-				_slow(0.3, 0.35)
+				Sfx.hitstop(0.3, 0.35)
 		if m.dead and r[0] != "great":
 			continue
 		# (The dead great eye still takes its fall from the host.)
