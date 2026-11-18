@@ -6,13 +6,15 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/mp_scenario.gd"
 # unknown-key reads. Pair: t253_mp_blaster_host.
 # #261: with `--give=<gadget>` the host gives another gadget instead. Either
 # way, each of the gadget's Data keys must have been here when the RPC that
-# adds it arrived (GameWorld.upgradeAdded), and the Suit Blaster's stand-ins
-# (extensions/.../SuitBlaster.gd, #253) must not have been needed.
+# adds it arrived (GameWorld.upgradeAdded), and (#268) must stay here every
+# frame after, through a full sync landing (`--fullsync`).
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
+const OrderedChunker = preload("res://mods-unpacked/cejdan-StoryMode/net/ordered_chunker.gd")
 const TIMEOUT := 300
 
 var _at_add: Dictionary = {}   # upgrade id -> the Data keys here when it was added
+var _gone: Dictionary = {}     # Data keys here at an add that were missing in a frame after it
 
 
 func boot() -> Dictionary:
@@ -23,15 +25,24 @@ func run(h) -> void:
 	h.check("this is a client", not h.multiplayer.is_server())
 	var give: String = Story.user_arg("give", "suitblaster")
 	GameWorld.upgradeAdded.connect(func(id: String, _team: String):
-		if id.ends_with("." + give) and not _at_add.has(id):
+		# A team gadget's RPC carries its bare id ("drill", "team1").
+		if (id == give or id.ends_with("." + give)) and not _at_add.has(id):
 			_at_add[id] = Data.values.keys())
+	var watch := func():
+		for id in _at_add:
+			for key in _at_add[id]:
+				if not Data.values.has(key):
+					_gone[key] = true
+	h.get_tree().process_frame.connect(watch)
+	var restored0: int = OrderedChunker.restored
 	var given = await shared(h, "given", 150.0)
 	h.check("the host gave the %s" % give, given is Dictionary, given)
 	if not given is Dictionary:
 		return
 	await h.wait(2.0)
 	var k = Story.local_keeper()
-	h.check("this client's keeper has the %s" % give, k != null and GameWorld.boughtUpgrades.has(k.playerId + "." + give), k.playerId if k else null)
+	var mine: Array = given.get("ids", []).filter(func(id): return not String(id).begins_with("player") or (k != null and String(id).begins_with(k.playerId + ".")))
+	h.check("this client's keeper has the %s" % give, k != null and not mine.is_empty() and mine.all(func(id): return GameWorld.boughtUpgrades.has(id)), mine)
 	if give == "suitblaster":
 		var gadget = null
 		if k != null:
@@ -58,9 +69,8 @@ func run(h) -> void:
 	h.note("upgrades added here", _at_add.keys())
 	h.check("the RPC adding the %s came here (%d)" % [give, _at_add.size()], _at_add.size() >= 1, _at_add.keys())
 	h.check("every %s key was here when it was added (#261)" % give, late.is_empty(), late.keys())
-	# The extensions sit at vanilla's paths (extensions/installer.gd).
-	var blaster = load("res://content/gadgets/suitblaster/SuitBlaster.gd")
-	var hud = load("res://content/gadgets/suitblaster/SuitBlasterHud.gd")
-	var stand: Dictionary = {"gadget": blaster.get("stand_ins"), "hud": hud.get("stand_ins")}
-	h.check("no Suit Blaster stand-in was needed (#261)", stand["gadget"] == 0 and stand["hud"] == 0, stand)
+	h.get_tree().process_frame.disconnect(watch)
+	var gone: Array = keys.filter(func(key): return _gone.has(key))
+	h.check("no %s key went missing after it was added (#268)" % give, gone.is_empty(), gone)
+	h.note("keys put back after a full sync landed (#268)", OrderedChunker.restored - restored0)
 	await h.shot("client_blaster")

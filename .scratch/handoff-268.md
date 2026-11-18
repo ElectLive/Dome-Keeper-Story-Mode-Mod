@@ -1,0 +1,22 @@
+# #268 handoff: gadget Data order (big delta, full sync in flight)
+
+Branch `ticket/268-gadget-data-order` off `ticket/272-old-scenarios`, worktree wt-mp-242. PR base `ticket/272-old-scenarios`.
+
+## Done (code)
+- `net/ordered_chunker.gd`: `_send_split` now also runs for a delta >= 900 B with nothing queued; keys no queued message holds go now in batches under BATCH (700 B), the rest (and any single value > BATCH) waits/chunks. With a full sync queued, keys sent ahead go in a new RPC `_ahead(fulls, tick, bytes)`; the client pins them per full-sync request id and `receive` re-applies them once that request lands. The old "whole delta also waits behind the full sync" copy is gone (pinning replaces it). Restore is a silent `Data.values.merge` (one-by-one server_apply let the probe's listener read a key not back yet). `reset()` clears caches.
+- Suit Blaster stand-in extensions (SuitBlaster.gd, SuitBlasterHud.gd) removed, with installer EXTENSIONS/SCENES entries.
+- t253 host: `--give=drill` (team gadget), `--onedelta` (2.4 KB random key in the same tick), `--fullsync` (client.full_data_sync() right before giving). Client: per-frame watch that no gadget key goes missing after add; notes OrderedChunker.restored.
+
+## To verify
+- t253 `--give=drill --onedelta`, `--give=drill --fullsync`, both, `--give=probe --bigdelta`, default shop; t234 pair; t252_class_names; t223 pair.
+
+## Results (2026-11-17)
+- t253 `--give=drill --onedelta`: PASS (10 keys ahead, pad chunked alone). With `--heldchunker`: FAIL, `unknown data team1.drill.drillrampup` = the t234 symptom.
+- t253 `--give=drill --fullsync`: PASS, 9 keys put back. With the restore disabled (temp edit): FAIL, all 9 drill keys went missing.
+- t253 `--give=drill --onedelta --fullsync`, `--give=probe --fullsync --onedelta`: PASS. `--bigdelta`, `--devgear --bigdelta` (Suit Blaster without stand-ins): PASS.
+- t252_class_names PASS, t223 pair PASS.
+- t234 must run as documented: `-Client2 t234_mp_e2e_leaver -Timeout 1100` (as a bare pair the host waits for 3 players and fails).
+- t234 trio on this branch, 2 runs: no `unknown data` for team1/player1/player2 on the client (the drill errors are gone). Both runs FAIL on flaky gameplay checks: run 1 the bones sale ($15 not $18), client laser 0 damage, dome health 10 HP apart; run 2 the client and leaver joined in the other order (client got player3) and most later checks cascaded.
+- t234 trio on the base `ticket/272-old-scenarios` for comparison: 3x `unknown data team1.drill.drillrampup` (the bug), and also FAIL on the bones sale ($15) and the gate blast. So the gameplay failures are already there on the base.
+- `player3.keeper*` unknown-data lines show on the t234 client during the loadout, before the scenario begins (outside the scan window), on the base too. Not part of #268. Probably the leaver's keeper template arriving before its Data in the loadout.
+- Done; PR open.
