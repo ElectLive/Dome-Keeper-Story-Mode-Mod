@@ -42,6 +42,16 @@ const CLEAR_PER_SECOND := 30.0         # out of the gas
 const TOXIN_MAX := 100.0
 const WARN_SHARE := 0.7                # the bar flashes and the screen greens past this
 
+# --- fire (#204) ---------------------------------------------------------------
+# Lava lights gas: a gas cell next to lava deep enough to burn catches, and the
+# fire runs through the cloud, using it up. It heats the suit; it breaks nothing.
+const IGNITE_MASS := 0.05              # gas this dense can burn
+const LAVA_IGNITES_MASS := 0.18        # lava this deep lights gas beside it (the lava's own BURN_MASS)
+const FIRE_SPREAD_SECONDS := [0.16, 0.06]   # a burning cell lights its neighbours this much later: thin gas, thick gas
+const FIRE_BURN_PER_SECOND := 4.0      # gas a burning cell uses up a second
+const FIRE_EMBER_SECONDS := 0.4        # a burnt-out cell still glows (and heats) this long
+const FIRE_HEAT_PER_SECOND := 110.0    # suit heat a second in a burning cell, before Heat Shielding
+
 
 static func pocket_rock_per_pocket(biome: int) -> float:
 	var t: float = clampf(float(biome - POCKET_START_BIOME) / float(maxi(POCKET_LAST_BIOME - POCKET_START_BIOME, 1)), 0.0, 1.0)

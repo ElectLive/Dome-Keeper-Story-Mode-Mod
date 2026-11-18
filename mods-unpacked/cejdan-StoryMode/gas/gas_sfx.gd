@@ -5,6 +5,7 @@ extends RefCounted
 #   GasSfx.play("burst")   a pressurised pocket letting go
 #   GasSfx.play("vent")    gas leaving at the surface (softer, lower)
 #   GasSfx.play("choke")   the suit's warning as the toxin bar nears full
+#   GasSfx.play("ignite")  gas catching fire: a low whoomp
 
 const RATE := 22050
 
@@ -63,6 +64,14 @@ static func _make(name: String) -> AudioStreamWAV:
 		decay = 7.0
 		gain = 0.55
 		flutter = 0.0
+	elif name == "ignite":
+		secs = 1.1
+		hp = 0.25
+		lp = 0.05
+		attack = 0.012
+		decay = 4.5
+		gain = 1.6
+		flutter = 0.5
 	var n := int(secs * RATE)
 	var bytes := PackedByteArray()
 	bytes.resize(n * 2)

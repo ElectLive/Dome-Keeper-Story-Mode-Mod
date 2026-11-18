@@ -84,6 +84,7 @@ func setup(p_field) -> void:
 		m.set_shader_parameter("size_px", Vector2(WIN) * TILE)
 		m.set_shader_parameter("win_tiles", Vector2(WIN))
 	_show_mat.set_shader_parameter("vel", vel[0].get_texture())
+	_glow_mat.set_shader_parameter("tiles_soft", _tiles_tex)
 	_glow = _layer(dye[0].get_texture(), _glow_mat)
 	_sprite = _layer(dye[0].get_texture(), _show_mat)
 
@@ -201,7 +202,7 @@ func _update_window() -> void:
 	_glow.position = pos
 
 
-# One texel a tile. tiles: r open, g gas density / 4, b revealed. flux: the
+# One texel a tile. tiles: r open, g gas density / 4, b revealed, a how hot it burns. flux: the
 # grid's gas movement through the tile. Rebuilt only when something changed.
 func _update_tiles() -> void:
 	var vis: Dictionary = map.visibleTileCoords
@@ -221,6 +222,7 @@ func _update_tiles() -> void:
 	var i := 0
 	var j := 0
 	var any_flux := false
+	var burning: bool = not field.fire.is_empty()
 	for y in range(c0.y, c0.y + WIN.y):
 		for x in range(c0.x, c0.x + WIN.x):
 			var c := Vector2i(x, y)
@@ -235,7 +237,8 @@ func _update_tiles() -> void:
 						fdata[j + 1] = int(clampf(f.y * 0.5 + 0.5, 0.0, 1.0) * 255.0)
 			if vis.has(Vector2(c)) or vis.has(c):
 				data[i + 2] = 255
-			data[i + 3] = 255
+			if burning:
+				data[i + 3] = int(field.fire_at(c) * 255.0)
 			i += 4
 			j += 2
 	_tiles_img.set_data(WIN.x, WIN.y, false, Image.FORMAT_RGBA8, data)

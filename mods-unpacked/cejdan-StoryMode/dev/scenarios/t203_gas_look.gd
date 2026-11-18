@@ -126,10 +126,13 @@ func run(h) -> void:
 	var gas_ms: float = await _frame_ms(h, 120)
 
 	# ---- 3. the camera jumps: the gas stays where it is in the world
+	await h.teleport_tile(_c(9, 1))
+	h.keeper().set("gravity_scale", 0.0)
+	await h.wait(1.0)
 	var cell: Vector2i = _c(3, -1)
 	var before: float = look.dye_at(cell)
 	var c0_before: Vector2i = look.c0
-	await h.teleport_tile(_c(6, 1))
+	await h.teleport_tile(_c(4, 1))
 	h.keeper().set("gravity_scale", 0.0)
 	await h.frames(4)
 	var after: float = look.dye_at(cell)

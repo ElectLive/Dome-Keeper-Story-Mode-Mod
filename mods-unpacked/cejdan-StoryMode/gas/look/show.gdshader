@@ -44,6 +44,25 @@ float fbm(vec2 p) {
 	return s / 0.9375;
 }
 
+// How hot the gas burns here (#204): the grid's fire, blended over open tiles.
+float fire_at(vec2 uv) {
+	vec2 ts = vec2(textureSize(tiles, 0));
+	vec2 p = uv * ts - 0.5;
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	float sum = 0.0;
+	float wsum = 0.0;
+	for (int y = 0; y < 2; y++) {
+		for (int x = 0; x < 2; x++) {
+			vec4 t = texture(tiles, (i + vec2(float(x), float(y)) + 0.5) / ts);
+			float w = (x == 0 ? 1.0 - f.x : f.x) * (y == 0 ? 1.0 - f.y : f.y) * step(0.5, t.r);
+			sum += t.a * w;
+			wsum += w;
+		}
+	}
+	return wsum > 0.0 ? sum / wsum : 0.0;
+}
+
 float bayer(vec2 p) {
 	int x = int(mod(p.x, 4.0));
 	int y = int(mod(p.y, 4.0));
@@ -61,7 +80,7 @@ void fragment() {
 		COLOR = vec4(abs(q) * 0.25, 0.0, 1.0);
 	} else if (raw > 0.5) {
 		COLOR = vec4(d.x, abs(d.y) * 0.5, abs(d.z) * 0.5, 1.0);
-	} else if (t.r < 0.5 || t.b < 0.5 || d.x < 0.03) {
+	} else if (t.r < 0.5 || t.b < 0.5 || (d.x < 0.03 && fire_at(uv) < 0.02)) {
 		COLOR = vec4(0.0);
 	} else {
 		// Where this bit of gas's pattern lives (world tiles), after the flow's twist.
@@ -93,6 +112,24 @@ void fragment() {
 			if (tw > 0.2) {
 				col = MOTE;
 				a = 0.95;
+			}
+		}
+		// Fire (#204): flames that lick upward, hottest where the gas is thickest.
+		float f = fire_at(uv);
+		if (f > 0.02) {
+			vec2 fq = origin_tiles + uv * win_tiles;
+			float lick = fbm(fq * vec2(2.6, 1.7) + vec2(0.0, time * 5.5));
+			float heat = f * (0.45 + 1.1 * lick) + 0.3 * min(d.x, 1.0) * f + (bayer(px) - 0.5) * 0.14;
+			vec3 fc = vec3(0.45, 0.08, 0.05);
+			float fa = 0.55;
+			if (heat > 1.0) { fc = vec3(1.0, 0.97, 0.78); fa = 0.97; }
+			else if (heat > 0.78) { fc = vec3(1.0, 0.82, 0.26); fa = 0.95; }
+			else if (heat > 0.55) { fc = vec3(0.98, 0.5, 0.1); fa = 0.9; }
+			else if (heat > 0.34) { fc = vec3(0.8, 0.22, 0.06); fa = 0.78; }
+			else if (heat < 0.16) { fa = 0.0; }
+			if (fa > 0.0) {
+				col = fc;
+				a = max(a * (1.0 - f), fa);
 			}
 		}
 		COLOR = vec4(col, a);
