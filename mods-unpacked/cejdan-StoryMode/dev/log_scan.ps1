@@ -45,7 +45,11 @@ $script:LogScanAllow = @(
     # Vanilla furnace: FurnaceStation has no state_changed signal for its
     # GadgetSynchronizer (online), and FurnaceStation.gd reads
     # get_meta("tween", null), which logs when the meta is missing.
-    @{ Name = "vanilla furnace"; Pattern = "FurnaceStation/GadgetSynchronizer is parented to a gadget without a state_changed|does not have any 'meta' values with the key 'tween'" },
+    # Vanilla DomeArmor.gd listens to domearmor.pulsedamagethreshold with an
+    # immediate call; at 0 its propertyChanged unlistens dome.health, which it
+    # never listened to (any run that installs the Dome Armor, #234).
+    @{ Name = "vanilla dome armor"; Pattern = 'removing listener who is not listening Data: \{"listener":"DomeArmor:' },
+    @{ Name = "vanilla furnace"; Pattern ="FurnaceStation/GadgetSynchronizer is parented to a gadget without a state_changed|does not have any 'meta' values with the key 'tween'" },
     # Vanilla Relic Hunt's final act with the harness's waves forced
     # (t54_vanilla): Wave.gd reads monsters.timingmod before Monsters.gd has
     # set it, and GameWorld re-adds the between_waves limit.
