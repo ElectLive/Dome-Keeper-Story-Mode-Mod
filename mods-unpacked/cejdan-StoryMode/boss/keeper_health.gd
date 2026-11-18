@@ -50,6 +50,17 @@ func refill() -> void:
 	dead = false
 
 
+# Up to `n` hearts back at once. Returns how many were added.
+func give(n: int) -> int:
+	if dead:
+		return 0
+	var add: int = clampi(n, 0, Boss.HEARTS - hearts())
+	if add > 0:
+		Data.apply(KEY, hearts() + add)
+		_gain_flash = 0.9
+	return add
+
+
 # One heart back. False when already full (or dead).
 func heal() -> bool:
 	if dead or hearts() >= Boss.HEARTS:

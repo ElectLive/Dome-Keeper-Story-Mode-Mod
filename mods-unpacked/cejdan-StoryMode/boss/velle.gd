@@ -18,6 +18,10 @@ extends Node2D
 #   phase 3  mostly lasers; the walls fire a grid. Open: triple beams, then
 #            two walls of light that close on the space above the eye.
 #
+# The fight is the brutal one as listed; other difficulties change the numbers
+# (data/boss.gd, "difficulty"): normal and easy fire fewer lasers at once in
+# phase 3, You Asked For It hardens phases 1 and 2.
+#
 # Old mining charges fall from the roof all through the fight: on a timer,
 # whenever a stalk pops, and a couple at once when the eye opens. A charge
 # that falls out through a hole in the floor comes straight back down from
@@ -221,7 +225,7 @@ func _shove_keeper(step: Vector2) -> void:
 
 func _grow_stalks() -> void:
 	stalks.clear()
-	var n: int = int(Boss.STALKS[phase])
+	var n: int = Boss.stalks(phase)
 	var homes: Array = STALK_HOMES[n]
 	for i in n:
 		var h: Vector2 = arena.position + Vector2(homes[i].x * arena.size.x, homes[i].y * arena.size.y)
@@ -265,13 +269,13 @@ func _update_stalks(delta: float, kp: Vector2) -> void:
 				_spit(s["pos"], kp)
 		else:
 			s["fire_t"] -= delta
-			if s["fire_t"] <= 0.0 and _rng.randf() < float(Boss.STALK_LASER_SHARE[phase]):
+			if s["fire_t"] <= 0.0 and _rng.randf() < Boss.stalk_laser_share(phase):
 				# A thin laser instead of an orb.
 				attacks.append(_ray(s["pos"], kp, 0.8, 0.25, 0.35, 3.0, "stalk", s))
-				s["fire_t"] = Boss.STALK_FIRE_EVERY[phase] * _rng.randf_range(0.85, 1.25)
+				s["fire_t"] = Boss.stalk_fire_every(phase) * _rng.randf_range(0.85, 1.25)
 			elif s["fire_t"] <= 0.0:
 				s["charge"] = 0.7
-				s["fire_t"] = Boss.STALK_FIRE_EVERY[phase] * _rng.randf_range(0.85, 1.25)
+				s["fire_t"] = Boss.stalk_fire_every(phase) * _rng.randf_range(0.85, 1.25)
 
 
 func _spit(from: Vector2, kp: Vector2) -> void:
@@ -319,22 +323,15 @@ func _open_eye() -> void:
 func _open_volley(kp: Vector2) -> float:
 	_volley += 1
 	var odd: bool = _volley % 2 == 1
-	match phase:
-		0:
-			start_attack("beam1", kp)
-			return 0.6
-		1:
-			if odd:
-				start_attack("beam2", kp)
-				return 1.4
-			start_attack("wall", kp)
-			return 3.6
-		_:
-			if odd:
-				start_attack("beam", kp)
-				return 2.0
-			start_attack("jaws", kp)
-			return 3.6
+	if odd or phase == 0:
+		var n: int = Boss.open_beams(phase)
+		start_attack(["beam1", "beam2", "beam"][clampi(n, 1, 3) - 1], kp)
+		return [0.6, 1.4, 2.0][clampi(n, 1, 3) - 1]
+	if phase == 1 or not Boss.T_JAWS[Boss.tier()]:
+		start_attack("wall", kp)
+	else:
+		start_attack("jaws", kp)
+	return 3.6
 
 
 func _ring_burst() -> void:
@@ -382,8 +379,8 @@ func _schedule_attacks(delta: float, kp: Vector2) -> void:
 	_atk_t -= delta
 	if _atk_t > 0.0:
 		return
-	_atk_t = Boss.ATTACK_EVERY[phase] * _rng.randf_range(0.85, 1.2)
-	var pool: Array = POOLS[phase]
+	_atk_t = Boss.attack_every(phase) * _rng.randf_range(0.85, 1.2)
+	var pool: Array = POOLS[mini(POOLS.size() - 1, phase + int(Boss.T_POOL_SHIFT[Boss.tier()]))]
 	var kind: String = pool[_rng.randi() % pool.size()]
 	if kind == _last_attack and pool.size() > 1:
 		kind = pool[(pool.find(kind) + 1) % pool.size()]
@@ -404,7 +401,7 @@ func start_attack(kind: String, kp: Vector2) -> void:
 		"lunge":
 			var horizontal: bool = _rng.randf() < 0.5
 			attacks.append(_lunge(kp, horizontal, 0.0))
-			if phase >= 2:
+			if phase >= 2 and Boss.T_DOUBLE_LUNGE[Boss.tier()]:
 				attacks.append(_lunge(kp, not horizontal, -0.45))
 		"erupt":
 			for i in 3:
@@ -426,11 +423,18 @@ func start_attack(kind: String, kp: Vector2) -> void:
 			_wall_ray(kp, true, 0.0)
 			_wall_ray(kp, false, -0.25)
 		"grid":
-			for i in 3:
-				_wall_ray(kp + Vector2((i - 1) * 96.0, 0), false, -0.12 * i)
-			_wall_ray(kp, true, -0.4)
-			var y2: float = kp.y - 72.0 if kp.y - 72.0 > arena.position.y + 20.0 else kp.y + 72.0
-			_wall_ray(Vector2(kp.x, y2), true, -0.52)
+			if int(Boss.T_GRID_RAYS[Boss.tier()]) >= 5:
+				for i in 3:
+					_wall_ray(kp + Vector2((i - 1) * 96.0, 0), false, -0.12 * i)
+				_wall_ray(kp, true, -0.4)
+				var y2: float = kp.y - 72.0 if kp.y - 72.0 > arena.position.y + 20.0 else kp.y + 72.0
+				_wall_ray(Vector2(kp.x, y2), true, -0.52)
+			else:
+				# The thinner grid: two down, one across.
+				var side: float = -1.0 if _rng.randf() < 0.5 else 1.0
+				_wall_ray(kp, false, 0.0)
+				_wall_ray(kp + Vector2(side * 96.0, 0), false, -0.15)
+				_wall_ray(kp, true, -0.45)
 		"wall":
 			attacks.append(_sweep_beam(1.0 if kp.x >= base.x else -1.0, 1.75))
 		"jaws":

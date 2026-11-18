@@ -47,6 +47,58 @@ const HEART_SECONDS := 25.0
 # The Suit Blaster recharges this fast in the chamber (seconds per charge).
 const BLASTER_RECHARGE := 12.0
 
+# --- difficulty (#174) ---------------------------------------------------------
+# The numbers above are the brutal fight, which plays right. The other
+# difficulties change these, per phase 1, 2, 3. Rows: easy, normal, brutal,
+# You Asked For It. Normal and easy keep phases 1 and 2 and thin out phase 3
+# (fewer lasers at once); You Asked For It makes phases 1 and 2 harder.
+const TIER_BY_DIFFICULTY := {-2: 0, -1: 1, 0: 2, 2: 3}
+const TIER_NAMES: Array = ["easy", "normal", "brutal", "you asked for it"]
+const T_STALKS: Array = [[2, 3, 3], [2, 3, 3], STALKS, [3, 4, 4]]
+const T_STALK_FIRE_EVERY: Array = [[4.0, 3.6, 3.4], [3.6, 3.2, 3.2], STALK_FIRE_EVERY, [3.1, 2.8, 2.6]]
+const T_STALK_LASER_SHARE: Array = [[0.0, 0.4, 0.4], [0.0, 0.5, 0.5], STALK_LASER_SHARE, [0.35, 0.7, 0.85]]
+const T_ATTACK_EVERY: Array = [[4.4, 3.6, 3.4], [3.8, 3.0, 2.9], ATTACK_EVERY, [3.0, 2.5, 2.2]]
+# Gaze beams in one volley of the open eye.
+const T_OPEN_BEAMS: Array = [[1, 2, 2], [1, 2, 2], [1, 2, 3], [2, 3, 3]]
+# Wall lasers in phase 3's grid (5: three down, two across; 3: two down, one across).
+const T_GRID_RAYS: Array = [3, 3, 5, 5]
+# Phase 3: two walls of light closing (else one), and lunges in pairs.
+const T_JAWS: Array = [false, false, true, true]
+const T_DOUBLE_LUNGE: Array = [false, false, true, true]
+# You Asked For It draws each phase's attacks from the next phase's list.
+const T_POOL_SHIFT: Array = [0, 0, 0, 1]
+# Hearts handed back when Velle dies, before the chase (easy: all of them).
+const T_HEARTS_AFTER_VELLE: Array = [HEARTS, 3, 1, 0]
+
+
+static func tier() -> int:
+	return int(TIER_BY_DIFFICULTY.get(Level.difficulty("team1"), 2))
+
+
+static func stalks(phase: int) -> int:
+	return int(T_STALKS[tier()][phase])
+
+
+static func stalk_fire_every(phase: int) -> float:
+	return float(T_STALK_FIRE_EVERY[tier()][phase])
+
+
+static func stalk_laser_share(phase: int) -> float:
+	return float(T_STALK_LASER_SHARE[tier()][phase])
+
+
+static func attack_every(phase: int) -> float:
+	return float(T_ATTACK_EVERY[tier()][phase])
+
+
+static func open_beams(phase: int) -> int:
+	return int(T_OPEN_BEAMS[tier()][phase])
+
+
+static func hearts_after_velle() -> int:
+	return int(T_HEARTS_AFTER_VELLE[tier()])
+
+
 # --- the chase (#161) --------------------------------------------------------
 const CHASE_TENTACLES := 3
 # Tentacle speed as a share of the keeper's own top speed: when right behind
