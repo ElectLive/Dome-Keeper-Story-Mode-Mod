@@ -65,7 +65,15 @@ const CHASE_RECOIL := 1.3            # seconds a tip hangs back after it lands a
 # has had the same chance to gear up.
 const FINALE_TENTACLE_HP := 420.0
 const FINALE_EYE_HP := 1500.0          # Velle's great eye, in the last round
-const FINALE_FLYER_HP := 120.0         # the eye a dead tentacle sets free
+const FINALE_FLYER_HP := 120.0         # an eye that tore free of a tentacle
+# A tentacle comes up with this many eyes; one tears free and becomes a flyer
+# every FINALE_EYE_POP_EVERY seconds, until it has none left or is dead (#173).
+const FINALE_TENTACLE_EYES := 4
+const FINALE_EYE_POP_EVERY := 5.0
+# The great eye hangs this many px above the dome's foot. Its stalk is drawn
+# on this layer (absolute z), behind the dome.
+const FINALE_EYE_HEIGHT := 132.0
+const FINALE_STALK_Z := 1
 const FINALE_SLAM_DAMAGE := 30         # to the dome; the great eye hits twice as hard
 const FINALE_SLAM_EVERY := 5.5
 const FINALE_FLYER_DAMAGE := 10        # one bolt
