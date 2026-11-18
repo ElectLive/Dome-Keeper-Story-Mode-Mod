@@ -3,12 +3,16 @@
 Branch `ticket/268-gadget-data-order` off `ticket/272-old-scenarios`, worktree wt-mp-242. PR base `ticket/272-old-scenarios`.
 
 ## Done (code)
-- `net/ordered_chunker.gd`: `_send_split` now also runs for a delta >= 900 B with nothing queued; keys no queued message holds go now in batches under BATCH (700 B), the rest (and any single value > BATCH) waits/chunks. With a full sync queued, keys sent ahead go in a new RPC `_ahead(fulls, tick, bytes)`; the client pins them per full-sync request id and `receive` re-applies them once that request lands. The old "whole delta also waits behind the full sync" copy is gone (pinning replaces it). `reset()` clears caches.
+- `net/ordered_chunker.gd`: `_send_split` now also runs for a delta >= 900 B with nothing queued; keys no queued message holds go now in batches under BATCH (700 B), the rest (and any single value > BATCH) waits/chunks. With a full sync queued, keys sent ahead go in a new RPC `_ahead(fulls, tick, bytes)`; the client pins them per full-sync request id and `receive` re-applies them once that request lands. The old "whole delta also waits behind the full sync" copy is gone (pinning replaces it). Restore is a silent `Data.values.merge` (one-by-one server_apply let the probe's listener read a key not back yet). `reset()` clears caches.
 - Suit Blaster stand-in extensions (SuitBlaster.gd, SuitBlasterHud.gd) removed, with installer EXTENSIONS/SCENES entries.
 - t253 host: `--give=drill` (team gadget), `--onedelta` (2.4 KB random key in the same tick), `--fullsync` (client.full_data_sync() right before giving). Client: per-frame watch that no gadget key goes missing after add; notes OrderedChunker.restored.
 
 ## To verify
 - t253 `--give=drill --onedelta`, `--give=drill --fullsync`, both, `--give=probe --bigdelta`, default shop; t234 pair; t252_class_names; t223 pair.
 
-## Results
-(fill in)
+## Results (2026-11-17)
+- t253 `--give=drill --onedelta`: PASS (10 keys ahead, pad chunked alone). With `--heldchunker`: FAIL, `unknown data team1.drill.drillrampup` = the t234 symptom.
+- t253 `--give=drill --fullsync`: PASS, 9 keys put back. With the restore disabled (temp edit): FAIL, all 9 drill keys went missing.
+- t253 `--give=drill --onedelta --fullsync`, `--give=probe --fullsync --onedelta`: PASS. `--bigdelta`, `--devgear --bigdelta` (Suit Blaster without stand-ins): PASS.
+- t252_class_names PASS, t223 pair PASS.
+- t234 must run as documented: `-Client2 t234_mp_e2e_leaver -Timeout 1100` (as a bare pair the host waits for 3 players and fails).
