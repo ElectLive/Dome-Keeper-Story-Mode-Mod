@@ -9,10 +9,12 @@ extends Node
 #            phase 2; 3 Velle's theme, choir and crashes on top in phase 3.
 #   chase    1 the run; 2 what is behind you, louder the closer the
 #            tentacles are.
+#   breath   no cue: silence before the finale's bells (hush()).
 #   finale   "Toll": music/boss_finale_intro.ogg once (bells while the ground
 #            cracks), then both loop layers at full, starting exactly at the
 #            intro's end so the drop lands. boss/finale.gd times the cracking
-#            to intro_time().
+#            to intro_time(). The intro pauses with the game (the console's
+#            menu, the shop), so its clock and the cracking stay together.
 #
 # The mining music is held off while any of this plays, and everything fades
 # when the sequence ends (the endings bring their own music). The OGGs are
@@ -37,9 +39,10 @@ static var _streams: Dictionary = {}   # path -> AudioStreamOggVorbis
 
 var cues: Dictionary = {}    # cue -> [AudioStreamPlayer, ...]
 var goals: Dictionary = {}   # cue -> [dB, ...]
-var mode: String = ""        # "", fight, chase, finale
+var mode: String = ""        # "", fight, chase, breath, finale
 var intro: AudioStreamPlayer = null   # the finale's bell intro
 var _intro_pending: bool = false      # the intro plays; the loop has not started yet
+var _paused_at: float = 0.0           # where the intro was paused with the game
 var _hold_t: float = 0.0
 
 
@@ -69,7 +72,7 @@ static func stream(cue: String, layer: int, loop: bool = true) -> AudioStream:
 func _start(cue: String) -> void:
 	if mode == cue:
 		return
-	if mode != "":
+	if CUES.has(mode):
 		goals[mode] = _silence(mode)
 	mode = cue
 	_ensure(cue)
@@ -125,10 +128,19 @@ func chase(closeness: float) -> void:
 	goals["chase"] = [0.0, lerpf(CHASE_FAR, 0.0, clampf(closeness, 0.0, 1.0))]
 
 
+# Silence: whatever plays fades out, and the mining music stays away.
+func hush() -> void:
+	if mode == "breath":
+		return
+	if CUES.has(mode):
+		goals[mode] = _silence(mode)
+	mode = "breath"
+
+
 func finale() -> void:
 	if mode == "finale":
 		return
-	if mode != "":
+	if CUES.has(mode):
 		goals[mode] = _silence(mode)
 	mode = "finale"
 	_ensure("finale")
@@ -150,13 +162,17 @@ func finale() -> void:
 # Seconds into the finale's bell intro, from the audio clock, or -1 when no
 # intro is playing (no file, or the loop has taken over).
 func intro_time() -> float:
-	if not _intro_pending or intro == null or not intro.playing:
+	if not _intro_pending or intro == null:
+		return -1.0
+	if intro.stream_paused:
+		return _paused_at
+	if not intro.playing:
 		return -1.0
 	return intro.get_playback_position() + AudioServer.get_time_since_last_mix()
 
 
 func stop() -> void:
-	if mode != "":
+	if CUES.has(mode):
 		goals[mode] = _silence(mode)
 	mode = ""
 	_intro_pending = false
@@ -177,7 +193,11 @@ func playing() -> Array:
 func _process(delta: float) -> void:
 	# The finale's drop: the loop starts where the intro's bars end, from the
 	# overshoot, so it lands on the beat; the intro's bells ring on over it.
-	if _intro_pending:
+	if _intro_pending and intro != null and intro.stream_paused != GameWorld.paused:
+		if GameWorld.paused:
+			_paused_at = intro.get_playback_position()
+		intro.stream_paused = GameWorld.paused
+	if _intro_pending and not (intro != null and intro.stream_paused):
 		var at: float = intro_time()
 		if at < 0.0 or at >= intro_length():
 			_intro_pending = false

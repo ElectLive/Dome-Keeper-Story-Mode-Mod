@@ -10,7 +10,7 @@ The boss sequence's music is written in code: `score.py` (the notes, the cues an
 
 Everything is in D minor. Velle's motif is D-Eb-D-A, in all three cues.
 
-The finale's intro (`boss_finale_intro.ogg`) plays once; the loop starts exactly where its 7 bars end, and `boss/finale.gd` cracks the ground on each bell toll by the music's clock, so the tentacles break out on the drop. The beat map the visuals use is in `data/boss.gd` (`FINALE_TOLLS` and friends): change it together with `_toll_intro` in `variants.py`.
+The finale opens with a breath of silence (#196): the intro starts when the keeper takes Battle at the console, or after 4 s walking about (the console's menu and the shop hold it off), and it pauses whenever the game does. The intro (`boss_finale_intro.ogg`) plays once; the loop starts exactly where its 7 bars end, and `boss/finale.gd` cracks the ground on each bell toll by the music's clock, so the tentacles break out on the drop. The beat map the visuals use is in `data/boss.gd` (`FINALE_TOLLS` and friends): change it together with `_toll_intro` in `variants.py`.
 
 History, from the user's listens on 2026-11-15: the chase is loved as it is; the first finale (`finale_heroic` in `score.py`) was "too saccharine"; of four darker candidates (siege, requiem, unravel, toll) the user picked toll, then asked for a 10 s bell pause, a softer snare (the first one hurt: centred at 5 kHz), and the drums back up after that.
 

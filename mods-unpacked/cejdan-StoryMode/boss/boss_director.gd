@@ -186,7 +186,11 @@ func _physics_process(delta: float) -> void:
 			elif _chase_left_dome and at_dome:
 				_chase_done()
 		"finale":
-			music.finale()
+			# Silence while the finale draws its breath; the bells after.
+			if finale != null and is_instance_valid(finale) and finale.step == "breath":
+				music.hush()
+			else:
+				music.finale()
 
 
 func _process(delta: float) -> void:

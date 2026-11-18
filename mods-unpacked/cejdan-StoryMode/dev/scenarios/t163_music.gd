@@ -69,10 +69,15 @@ func run(h) -> void:
 	h.down("ui_up")
 	await h.until(func(): return Director.current() == "finale", 20.0)
 	h.up("ui_up")
-	await h.wait(4.0)
-	h.note("finale intro", m.playing())
-	h.check("the finale opens with the bell intro alone", _files(m) == ["boss_finale_intro.ogg"], m.playing())
 	var fin = boss.finale
+	# A breath of silence first (#196): the chase music fades out.
+	await h.wait(3.0)
+	h.note("finale breath", m.playing())
+	h.check("the finale opens with a breath of silence", fin.step == "breath" and m.playing().is_empty(), [fin.step, m.playing()])
+	await h.until(func(): return fin.step == "rumble", 8.0)
+	await h.wait(2.0)
+	h.note("finale intro", m.playing())
+	h.check("then the bell intro alone", _files(m) == ["boss_finale_intro.ogg"], m.playing())
 	await h.until(func(): return fin.step == "round1", 14.0)
 	await h.wait(1.0)
 	h.note("finale", m.playing())
