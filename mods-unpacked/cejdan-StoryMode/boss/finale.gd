@@ -1,9 +1,12 @@
 extends Node2D
 
-# The final battle on the surface (#162). The keeper made it home; the
-# tentacles burst through the ground beside the dome. Two rounds of tentacles
-# (boss/surface_tentacle.gd, real targets for the dome's weapon), the second
-# with Velle's great eye. After the final blow the surface monsters come in
+# The final battle on the surface (#162, second pass #171). The keeper made it
+# home; the ground splits beside the dome and the tentacles break out. Three
+# rounds of tentacles (boss/surface_tentacle.gd, real targets for the dome's
+# weapon), the last with Velle's great eye. Every tentacle that dies sets its
+# eye free as a flyer that shoots the dome (boss/eye_flyer.gd); a round ends
+# when the flyers are dead too. The longer the battle runs the faster they all
+# strike (fury). After the final blow the surface monsters come in
 # from both sides, tear the remains apart and thank the keeper in their own
 # language (runes unless translators are installed). Then `finished` fires and
 # the boss director plays the saved ending.
@@ -13,16 +16,22 @@ const BossText = preload("res://mods-unpacked/cejdan-StoryMode/data/boss_text.gd
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const TENTACLE := "res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"
+const FLYER := "res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd"
 
 signal finished
 signal step_changed(step: String)
 
 # Where round tentacles come up, in px left (-) or right (+) of the dome.
-const SPOTS: Array = [[-140.0, 150.0], [-205.0, -120.0, 125.0]]
-const EYE_SPOT := 210.0
+const SPOTS: Array = [[-150.0, 160.0], [-215.0, -125.0, 135.0], [-200.0, -110.0, 120.0]]
+const EYE_SPOT := 215.0
 const GROUND_Y := 2.0
+const RUMBLE := 2.6           # seconds of cracking ground before a round breaks out
 
-var step: String = "rumble"   # rumble, round1, lull, round2, allies, thanks, done
+var step: String = "rumble"   # rumble, round1, lull, round2, lull, round3, allies, thanks, done
+var fight_t: float = 0.0      # seconds of battle so far (the rounds, not the pauses)
+var fury: float = 1.0
+var flyers_made: int = 0
+var _crack_seeds: Dictionary = {}
 var t: float = 0.0
 var round_i: int = -1
 var alive: Array = []
@@ -39,16 +48,13 @@ func setup() -> void:
 	z_index = 7
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_rng.randomize()
-	# Health follows the run: about what this run's waves have been made of.
-	var weight: float = 30.0
-	if Level.mode != null and Level.mode.has_method("getRunWeight"):
-		weight = float(Level.mode.getRunWeight("team1"))
-	unit_hp = clampf(weight * Boss.FINALE_HP_PER_RUN_WEIGHT, Boss.FINALE_TENTACLE_HP_MIN, Boss.FINALE_TENTACLE_HP_MAX)
-	load(TENTACLE).register(unit_hp)
+	unit_hp = Boss.FINALE_TENTACLE_HP
+	load(TENTACLE).register(Boss.FINALE_TENTACLE_HP, Boss.FINALE_EYE_HP)
+	load(FLYER).register(Boss.FINALE_FLYER_HP)
 	# The dome goes to battle stations, as for a wave.
 	Data.apply("team1.monsters.wavepresent", true)
 	Data.apply("team1.monsters.wavebattle", true)
-	ModLoaderLog.info("Finale: tentacle health %.0f (run weight %.0f)" % [unit_hp, weight], "cejdan-StoryMode")
+	ModLoaderLog.info("Finale: tentacle %.0f, great eye %.0f, flyer %.0f health" % [Boss.FINALE_TENTACLE_HP, Boss.FINALE_EYE_HP, Boss.FINALE_FLYER_HP], "cejdan-StoryMode")
 	InputSystem.shake(14.0, 2.0, 18.0)
 	Sfx.play("burrow", 0.0, 0.6)
 
@@ -79,12 +85,62 @@ func _spawn_round(i: int) -> void:
 		_spawn(eye_at, d.global_position.x, true)
 
 
+# The spots of round `i`, the great eye's last: px left (-) or right (+) of the dome.
+func spots(i: int) -> Array:
+	var offs: Array = SPOTS[i].duplicate()
+	if i == SPOTS.size() - 1:
+		offs.append(EYE_SPOT)
+	return offs
+
+
+func _crack_seed(off: float) -> int:
+	if not _crack_seeds.has(off):
+		_crack_seeds[off] = _rng.randi()
+	return _crack_seeds[off]
+
+
 func _spawn(pos: Vector2, dome_x: float, great: bool) -> void:
-	var m = load(TENTACLE).make(pos, dome_x, great)
+	var m = load(TENTACLE).make(pos, dome_x, great, _crack_seed(pos.x - dome_x))
+	m.fury = fury
+	m.eye_freed.connect(_eye_freed.bind(m))
 	add_child(m)
 	alive.append(m)
-	for i in 14:
-		_dust.append({"p": to_local(pos) + Vector2(_rng.randf_range(-10, 10), 0), "v": Vector2(_rng.randf_range(-60, 60), _rng.randf_range(-170, -60)), "life": _rng.randf_range(0.5, 1.1)})
+	if great:
+		_slow(0.3, 0.35)
+
+
+# A dead tentacle's eye tears free and takes to the sky over the dome.
+func _eye_freed(at: Vector2, from) -> void:
+	if step == "allies" or step == "thanks" or step == "done" or GameWorld.lost:
+		return
+	var d = _dome()
+	# Its place: on the side it came from, higher with each one already up there.
+	var side_left: bool = at.x < d.global_position.x
+	var up: float = 0.55 + 0.32 * (flyers_alive() % 3) + _rng.randf_range(-0.08, 0.08)
+	var f = load(FLYER).make(at, (PI - up) if side_left else up)
+	f.fury = fury
+	add_child(f)
+	alive.append(f)
+	flyers_made += 1
+
+
+func flyers_alive() -> int:
+	var n: int = 0
+	for m in alive:
+		if is_instance_valid(m) and not m.dead and m.techId == load(FLYER).TECH:
+			n += 1
+	return n
+
+
+# A beat of slow motion (real seconds). Left alone when a playtest has changed
+# the game speed.
+func _slow(scale: float, real_sec: float) -> void:
+	if not is_equal_approx(Engine.time_scale, 1.0) or not is_inside_tree():
+		return
+	Engine.time_scale = scale
+	await get_tree().create_timer(real_sec, true, false, true).timeout
+	if is_equal_approx(Engine.time_scale, scale):
+		Engine.time_scale = 1.0
 
 
 func living() -> int:
@@ -106,29 +162,38 @@ func _physics_process(delta: float) -> void:
 		f["life"] -= delta
 		if f["life"] <= 0.0:
 			_dust.remove_at(i)
+	if step.begins_with("round"):
+		fight_t += delta
+		fury = maxf(Boss.FINALE_FURY_FLOOR, 1.0 - Boss.FINALE_FURY_PER_S * fight_t)
+		for m in alive:
+			if is_instance_valid(m) and not m.dead:
+				m.fury = fury
 	match step:
-		"rumble":
+		"rumble", "lull":
+			# The ground works itself open where they will come up.
 			if fposmod(t, 0.2) < delta:
-				InputSystem.shake(8.0, 0.2, 24.0)
-			if t >= 2.0:
-				_spawn_round(0)
-				_set_step("round1")
-		"round1":
+				InputSystem.shake(5.0 + t * 5.0, 0.22, 24.0)
+			if fposmod(t, 0.7) < delta:
+				Sfx.play("drop", -12.0 + t * 3.0, _rng.randf_range(0.6, 0.9))
+			if fposmod(t, 0.09) < delta and t > 0.5:
+				var offs: Array = spots(round_i + 1)
+				var at: Vector2 = to_local(_ground(offs[_rng.randi() % offs.size()]))
+				_dust.append({"p": at + Vector2(_rng.randf_range(-14, 14), 0), "v": Vector2(_rng.randf_range(-30, 30), _rng.randf_range(-110, -40) * (0.5 + t / RUMBLE)),
+					"life": _rng.randf_range(0.3, 0.7), "col": Color("3b2f44")})
+			if t >= RUMBLE:
+				_spawn_round(round_i + 1)
+				if round_i == SPOTS.size() - 1:
+					Sfx.play("roar", 0.0, 0.75)
+				_set_step("round%d" % (round_i + 1))
+		"round1", "round2", "round3":
 			if t > 1.5 and living() == 0:
-				_set_step("lull")
-		"lull":
-			if fposmod(t, 0.25) < delta:
-				InputSystem.shake(6.0 + t * 4.0, 0.25, 22.0)
-			if t >= 2.5:
-				_spawn_round(1)
-				Sfx.play("roar", 0.0, 0.75)
-				_set_step("round2")
-		"round2":
-			if t > 1.5 and living() == 0:
-				Data.apply("team1.monsters.wavepresent", false)
-				Data.apply("team1.monsters.wavebattle", false)
-				_call_allies()
-				_set_step("allies")
+				if round_i < SPOTS.size() - 1:
+					_set_step("lull")
+				else:
+					Data.apply("team1.monsters.wavepresent", false)
+					Data.apply("team1.monsters.wavebattle", false)
+					_call_allies()
+					_set_step("allies")
 		"allies":
 			_move_allies(delta)
 			if t >= 6.5:
@@ -224,14 +289,20 @@ func _draw() -> void:
 	for f: Dictionary in _dust:
 		draw_rect(Rect2(f["p"].round(), Vector2(2, 2)), Color(f.get("col", Color("5a4a66")), clampf(f["life"] * 2.0, 0.0, 1.0)))
 	if step == "rumble" or step == "lull":
-		# Cracks of violet light where they are about to come up.
-		var next: int = 0 if step == "rumble" else 1
-		var offs: Array = SPOTS[next].duplicate()
-		if next == SPOTS.size() - 1:
-			offs.append(EYE_SPOT)
-		for off: float in offs:
+		# The ground splits where they are about to come up: cracks spread
+		# and light up from below, and the soil heaves.
+		var grow: float = clampf(t / (RUMBLE * 0.85), 0.0, 1.0)
+		var Tentacle = load(TENTACLE)
+		var offs: Array = spots(round_i + 1)
+		for i in offs.size():
+			var off: float = offs[i]
 			var p: Vector2 = to_local(_ground(off))
-			var a: float = clampf(t / 2.0, 0.0, 1.0) * (0.5 + 0.5 * sin(t * 18.0))
-			draw_rect(Rect2((p + Vector2(-8, -1)).round(), Vector2(16, 2)), Color(Pix.VIOLET_LIGHT, a))
-			draw_rect(Rect2((p + Vector2(-3, -4)).round(), Vector2(2, 4)), Color(Pix.VIOLET, a))
-			draw_rect(Rect2((p + Vector2(4, -3)).round(), Vector2(2, 3)), Color(Pix.VIOLET, a))
+			var big: bool = round_i + 1 == SPOTS.size() - 1 and i == offs.size() - 1
+			var glow: float = grow * (0.55 + 0.45 * sin(t * (10.0 + 14.0 * grow) + i))
+			Tentacle.draw_light(self, p, _crack_seed(off), grow, glow * grow, big)
+			Tentacle.draw_cracks(self, p, Tentacle.crack_lines(_crack_seed(off), big), grow, glow)
+			# A mound pushing up, shuddering.
+			var heave: float = grow * grow * (9.0 if big else 6.0)
+			var jit: float = sin(t * 47.0 + i * 3.0) * grow
+			Pix.ellipse(self, p + Vector2(jit, 1), (16.0 if big else 11.0) * (0.5 + 0.5 * grow), heave, Color("2a2130"), -1.0, 0.0)
+			draw_rect(Rect2((p + Vector2(-2, -heave)).round(), Vector2(4, 1)), Color(Pix.VIOLET_LIGHT, glow))

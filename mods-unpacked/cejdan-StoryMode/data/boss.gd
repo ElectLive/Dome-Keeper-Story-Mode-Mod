@@ -59,11 +59,23 @@ const CHASE_FAR_PX := 320.0
 const CHASE_HEAD_START := 2.5        # seconds before the tentacles set off
 const CHASE_RECOIL := 1.3            # seconds a tip hangs back after it lands a hit
 
-# --- the surface finale (#162) -----------------------------------------------
-# A tentacle's health follows the run's weight (what its waves are built
-# from), inside these limits; the great eye has three times as much.
-const FINALE_HP_PER_RUN_WEIGHT := 0.3
-const FINALE_TENTACLE_HP_MIN := 60.0
-const FINALE_TENTACLE_HP_MAX := 400.0
-const FINALE_SLAM_DAMAGE := 35        # to the dome; the great eye hits twice as hard
+# --- the surface finale (#162, second pass #171) ------------------------------
+# Tuned for a dome with about Laser III (110 damage a second); a base laser
+# (15) cannot win. Health is fixed, not scaled to the run: by now every run
+# has had the same chance to gear up.
+const FINALE_TENTACLE_HP := 420.0
+const FINALE_EYE_HP := 1500.0          # Velle's great eye, in the last round
+const FINALE_FLYER_HP := 120.0         # the eye a dead tentacle sets free
+const FINALE_SLAM_DAMAGE := 30         # to the dome; the great eye hits twice as hard
 const FINALE_SLAM_EVERY := 5.5
+const FINALE_FLYER_DAMAGE := 10        # one bolt
+const FINALE_FLYER_EVERY := 3.4
+# The great eye's gaze: it charges this long, then burns the dome, unless it
+# loses GAZE_BREAK of its full health while charging (then it flinches).
+const FINALE_GAZE_CHARGE := 3.0
+const FINALE_GAZE_DAMAGE := 140
+const FINALE_GAZE_BREAK := 0.14
+# Fury: every second of the battle shortens all their waits by this share,
+# down to FURY_FLOOR of the listed times. A slow dome is buried.
+const FINALE_FURY_PER_S := 0.004
+const FINALE_FURY_FLOOR := 0.45
