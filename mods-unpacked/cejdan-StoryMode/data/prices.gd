@@ -23,6 +23,34 @@ const PRICES: Dictionary = {
 	"dome1health1": 25, "dome1health2": 280,
 	"domehealthmeter": 2, "domewavemeter": 4,
 	"domesupplementresurrection2": 950,
+	# The other domes (#269): starting values, tier for tier like the laser dome
+	# (by depth in the tree: 6, ~55, ~570, ~6300; cheap side picks like the aim
+	# line, mid-tree extras like Laser Bend / Move III). Not balanced yet.
+	# Sword dome
+	"swordblade1": 6, "swordlargeblade1": 60, "swordlargeblade2": 570, "swordlargeblade3": 6300,
+	"swordlongblade1": 60, "swordlongblade2": 570, "swordelectrified": 6300,
+	"swordaimline": 7, "swordextendlong1": 6, "swordextendlong2": 50, "swordextendlong3": 4000,
+	"swordstabfast1": 6, "swordstabfast2": 50, "swordstabshoot": 570,
+	"swordreflection1": 6, "swordreflection2": 50, "swordreflection3": 570,
+	"swordfastreflection": 50, "swordexplosivereflection": 450,
+	"dome2health1": 25, "dome2health2": 280,
+	# Artillery dome
+	"artillerydirecthit1": 6, "artillerydirecthit2": 60, "artillerydirecthit3": 570, "artillerydirecthit4": 6300,
+	"artillerysplash1": 6, "artillerysplash2": 60, "artillerysplash3": 570, "artillerysplash4": 6300,
+	"artillerygrenadefastreload": 6300, "artilleryrotation2": 50, "artilleryrotation1": 450,
+	"artillerymachinegun1": 6, "artillerymachinegun2": 50, "artillerymachinegun3": 570, "artillerydoublemachinegun": 6300,
+	"artillerymachinegunhoming1": 570, "artillerymachinegunhoming2": 6300,
+	"dome3health1": 25, "dome3health2": 280,
+	# Tesla dome
+	"teslapower1": 6, "teslapower2": 60, "teslapower3": 570, "teslapower4": 6300,
+	"teslaspeed1": 6, "teslaspeed2": 50, "teslaspeed3": 570, "teslaspeed4": 4000,
+	"teslaquickshot": 7, "teslaquickshot2": 60, "teslaautoaim": 7,
+	"teslaorbs": 6, "teslapersistance1": 50, "teslapersistance2": 450, "teslapersistance3": 4000,
+	"teslanurture": 50, "teslaorbstun": 450, "teslaorbdamage": 4000,
+	"dome4health1": 25, "dome4health2": 280,
+	# Turret dome (unreleased in vanilla; only the machine gun picks do anything)
+	"turretslot1machinegun": 60, "turretslot1railgun": 60, "turretslot2machinegun": 60, "turretslot2minelayer": 60,
+	"dome5health1": 25, "dome5health2": 280,
 	# Shield: strength (+ vanilla water), battle branches (+ vanilla cobalt), overcharge
 	"shieldstrength1": 7, "shieldstrength2": 30, "shieldstrength3": 280,
 	"shieldbattleelectroblast": 55, "shieldbattlelongerafterdepletion": 500, "shieldbattleblastdamage": 6300,

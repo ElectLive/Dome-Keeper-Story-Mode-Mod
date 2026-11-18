@@ -69,7 +69,17 @@ $script:LogScanAllow = @(
     # lines, like "loadout teardown"). The race that left a client without
     # its keeper and logged this every frame (and Keeper.updatePlayerName's
     # 'platform_id' on Nil) is avoided in Story Mode since #251.
-    @{ Name = "keeper choice: freed dummy"; Pattern = 'DeviceSelectionStage/DeviceSelectionStage/player1[0-9][0-9]/KeeperSynchronizer' }
+    @{ Name = "keeper choice: freed dummy"; Pattern = 'DeviceSelectionStage/DeviceSelectionStage/player1[0-9][0-9]/KeeperSynchronizer' },
+    # Vanilla Dome.unlisten (content/dome/Dome.gd:118-120) drops inventory
+    # iron/water/sand listeners that only some domes added; a dome swapped out
+    # in the loadout logs three lines. Relic Hunt does the same (t28_loadout's
+    # swap there, #269); Story Mode offers every dome since #269.
+    # Swapping back to a dome picked before in the same loadout re-adds its
+    # limit (GameWorld.setUpgradeLimitAvailable; Relic Hunt in t28_loadout).
+    @{ Name = "vanilla dome swap"; Pattern = 'removing listener who is not listening Data: \{"listener":"team[0-9]+Dome:<Node2D#[0-9]+>","property":"team[0-9]+\.inventory\.(iron|water|sand)"\}|tech limit that.s already available Data: "team[0-9]+\.dome[0-9]"' },
+    # Engine audio driver (drivers\wasapi\audio_driver_wasapi.cpp): the
+    # machine's audio device hiccups mid-run (seen once in t269_dome2, #269).
+    @{ Name = "engine audio (WASAPI)"; Pattern = 'WASAPI: GetBufferSize error' }
 )
 
 # The engine logs these right after one of the lines above, about the same
