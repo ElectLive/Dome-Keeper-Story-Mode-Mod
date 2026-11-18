@@ -83,6 +83,10 @@ func _ready():
 	var lava = load("res://mods-unpacked/cejdan-StoryMode/lava/lava_director.gd").new()
 	lava.name = "LavaDirector"
 	add_child(lava)
+	# Noxious gas (#198): each run's map gets a GasField beside its lava.
+	var gas = load("res://mods-unpacked/cejdan-StoryMode/gas/gas_director.gd").new()
+	gas.name = "GasDirector"
+	add_child(gas)
 	# Dev-only lava playtest; does nothing without `-- --lavaprobe=<dir>`.
 	var lava_probe = load("res://mods-unpacked/cejdan-StoryMode/lava/dev_lava_probe.gd").new()
 	lava_probe.name = "DevLavaProbe"
