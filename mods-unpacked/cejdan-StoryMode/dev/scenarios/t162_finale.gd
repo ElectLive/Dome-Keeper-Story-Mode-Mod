@@ -53,8 +53,10 @@ func run(h) -> void:
 	h.check("the keeper starts in the dome", k.isInsideDome)
 	# Jump to the end of the chase.
 	boss._ensure_layer()
-	# The dome of a keeper who got this far: Laser III (the battle is tuned for it).
-	load("res://mods-unpacked/cejdan-StoryMode/dev/boss_dev.gd").give_gear()
+	# The dome of a keeper who got this far, with Laser III: this checks how the
+	# battle works, not its balance (t171_finale_laser4), and Laser IV barely
+	# moves while firing, which the swing to a tentacle below needs.
+	load("res://mods-unpacked/cejdan-StoryMode/dev/boss_dev.gd").give_gear([], 3)
 	await h.frames(5)
 	boss._stop_waves()
 	boss._set_state("finale")
@@ -138,13 +140,14 @@ func run(h) -> void:
 		await h.shot("laser_hits")
 		h.check("the laser hurts a tentacle", hurt, left.currentHealth if is_instance_valid(left) else -1.0)
 		var made: int = fin.flyers_made
+		var left_eyes: int = left.eyes_left if is_instance_valid(left) else 0
 		var killed: bool = await h.until(func(): return not is_instance_valid(left) or left.dead, 25.0)
 		h.up("ui_left")
 		h.up("dome1_fire")
 		await h.burst("tentacle_dies", 4, 6)
 		h.check("and kills it", killed, left.currentHealth if is_instance_valid(left) else -1.0)
 		await h.wait(1.5)
-		h.check("a dead tentacle sets no eye free: its last eyes die with it", fin.flyers_made == made, [made, fin.flyers_made])
+		h.check("a dead tentacle's last %d eyes all tear free at once" % left_eyes, left_eyes > 0 and fin.flyers_made == made + left_eyes, [made, left_eyes, fin.flyers_made])
 
 	# ---- a slam hurts the dome
 	hp0 = float(Data.of("team1.dome.health"))

@@ -48,7 +48,7 @@ static func make(pos: Vector2, p_perch: float):
 	m.techId = TECH
 	m.teamId = "team1"
 	m.perch = p_perch
-	m.radius = randf_range(140.0, 185.0)
+	m.radius = randf_range(Boss.FINALE_FLYER_RADIUS[0], Boss.FINALE_FLYER_RADIUS[1])
 	m.seed_f = randf() * TAU
 	m.collision_layer = 128
 	m.collision_mask = 0

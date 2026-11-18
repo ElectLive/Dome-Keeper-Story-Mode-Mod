@@ -11,8 +11,8 @@ extends "res://content/monster/Monster.gd"
 #
 # It comes up with a row of eyes. Every few seconds one of them tears free
 # (`eye_freed`) and the finale turns it into a flyer, the lowest first and the
-# one at the tip last, until the tentacle has none left or is dead. The eyes
-# still on a tentacle when it dies die with it.
+# one at the tip last, until the tentacle has none left. The eyes still on a
+# tentacle when it dies all tear free at once.
 #
 # Velle's great eye is its own monster: boss/great_eye.gd.
 #
@@ -356,7 +356,9 @@ func animateDeath():
 	Sfx.play("pop", -2.0, randf_range(0.8, 1.1))
 	InputSystem.shake(12.0, 0.6, 18.0, global_position)
 	slam_t = -1.0
-	# The eyes it still had die with it.
+	# The eyes it still had all tear free at once.
+	while eyes_left > 0:
+		_pop_eye()
 	var tw := create_tween()
 	tw.tween_property(self, "sink", 1.0, 1.1).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func(): remainingFreeBlockers = 0)

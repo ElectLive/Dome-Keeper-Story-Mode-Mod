@@ -373,7 +373,7 @@ func _keeper_died(cause: String) -> void:
 # `--boss=finale` at the surface battle. The first two drill a winding shaft
 # from the chamber up to the dome, the keeper's way home in the chase. All three start with the gear a keeper has by then
 # (dev/boss_dev.gd): Heat Shielding IV, the Suit Blaster, all of the drill and
-# the jetpack, Laser III.
+# the jetpack, Laser IV.
 func _dev_boss(what: String) -> void:
 	ModLoaderLog.info("Dev command: boss (%s)" % what, Story.LOG)
 	if not _ensure_layer():

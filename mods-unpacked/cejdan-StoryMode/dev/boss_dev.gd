@@ -4,20 +4,20 @@ extends RefCounted
 # has by the time the boss is reached, and a drilled way home for the chase.
 
 # Every upgrade a keeper at the boss has bought: all of the drill and the
-# jetpack, and a dome that can fight (Laser III, faster aim, more health).
+# jetpack, and a dome that can fight (Laser IV, faster aim, more health).
 const GEAR: Array = [
 	"drill1", "drill2", "drill3", "drill4",
 	"jetpackspeed1", "jetpackspeed2", "jetpackspeed3", "jetpackspeed4",
 	"jetpackstrength1", "jetpackstrength2", "jetpackstrength3", "jetpackstrength4",
-	"laserstrength1", "laserstrength2", "laserstrength3",
+	"laserstrength1", "laserstrength2", "laserstrength3", "laserstrength4",
 	"lasermove1", "lasermove2", "laseraimline",
 	"domehealthmeter", "dome1health1", "dome1health2",
 ]
 
 
 # Gives the keeper GEAR for free. Returns the ids that were added.
-# `laser_level` 0..3 stops the laser's strength there (playtests of weaker domes).
-static func give_gear(extra: Array = [], laser_level: int = 3) -> Array:
+# `laser_level` 0..4 stops the laser's strength there (playtests of weaker domes).
+static func give_gear(extra: Array = [], laser_level: int = 4) -> Array:
 	var keeper = Keepers.first()
 	var given: Array = []
 	for raw: String in GEAR + extra:

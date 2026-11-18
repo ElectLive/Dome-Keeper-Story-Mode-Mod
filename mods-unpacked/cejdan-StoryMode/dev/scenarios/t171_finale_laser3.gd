@@ -1,7 +1,8 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenarios/t171_finale_play.gd"
 
-# Ticket 171: the final battle is tuned for Laser III. The laser bot (see
-# t171_finale_play) must win it with that dome, with a fifth of the dome left.
+# Ticket 171: Laser III is not enough for the final battle (playtest
+# 2026-11-15: every eye tears free and must be fought, and the user wants
+# Laser III to fall short). The laser bot (see t171_finale_play) must lose.
 
 
 func laser_level() -> int:
@@ -9,4 +10,4 @@ func laser_level() -> int:
 
 
 func expect() -> String:
-	return "win"
+	return "fall"

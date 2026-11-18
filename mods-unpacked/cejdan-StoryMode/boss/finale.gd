@@ -134,7 +134,8 @@ func _eye_freed(at: Vector2) -> void:
 	var d = _dome()
 	# Its place: on the side it came from, higher with each one already up there.
 	var side_left: bool = at.x < d.global_position.x
-	var up: float = 0.55 + 0.32 * (flyers_alive() % 3) + _rng.randf_range(-0.08, 0.08)
+	var angles: Array = Boss.FINALE_FLYER_ANGLES
+	var up: float = float(angles[flyers_alive() % angles.size()]) + _rng.randf_range(-0.08, 0.08)
 	var f = load(FLYER).make(at, (PI - up) if side_left else up)
 	f.fury = fury
 	add_child(f)
