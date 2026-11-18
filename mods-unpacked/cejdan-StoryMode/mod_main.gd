@@ -74,6 +74,12 @@ func _ready():
 		if bit != null:
 			bit.take_over_path("res://content/icons/%s.png" % pair[1])
 			_held.append(bit)
+	# Vent the Dome (#213): the dome's own icon, as a placeholder until art exists.
+	var dome_icon: Texture2D = load("res://content/icons/dome1.png")
+	if dome_icon != null:
+		var vent: ImageTexture = ImageTexture.create_from_image(dome_icon.get_image())
+		vent.take_over_path("res://content/icons/storyventdome.png")
+		_held.append(vent)
 	# New Gadget I-IV (#132): a cog with a spark and the tier in pips
 	# (art/tools/make_gear_icon.py).
 	for i in range(1, 5):

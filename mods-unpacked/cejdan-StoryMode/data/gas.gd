@@ -81,6 +81,32 @@ const FIRE_EMBER_SECONDS := 1.5       # a burnt-out cell still glows (and heats)
 const FIRE_HEAT_PER_SECOND := 110.0    # suit heat a second in a burning cell, before Heat Shielding
 
 
+# --- the dome's gas (#213) -----------------------------------------------------
+# Gas that leaves the mine through the shaft under the dome (a top-row cell
+# within DOME_HALF_WIDTH px of the dome's middle) goes into the dome and stays
+# there until the shop's Vent the Dome clears it. It is counted in pockets'
+# worth, DOME_POCKET_MASS of the field's gas each. While the keeper is in the
+# dome, the toxin bar fills at DOME_TOXIN_PER_SECOND x pockets ^ DOME_TOXIN_POWER
+# a second (and does not clear): from empty to full in about
+#   1 pocket 5.5 min, 2 2 min, 3 64 s, 4 42 s, 5 30 s, 6 23 s
+# so a little gas can wait, 3 pockets ought to be vented, 4 makes a wave dicey,
+# 5 means a wave can't be fought through. A full bar there is a gas death (half
+# the money, the horror's line) without the trip home. Under DOME_TRACE_POCKETS
+# the dome's air clears the bar at once, as before #213. The haze is fully
+# thick at DOME_THICK_POCKETS.
+const DOME_HALF_WIDTH := 80.0
+const DOME_POCKET_MASS := 10.0
+const DOME_TOXIN_PER_SECOND := 0.3
+const DOME_TOXIN_POWER := 1.5
+const DOME_TRACE_POCKETS := 0.05
+const DOME_THICK_POCKETS := 5.0
+
+
+static func dome_toxin_rate(pockets: float) -> float:
+	if pockets < DOME_TRACE_POCKETS:
+		return 0.0
+	return DOME_TOXIN_PER_SECOND * pow(pockets, DOME_TOXIN_POWER)
+
 static func pocket_rock_per_pocket(biome: int) -> float:
 	var t: float = clampf(float(biome - POCKET_START_BIOME) / float(maxi(POCKET_LAST_BIOME - POCKET_START_BIOME, 1)), 0.0, 1.0)
 	return lerpf(POCKET_ROCK_PER_POCKET[0], POCKET_ROCK_PER_POCKET[1], t)

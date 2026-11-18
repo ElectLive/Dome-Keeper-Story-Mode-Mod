@@ -28,6 +28,8 @@ const EN := {
 	"upgrades.storynewgadget2.title": "New Gadget II",
 	"upgrades.storynewgadget3.title": "New Gadget III",
 	"upgrades.storynewgadget4.title": "New Gadget IV",
+	"upgrades.storyventdome.title": "Vent the Dome",
+	"upgrades.storyventdome.desc": "Flush the gas that rose into the dome out through the roof. The dome's air is clean again, until more gas comes up.",
 	"upgrades.storysuitblaster.desc": "Install a mining blaster into your suit. Its blast breaks rock, and the metal that no drill can touch.",
 }
 

@@ -41,6 +41,7 @@ var faded := 0.0                   # gas that thinned away this run
 var vent_marks: Dictionary = {}    # top-row cell -> the time gas last left through it
 var flux: Dictionary = {}          # cell -> [Vector2 gas moved through it lately, the time it last moved] (for the look)
 var look = null                    # the GasLook child that draws the gas (#203)
+var dome = null                    # the DomeGas child: gas vented into the dome (#213)
 var revision := 0                  # goes up whenever any cell's gas changes (for the look)
 # Dev only: hold the gas still.
 var freeze_flow := false
@@ -67,6 +68,11 @@ func setup(p_map) -> void:
 	var ch = map.tileData.get_meta("story_boss_chamber", null)
 	_chamber = ch if ch is Rect2i else Rect2i()
 	_lava = map.get_node_or_null(LAVA_FIELD)
+	# The gas that has gone up into the dome (#213), restored with the rest.
+	dome = load("res://mods-unpacked/cejdan-StoryMode/gas/dome_gas.gd").new()
+	dome.name = "DomeGas"
+	add_child(dome)
+	dome.setup(self)
 	if not _restore(str(Data.ofOr(SAVE_KEY, ""))):
 		_place_pockets()
 		_fill_caverns()
@@ -211,6 +217,14 @@ func _is_sky(c: Vector2i) -> bool:
 	return c.y < GasData.MIN_Y and map.tileData.get_resourcev(c) == -1
 
 
+# A top-row cell whose gas leaves into the dome rather than the open air (#213).
+func under_dome(c: Vector2i) -> bool:
+	var d = Level.domesByTeamId.get("team1") if "domesByTeamId" in Level else null
+	if d == null or not is_instance_valid(d):
+		return false
+	return absf(map.getTilePos(Vector2(c)).x - d.global_position.x) <= GasData.DOME_HALF_WIDTH
+
+
 # --- simulation ----------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
@@ -304,6 +318,8 @@ func _step() -> void:
 			dm[c] = dm.get(c, 0.0) - out
 			vented += out
 			vent_marks[c] = _time
+			if dome != null and under_dome(c):
+				dome.add(out)
 			rem -= out
 			if rem <= 0.0:
 				continue
@@ -558,8 +574,16 @@ func _update_toxin(delta: float) -> void:
 		return
 	breathing = 0.0
 	if keeper.isInsideDome:
-		# The dome's air clears the suit at once.
-		toxin = 0.0
+		var rate_in: float = dome.toxin_rate() if dome != null else 0.0
+		if rate_in <= 0.0:
+			# Clean dome air clears the suit at once.
+			toxin = 0.0
+			return
+		# Gas vented into the dome (#213): the bar fills slowly while the keeper
+		# is inside, fighting or not, and never clears there.
+		toxin = minf(GasData.TOXIN_MAX, toxin + rate_in * delta)
+		if toxin >= GasData.TOXIN_MAX:
+			_gassed_in_dome(keeper)
 		return
 	if keeper.disabled:
 		return
@@ -585,6 +609,21 @@ func _update_toxin(delta: float) -> void:
 		if _lava != null:
 			_lava._recall(keeper)
 		ModLoaderLog.info("Gassed: recall %d" % gassed, "cejdan-StoryMode")
+
+
+# A full bar in the dome (#213): a gas death like one in the mine (the same
+# count, the horror's line, half the money, cargo dropped), but the keeper is
+# already home, so no trip; the bar starts over.
+func _gassed_in_dome(keeper) -> void:
+	gassed += 1
+	toxin = 0.0
+	ModLoaderLog.info("Gassed in the dome: death %d" % gassed, "cejdan-StoryMode")
+	if _lava == null:
+		return
+	var keep_pos = _lava.recall_pos
+	_lava.recall_pos = null          # _recall teleports only when it has somewhere to send the keeper
+	_lava._recall(keeper)
+	_lava.recall_pos = keep_pos
 
 
 # The keeper's body for gas contact: the same box the lava uses.
@@ -631,6 +670,9 @@ func serialize() -> Dictionary:
 func _save_extra(d: Dictionary) -> Dictionary:
 	d["toxin"] = toxin
 	d["gassed"] = gassed
+	if dome != null:
+		d["dome"] = dome.amount
+		d["dome_vents"] = dome.vents
 	return d
 
 
@@ -663,6 +705,9 @@ func _restore(blob: String) -> bool:
 func _restore_extra(d: Dictionary) -> void:
 	toxin = float(d.get("toxin", 0.0))
 	gassed = int(d.get("gassed", 0))
+	if dome != null:
+		dome.amount = float(d.get("dome", 0.0))
+		dome.vents = int(d.get("dome_vents", 0))
 
 
 # --- drawing -------------------------------------------------------------------
@@ -800,4 +845,5 @@ func total() -> float:
 
 func stats() -> Dictionary:
 	return {"cells": mass.size(), "total": total(), "rock": rock.size(), "sources": sources.size(), "breaches": breaches,
-		"vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions, "fire": fire.size(), "awake": _awake.size(), "toxin": toxin, "gassed": gassed}
+		"vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions, "fire": fire.size(), "awake": _awake.size(), "toxin": toxin, "gassed": gassed,
+		"dome_pockets": dome.pockets() if dome != null else 0.0}

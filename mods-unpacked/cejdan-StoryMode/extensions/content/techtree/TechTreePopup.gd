@@ -8,6 +8,7 @@ const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Assets = preload("res://mods-unpacked/cejdan-StoryMode/util/assets.gd")
 const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd")
 const GadgetShop = preload("res://mods-unpacked/cejdan-StoryMode/gamemode/gadget_shop.gd")
+const DomeGas = preload("res://mods-unpacked/cejdan-StoryMode/gas/dome_gas.gd")
 
 
 func _ready():
@@ -79,6 +80,11 @@ func buyUpgrade():
 	if Story.is_story() and animationDone:
 		var tree = find_child("TechTree")
 		var panel = tree.focussedTechPanel if tree else null
+		# Vent the Dome (#213) with clean air in the dome would be water for
+		# nothing: refused, as vanilla refuses a repair at full health.
+		if panel and panel.techId.ends_with(DomeGas.VENT_ID) and not DomeGas.has_gas():
+			GameWorld.upgradeError.emit(panel.techId, teamId, playerId)
+			return
 		if panel and GadgetShop.is_entry(panel.techId):
 			if panel.state == 1:
 				var cost = GameWorld.upgrades.get(panel.techId, {}).get("cost", {})

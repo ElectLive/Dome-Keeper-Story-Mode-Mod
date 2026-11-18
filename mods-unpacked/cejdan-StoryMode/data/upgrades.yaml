@@ -74,3 +74,12 @@ storyDrillbotMetal:
   cost: money=600
   predecessors: [drillbot]
 
+# Vent the Dome (#213): clears the gas vented up into the dome (gas/dome_gas.gd),
+# as often as it is needed. The shop refuses it while the dome is clean
+# (extensions/.../TechTreePopup.gd). The price is a starting value for the user
+# to tune.
+storyVentDome:
+  cost: water=2
+  predecessors: [storymode]
+  repeatable: true
+
