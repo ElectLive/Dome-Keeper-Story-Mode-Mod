@@ -136,7 +136,8 @@ func run(h) -> void:
 	h.check("the settled field sleeps", slept, field.stats())
 	await h.shot("settled")
 	# The pocket's own top row is a dead end too, and keeps a cell of gas each.
-	# The corridor's low ceiling keeps a clinging layer (#212); the shaft,
+	# The corridor's low ceiling keeps a clinging layer (#212), except its
+	# last cell, beside the shaft, which spills into it (#217); the shaft,
 	# which climbs, keeps none.
 	var held := 0.0
 	var corridor := 0.0
@@ -153,7 +154,7 @@ func run(h) -> void:
 			room += field.mass[c]
 	h.note("where the gas settled", {"pocket top": held, "corridor": corridor, "shaft": in_shaft, "room": room, "total": field.total()})
 	h.check("the shaft is clear", in_shaft < 0.05, in_shaft)
-	h.check("the corridor's ceiling holds a clinging layer, about CLING_MASS a cell", corridor > 3.2 * GasData.CLING_MASS and corridor < 4.4 * GasData.CLING_MASS, corridor)
+	h.check("the corridor's ceiling holds a clinging layer, about CLING_MASS a cell, bar the cell beside the shaft", corridor > 2.6 * GasData.CLING_MASS and corridor < 3.4 * GasData.CLING_MASS and field.mass.get(_c(7, 5), 0.0) < 0.05, [corridor, field.mass.get(_c(7, 5), 0.0)])
 	h.check("the pocket's top row holds about a cell of gas each", held > 2.5 and held < 4.0, held)
 	h.check("the alcove is full", field.mass.get(_c(3, -1), 0.0) >= 0.95 and field.mass.get(_c(4, -1), 0.0) >= 0.95, [field.mass.get(_c(3, -1), 0.0), field.mass.get(_c(4, -1), 0.0)])
 	var top := 0.0

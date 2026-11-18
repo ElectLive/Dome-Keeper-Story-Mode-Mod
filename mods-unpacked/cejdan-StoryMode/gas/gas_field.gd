@@ -53,6 +53,8 @@ var phys_frames := 0
 var _acc := 0.0
 var _time := 0.0
 var prev_mass: Dictionary = {}     # the gas before the last step: the look blends from it (#211)
+var rise: Dictionary = {}          # cell -> momentum of its gas, in tiles climbed (#217); not saved
+var drift: Dictionary = {}         # cell -> which way that momentum runs along a ceiling, -1 left .. 1 right
 var _awake: Dictionary = {}
 var _wake_all := true
 var _chamber: Rect2i = Rect2i()
@@ -306,11 +308,15 @@ func _step() -> void:
 	var work: Array = mass.keys() if all_awake else _awake.keys().filter(func(c): return mass.has(c))
 	var max_flow: float = GasData.MAX_FLOW
 	var dm: Dictionary = {}
+	var inm: Dictionary = {}           # gas flowing into a cell this step
+	var rin: Dictionary = {}           # ... times the momentum it brings (#217)
+	var din: Dictionary = {}           # ... times the way it is going along a ceiling
 	for c in work:
 		var m: float = mass[c]
 		if m <= 0.0:
 			continue
 		var rem := m
+		var r: float = rise.get(c, 0.0)
 		var up: Vector2i = c + Vector2i.UP
 		# The surface: gas in the mine's top row with sky above it is gone.
 		if _is_sky(up):
@@ -330,6 +336,7 @@ func _step() -> void:
 			if flow > 0.0:
 				dm[c] = dm.get(c, 0.0) - flow
 				dm[up] = dm.get(up, 0.0) + flow
+				_carry(inm, rin, din, up, flow, minf(r + 1.0, GasData.RISE_MAX), 0.0)
 				_flux(c, up, flow)
 				rem -= flow
 		if rem <= 0.0:
@@ -341,15 +348,21 @@ func _step() -> void:
 		# Gas under rock clings to it (#212): it keeps CLING_MASS, and only what
 		# is more than that moves on along the ceiling. So a low ceiling or a
 		# bend holds some of the gas, and only a pocket with more than that to
-		# give lets any out, slowly.
-		var free: float = rem
-		if not up_open and not _is_sky(up):
-			free = rem - GasData.CLING_MASS
-		for side in [Vector2i.LEFT, Vector2i.RIGHT]:
-			if free <= 0.0:
-				break
+		# give lets any out, slowly. Not toward an opening that leads up, and
+		# not while the gas still has momentum from climbing (#217).
+		var ceiling: bool = not up_open and not _is_sky(up)
+		if ceiling and r >= 1.0:
+			rem = _splash(c, rem, r, dm, inm, rin, din)
+		var cling := 0.0
+		if ceiling:
+			cling = GasData.CLING_MASS * clampf(1.0 - r, 0.0, 1.0)
+		for side in ([] if ceiling and r >= 1.0 else [Vector2i.LEFT, Vector2i.RIGHT]):
 			var sc: Vector2i = c + side
 			if not _is_open(sc):
+				continue
+			var su: Vector2i = sc + Vector2i.UP
+			var free: float = rem if _is_open(su) or _is_sky(su) else rem - cling
+			if free <= 0.0:
 				continue
 			var ms: float = mass.get(sc, 0.0)
 			var flow: float = clampf((m - ms) / div, 0.0, minf(max_flow, free))
@@ -359,9 +372,9 @@ func _step() -> void:
 			if flow > GasData.MIN_FLOW:
 				dm[c] = dm.get(c, 0.0) - flow
 				dm[sc] = dm.get(sc, 0.0) + flow
+				_carry(inm, rin, din, sc, flow, maxf(r - 1.0, 0.0), float(side.x))
 				_flux(c, sc, flow)
 				rem -= flow
-				free -= flow
 		# Down: only gas squeezed past a full cell.
 		if rem > 1.0:
 			var down: Vector2i = c + Vector2i.DOWN
@@ -370,6 +383,7 @@ func _step() -> void:
 				if flow > GasData.MIN_FLOW:
 					dm[c] = dm.get(c, 0.0) - flow
 					dm[down] = dm.get(down, 0.0) + flow
+					_carry(inm, rin, din, down, flow, 0.0, 0.0)
 					_flux(c, down, flow)
 
 	var woke: Dictionary = {}
@@ -377,6 +391,7 @@ func _step() -> void:
 		var o: float = mass.get(c, 0.0)
 		var m: float = o + dm[c]
 		_set_mass(c, o, m, woke)
+	_update_rise(inm, rin, din)
 	# Thin gas that has stopped moving fades (only awake cells are looked at;
 	# fading keeps a cell awake). Thin gas on its way somewhere is left alone.
 	for c in work:
@@ -392,6 +407,70 @@ func _step() -> void:
 	_awake = {}
 	for c in woke:
 		_wake(c)
+
+
+# Gas with momentum under a ceiling (#217) runs along it: SPLASH_SHARE of it
+# is pushed out to the open sides, split evenly where it has just hit, then
+# all one way once it is going that way (back the other way off a wall).
+# Returns what is left in the cell.
+func _splash(c: Vector2i, rem: float, r: float, dm: Dictionary, inm: Dictionary, rin: Dictionary, din: Dictionary) -> float:
+	var d: float = drift.get(c, 0.0)
+	var w := {}
+	var wsum := 0.0
+	for side in [Vector2i.LEFT, Vector2i.RIGHT]:
+		if _is_open(c + side):
+			w[side] = (1.0 + float(side.x) * d) * 0.5
+			wsum += w[side]
+	if w.is_empty():
+		return rem
+	if wsum < 0.01:
+		for side in w:
+			w[side] = 1.0
+		wsum = float(w.size())
+	var push: float = rem * GasData.SPLASH_SHARE
+	for side in w:
+		var flow: float = minf(push * w[side] / wsum, GasData.MAX_FLOW)
+		var sc: Vector2i = c + side
+		if flow < GasData.MIN_PACKET and mass.get(sc, 0.0) <= 0.0:
+			continue
+		dm[c] = dm.get(c, 0.0) - flow
+		dm[sc] = dm.get(sc, 0.0) + flow
+		_carry(inm, rin, din, sc, flow, r - 1.0, float(side.x))
+		_flux(c, sc, flow)
+		rem -= flow
+	return rem
+
+
+func _carry(inm: Dictionary, rin: Dictionary, din: Dictionary, n: Vector2i, flow: float, r: float, d: float) -> void:
+	inm[n] = inm.get(n, 0.0) + flow
+	if r > 0.0:
+		rin[n] = rin.get(n, 0.0) + flow * r
+		din[n] = din.get(n, 0.0) + flow * r * d
+
+
+# Each cell's momentum after a step (#217): what stayed keeps its own, less
+# RISE_DECAY; what flowed in brings its own; the cell's gas averages them.
+# The way it runs is averaged the same way, weighted by momentum.
+func _update_rise(inm: Dictionary, rin: Dictionary, din: Dictionary) -> void:
+	var cells: Dictionary = rin.duplicate()
+	for c in rise:
+		cells[c] = true
+	for c in cells:
+		var m: float = mass.get(c, 0.0)
+		if m <= 0.0:
+			rise.erase(c)
+			drift.erase(c)
+			continue
+		var stayed: float = maxf(m - inm.get(c, 0.0), 0.0)
+		var kept: float = stayed * maxf(rise.get(c, 0.0) - GasData.RISE_DECAY, 0.0)
+		var sum: float = kept + rin.get(c, 0.0)
+		var r: float = sum / m
+		if r < 0.01:
+			rise.erase(c)
+			drift.erase(c)
+		else:
+			rise[c] = minf(r, GasData.RISE_MAX)
+			drift[c] = clampf((kept * drift.get(c, 0.0) + din.get(c, 0.0)) / sum, -1.0, 1.0)
 
 
 # Notes gas moving from `c` to `n`, for the look: a running sum that halves
@@ -683,6 +762,8 @@ func _restore(blob: String) -> bool:
 	if not d is Dictionary or int(d.get("seed", -1)) != Level.levelSeed:
 		return false
 	mass.clear()
+	rise.clear()
+	drift.clear()
 	sources.clear()
 	rock.clear()
 	for e in d.get("mass", []):
