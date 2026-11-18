@@ -105,10 +105,8 @@ func _layer(tex: Texture2D, mat: ShaderMaterial) -> Sprite2D:
 
 
 func _material(file: String) -> ShaderMaterial:
-	var sh := Shader.new()
-	sh.code = FileAccess.get_file_as_string(DIR + file)
 	var m := ShaderMaterial.new()
-	m.shader = sh
+	m.shader = load(DIR + file)
 	return m
 
 
@@ -135,10 +133,7 @@ func _pair(label: String, size: Vector2i, mat: ShaderMaterial) -> Array:
 	copy.texture = out[0].get_texture()
 	copy.size = Vector2(size)
 	copy.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	var cm := ShaderMaterial.new()
-	cm.shader = Shader.new()
-	cm.shader.code = "shader_type canvas_item;\nrender_mode blend_disabled;\nvoid fragment(){ COLOR = texture(TEXTURE, UV); }"
-	copy.material = cm
+	copy.material = _material("copy.gdshader")
 	out[1].add_child(copy)
 	return out
 
@@ -271,7 +266,7 @@ func _update_tiles() -> void:
 						any_flux = true
 						fdata[j] = int(clampf(f.x * 0.5 + 0.5, 0.0, 1.0) * 255.0)
 						fdata[j + 1] = int(clampf(f.y * 0.5 + 0.5, 0.0, 1.0) * 255.0)
-			if vis.has(Vector2(c)) or vis.has(c):
+			if vis.has(Vector2(c)):
 				data[i + 2] = 255
 			if burning:
 				data[i + 3] = int(field.fire_at(c) * 255.0)

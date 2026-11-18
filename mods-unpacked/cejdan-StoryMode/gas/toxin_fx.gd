@@ -6,6 +6,7 @@ extends Node2D
 # Draw and sound only; the toxin itself is the gas field's.
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
+const FieldUtil = preload("res://mods-unpacked/cejdan-StoryMode/util/field_util.gd")
 const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 const GasSfx = preload("res://mods-unpacked/cejdan-StoryMode/gas/gas_sfx.gd")
 const BAR_OFFSET := Vector2(-9, -15)      # under the heat bar (-20)
@@ -36,32 +37,7 @@ var _time := 0.0
 var _lowpass: AudioEffectLowPassFilter
 var _choke_t := 0.0
 
-const VIGNETTE := """shader_type canvas_item;
-uniform float amount;
-uniform float pulse;
-
-float bayer(vec2 p) {
-	int x = int(mod(p.x, 4.0));
-	int y = int(mod(p.y, 4.0));
-	int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-	return (float(m[y * 4 + x]) + 0.5) / 16.0;
-}
-
-void fragment() {
-	// In blocks of 4 screen pixels, dithered in steps, to sit with the pixel art.
-	vec2 cell = floor(FRAGCOORD.xy / 4.0);
-	vec2 uv = cell * 4.0 * SCREEN_PIXEL_SIZE;
-	vec2 p = uv - 0.5;
-	p.x *= 1.25;
-	float d = length(p) * 1.55;
-	// The clear middle shrinks as the toxin builds; the edge wavers.
-	float wob = 0.05 * sin(uv.y * 31.0 + TIME * 1.7) + 0.04 * sin(uv.x * 23.0 - TIME * 1.1);
-	float edge = smoothstep(1.1 - 0.7 * amount, 1.45 - 0.45 * amount, d + wob * amount);
-	float lvl = floor(edge * 4.0 + bayer(cell)) / 4.0;
-	vec3 col = mix(vec3(0.10, 0.34, 0.06), vec3(0.40, 0.78, 0.12), pulse * 0.5);
-	COLOR = vec4(col, lvl * (0.18 + 0.5 * amount) * step(0.001, amount));
-}
-"""
+const VIGNETTE := preload("res://mods-unpacked/cejdan-StoryMode/gas/look/toxin_vignette.gdshader")
 
 
 func setup(p_field) -> void:
@@ -84,10 +60,8 @@ func _make_view(keeper, split: bool) -> Dictionary:
 	var layer: CanvasLayer = null
 	var rect := ColorRect.new()
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sh := Shader.new()
-	sh.code = VIGNETTE
 	var mat := ShaderMaterial.new()
-	mat.shader = sh
+	mat.shader = VIGNETTE
 	mat.set_shader_parameter("amount", 0.0)
 	mat.set_shader_parameter("pulse", 0.0)
 	rect.material = mat
@@ -207,9 +181,5 @@ func _draw() -> void:
 		if t <= 0.5:
 			continue
 		var sh: float = clampf(t / GasData.TOXIN_MAX, 0.0, 1.0)
-		var p: Vector2 = (to_local(keeper.global_position) + BAR_OFFSET).round()
-		draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
-		var col: Color = COL_BAR.lerp(COL_BAR_FULL, sh)
-		if sh >= GasData.WARN_SHARE and fposmod(_time * 8.0, 1.0) < 0.5:
-			col = Color.WHITE
-		draw_rect(Rect2(p, Vector2(round(18.0 * sh), 3)), col)
+		FieldUtil.draw_bar(self, (to_local(keeper.global_position) + BAR_OFFSET).round(), sh,
+			COL_BAR.lerp(COL_BAR_FULL, sh), sh >= GasData.WARN_SHARE and fposmod(_time * 8.0, 1.0) < 0.5)

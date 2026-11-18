@@ -15,6 +15,7 @@ extends Node2D
 const LavaData = preload("res://mods-unpacked/cejdan-StoryMode/data/lava.gd")
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
+const FieldUtil = preload("res://mods-unpacked/cejdan-StoryMode/util/field_util.gd")
 const SAVE_KEY := "story.lava"
 
 const POCKET_MIN_DEPTH := LavaData.POCKET_MIN_DEPTH
@@ -44,7 +45,6 @@ const HEAT_MAX := LavaData.HEAT_MAX
 const OVERHEAT_AFTER: float = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd").OVERHEAT_HEAT_AFTER
 
 const TILE := 24.0
-const KEEPER_BOX := Vector2(10, 16)
 const BURN_TOLERANCE := 1.5
 const COL_CORE := Color("ffd23e")
 const COL_HOT := Color("ff8a1c")
@@ -589,13 +589,7 @@ func _restore(blob: String) -> bool:
 		magma[Vector2i(int(e[0]), int(e[1]))] = true
 	shown = mass.duplicate()
 	wake_all()
-	heats.clear()
-	var hs = d.get("heats", {})
-	if hs is Dictionary and not hs.is_empty():
-		for pid in hs:
-			heats[str(pid)] = float(hs[pid])
-	else:
-		heat = float(d.get("heat", 0.0))
+	heats = FieldUtil.per_player(d, "heats", "heat")
 	breaches = int(d.get("breaches", 0))
 	recalls = int(d.get("recalls", 0))
 	ocean_cells = int(d.get("ocean_cells", 0))
@@ -1014,11 +1008,6 @@ func _visible_cells_now() -> Array:
 	return out
 
 
-# Lava in a cell the player hasn't revealed yet (an unopened pool) stays hidden.
-func _seen(c: Vector2i) -> bool:
-	return map.visibleTileCoords.has(Vector2(c)) or map.visibleTileCoords.has(c)
-
-
 # The lava in a cell as it is drawn, in this node's space: a pouring stream
 # (a column) or a body (a rect at the cell's bottom, f x TILE tall, or the full
 # cell under more lava). _draw() and the burn and water checks all use this, so
@@ -1205,12 +1194,8 @@ func lava_overlaps(world_rect: Rect2) -> bool:
 
 # The keeper's body for lava contact: a fixed box around its position, from its
 # collision shapes (a 5 px circle and two small squares 3.9 px above and below).
-func keeper_rect(keeper) -> Rect2:
-	return Rect2(keeper.global_position - KEEPER_BOX * 0.5, KEEPER_BOX)
-
-
 func keeper_in_lava(keeper) -> bool:
-	return lava_overlaps(keeper_rect(keeper))
+	return lava_overlaps(FieldUtil.keeper_rect(keeper))
 
 
 func _fill_of(c: Vector2i) -> float:
@@ -1234,7 +1219,7 @@ func _draw() -> void:
 
 	for c in _visible_cells():
 		var f := _fill_of(c)
-		if f <= 0.02 or not _seen(c):
+		if f <= 0.02 or not FieldUtil.seen(map, c):
 			continue
 		var o := _cell_origin(c)
 		var sh: Dictionary = _lava_shape(c)
@@ -1284,7 +1269,7 @@ func _draw() -> void:
 	if debug_boxes:
 		var k = Story.local_keeper()
 		if k != null and is_instance_valid(k):
-			var r := keeper_rect(k)
+			var r := FieldUtil.keeper_rect(k)
 			draw_rect(Rect2(to_local(r.position), r.size), Color(0.3, 1.0, 0.4, 0.9), false, 1.0)
 
 
@@ -1354,7 +1339,7 @@ func _draw_stream(c: Vector2i, o: Vector2) -> void:
 # --- steam (#135) -------------------------------------------------------------
 
 func _on_screen(c: Vector2i) -> bool:
-	if not _seen(c):
+	if not FieldUtil.seen(map, c):
 		return false
 	for bx in _view_boxes:
 		if c.x >= bx[0].x and c.x <= bx[1].x and c.y >= bx[0].y and c.y <= bx[1].y:
@@ -1419,7 +1404,7 @@ func barrier_columns() -> Array:
 func _draw_barrier() -> void:
 	for x in barrier_columns():
 		var cell := Vector2i(x, _chamber.position.y)
-		if not (_seen(cell) or _seen(cell + Vector2i.UP)):
+		if not (FieldUtil.seen(map, cell) or FieldUtil.seen(map, cell + Vector2i.UP)):
 			continue
 		var o := _cell_origin(cell)
 		var pulse: float = 0.75 + 0.25 * sin(_time * 3.2 + x * 0.6)
@@ -1446,21 +1431,16 @@ func _draw_heat_bar() -> void:
 		var h: float = heat_of(keeper)
 		if h <= 0.5 and passive_rate_of(keeper) <= 0.0:
 			continue
-		var p: Vector2 = to_local(keeper.global_position) + Vector2(-9, -20)
-		p = p.round()
-		draw_rect(Rect2(p - Vector2(1, 1), Vector2(20, 5)), Color(0, 0, 0, 0.8))
 		var frac: float = h / HEAT_MAX
-		var col: Color = COL_CORE.lerp(Color("ff2a1a"), frac)
-		if frac > 0.7 and fposmod(_time * 8.0, 1.0) < 0.5:
-			col = Color.WHITE
-		draw_rect(Rect2(p, Vector2(round(18.0 * frac), 3)), col)
+		FieldUtil.draw_bar(self, (to_local(keeper.global_position) + Vector2(-9, -20)).round(), frac,
+			COL_CORE.lerp(Color("ff2a1a"), frac), frac > 0.7 and fposmod(_time * 8.0, 1.0) < 0.5)
 
 
 func _draw_glow() -> void:
 	# Soft additive light around lava and around magma rock the player can see.
 	for c in _visible_cells():
 		var f := _fill_of(c)
-		if f <= 0.05 or not _seen(c):
+		if f <= 0.05 or not FieldUtil.seen(map, c):
 			continue
 		var center := _cell_origin(c) + Vector2(TILE, TILE) * 0.5
 		var flick: float = 0.85 + 0.15 * sin(_time * 6.0 + c.x * 2.1 + c.y)
@@ -1474,7 +1454,7 @@ func _draw_glow() -> void:
 	# The chamber barrier's violet glow.
 	for x in barrier_columns():
 		var cell := Vector2i(x, _chamber.position.y)
-		if not (_seen(cell) or _seen(cell + Vector2i.UP)):
+		if not (FieldUtil.seen(map, cell) or FieldUtil.seen(map, cell + Vector2i.UP)):
 			continue
 		var p := _cell_origin(cell) + Vector2(TILE * 0.5, 0)
 		var pulse: float = 0.75 + 0.25 * sin(_time * 3.2 + x * 0.6)
