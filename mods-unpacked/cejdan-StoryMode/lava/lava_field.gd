@@ -606,11 +606,7 @@ func _melt(delta: float) -> void:
 		if melt_timers[c] >= MELT_SECONDS:
 			var tile = map.getTile(Vector2(c))
 			if tile != null and is_instance_valid(tile):
-				# A client only breaks tiles it has made, and magma deep in rock
-				# may be unrevealed there: reveal it everywhere first, as vanilla
-				# does (#227).
-				if StoryNet.online():
-					map.networkRevealTile(Vector2(c), 0.0)
+				StoryNet.tile_break(map, c)
 				map.destroyTile("team1", "", tile)   # fires tile_destroyed -> breach
 			melt_timers.erase(c)
 

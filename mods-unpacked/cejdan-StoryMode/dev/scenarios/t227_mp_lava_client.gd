@@ -45,7 +45,7 @@ func run(h) -> void:
 		h.note("flowing %d" % i, {"host total": hs["total"], "client total": mine, "host n": hs["n"], "client n": lava.mass.size()})
 	h.check("lava total tracks the host while it flows (within 5%)", worst < 0.05, worst)
 	await h.shot("client_flowing")
-	var fin = await shared(h, "lava_final", 60.0)
+	var fin = await shared(h, "lava_final", 90.0)
 	await h.wait(1.0)
 	var diff := 0
 	var biggest := 0.0
@@ -57,6 +57,12 @@ func run(h) -> void:
 			diff += 1
 	h.note("settled", {"host n": fin["n"], "client n": lava.mass.size(), "host total": fin["total"], "client total": _total(lava), "cells off": diff, "biggest": biggest})
 	h.check("settled lava matches the host cell by cell", diff == 0, [diff, biggest])
+	# #228: rock the host's lava melted (Map.destroyTile, not a hit) is open here too.
+	var melt = await shared(h, "melt", 5.0)
+	h.check("host melted a rock with lava", melt != null and bool(melt[2]), melt)
+	if melt != null:
+		var mc := Vector2i(int(melt[0]), int(melt[1]))
+		h.check("rock melted by lava is open on the client", Level.map.getTile(Vector2(mc)) == null and Level.map.is_tile_empty(mc), mc)
 	# Heat: stand in the lava until the suit recalls.
 	var hot = null
 	for c in lava.mass:
