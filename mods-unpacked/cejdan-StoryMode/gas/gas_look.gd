@@ -23,6 +23,9 @@ const FLUX_FULL := 0.6              # grid gas movement that counts as a full-st
 
 var field
 var map
+# The keeper whose split view this look draws (#231); null: the first local
+# keeper, or the screen's centre when there is none.
+var keeper = null
 var c0 := Vector2i.ZERO             # the window's top-left tile
 var params := {"buoyancy": 1.6, "churn": 2.6, "vorticity": 0.16, "jet": 0.05, "flux_gain": 7.0,
 	"fill_rate": 0.09, "clear_rate": 0.16, "untwist": 0.02, "glow": 0.17}
@@ -152,7 +155,7 @@ func _process(delta: float) -> void:
 			_acc = minf(_acc - 1.0 / STEPS, 1.0 / STEPS)
 	_update_window()
 	_update_tiles()
-	var keeper = Story.local_keeper()
+	var keeper = _keeper()
 	var kp := Vector2(-999, -999)
 	if keeper != null and is_instance_valid(keeper):
 		var local: Vector2 = to_local(keeper.global_position)
@@ -185,12 +188,39 @@ func _process(delta: float) -> void:
 	cpu_frames += 1
 
 
-# The window follows the screen's centre in whole tiles; the fields are shifted
-# by the same amount on the frame it moves, so the gas stays put in the world.
+func _keeper():
+	if keeper != null and is_instance_valid(keeper):
+		return keeper
+	var k = Story.local_keeper()
+	return k if k != null and is_instance_valid(k) else null
+
+
+# Splitscreen (#231): this look's sprites show only in `k`'s split view (each
+# view has its own look); null shows them in every view.
+func show_in_view_of(k) -> void:
+	for s in [_sprite, _glow]:
+		if k == null or Level.viewports == null:
+			s.visibility_layer = 1
+		else:
+			# As Viewports.hideForAllLocalPlayersExcept, which wants a typed array.
+			s.visibility_layer = 0
+			Level.viewports.showForLocalKeeper(k, s)
+
+
+# The window follows the screen's centre (this look's keeper's camera) in whole
+# tiles; the fields are shifted by the same amount on the frame it moves, so
+# the gas stays put in the world.
 func _update_window() -> void:
-	var inv: Transform2D = get_global_transform_with_canvas().affine_inverse()
-	var centre: Vector2 = inv * (get_viewport().get_visible_rect().get_center())
-	var want: Vector2i = map.getTileCoord(to_global(centre)) - WIN / 2
+	var world_centre = null
+	var k = _keeper()
+	if k != null and Level.viewports != null and Keepers.local.getCount() > 1:
+		var cam = Level.viewports.getPlayerCam(k.playerId)
+		if cam != null and is_instance_valid(cam) and cam.is_inside_tree():
+			world_centre = cam.get_screen_center_position()
+	if world_centre == null:
+		var inv: Transform2D = get_global_transform_with_canvas().affine_inverse()
+		world_centre = to_global(inv * (get_viewport().get_visible_rect().get_center()))
+	var want: Vector2i = map.getTileCoord(world_centre) - WIN / 2
 	var shift := Vector2.ZERO
 	if _have_window and want != c0:
 		shift = Vector2(want - c0) / Vector2(WIN)

@@ -20,6 +20,9 @@ extends Node
 #                        save names and opens the keeper choice; the host's scenario
 #                        picks keepers and starts the run there
 #   --netjoin            join the ENet session on 127.0.0.1; the host's stages follow
+#   --title              the title screen (#231)
+#   --splitscreen        with --loadout: open it as the title's Splitscreen button
+#                        does (#231); each device that presses a key joins
 # A playtest scenario's boot() dictionary can give the same keys.
 #
 # How: Game.gd cannot be script-extended safely (loading it early enough breaks
@@ -38,7 +41,7 @@ var _done: bool = false
 static func wanted() -> bool:
 	if not OS.has_feature("editor"):
 		return false
-	for n: String in ["story", "scenario", "mode", "loadout", "load", "netload", "nethost", "netjoin"]:
+	for n: String in ["story", "scenario", "mode", "loadout", "load", "netload", "nethost", "netjoin", "title"]:
 		if Story.has_user_arg(n):
 			return true
 	return false
@@ -59,6 +62,11 @@ func _process(_delta: float) -> void:
 		return
 	_done = true
 	set_process(false)
+	if Story.has_user_arg("title"):
+		# The title screen, as a player starts (#231: its Splitscreen button).
+		print("RUNNING IN DEV MODE (Story Mode dev boot: title)")
+		StageManager.startStage("stages/title/title")
+		return
 	if Story.has_user_arg("netjoin"):
 		# A second instance on this machine joins the host. Vanilla's client
 		# path shows the loading stage and follows whatever stage the host is in.
@@ -81,6 +89,10 @@ func _process(_delta: float) -> void:
 		return
 	if Story.has_user_arg("nethost"):
 		print("RUNNING IN DEV MODE (Story Mode dev boot: host ENet session)")
+		if Story.has_user_arg("splitscreen"):
+			# Online with local splitscreen on the host (#231): the option's
+			# setting, for this run only (not saved).
+			Options.enableSplitScreen = true
 		Network.create_enet_host()
 		StageManager.startStage("stages/loadout/multiplayerloadout")
 		return
@@ -98,6 +110,11 @@ func _process(_delta: float) -> void:
 		if err != OK:
 			push_error("Dev boot: loading save slot %d failed (%s)" % [slot, str(err)])
 	elif _mode_id == "":
+		if Story.has_user_arg("splitscreen"):
+			# The title's Splitscreen button (#231): the loadout then adds a
+			# local keeper for each device that presses a key.
+			print("RUNNING IN DEV MODE (Story Mode dev boot: splitscreen loadout)")
+			Network.multiplayer_mode = Network.MultiplayerMode.OFFLINE_SPLITSCREEN
 		StageManager.startStage("stages/loadout/multiplayerloadout")
 	else:
 		_start_run(_mode_id)

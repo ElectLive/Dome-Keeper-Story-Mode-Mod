@@ -46,6 +46,13 @@ func _process(_delta: float) -> void:
 		return
 	if scenario.boot().get("netjoin", false):
 		_client_choose_keeper()
+	if scenario.boot().get("title", false):
+		# The title screen (#231): the scenario presses its buttons.
+		var ts = StageManager.currentStage
+		if is_instance_valid(ts) and ts.has_method("_on_splitscreen_button_pressed") and not StageManager.isSwitchingStage():
+			_started = true
+			_run()
+		return
 	if scenario.boot().get("loadout", false):
 		if is_instance_valid(Level.stage) and Level.stage.get("initialized") == true:
 			_started = true
@@ -216,6 +223,71 @@ func press(action: String) -> void:
 	await frames(3)
 	up(action)
 	await frames(3)
+
+
+# Gamepad input for splitscreen (#231): vanilla's device index for a gamepad is
+# its joypad device + 1 (InputSystem.getDeviceIndex), so `index` 1 is joypad 0.
+func pad(index: int, action: String, pressed: bool) -> void:
+	for ev in InputMap.action_get_events(action):
+		if ev is InputEventJoypadButton:
+			var e: InputEventJoypadButton = ev.duplicate()
+			e.device = index - 1
+			e.pressed = pressed
+			e.pressure = 1.0 if pressed else 0.0
+			Input.parse_input_event(e)
+			return
+	push_error("Harness: no gamepad button for action " + action)
+
+
+func pad_hold(index: int, action: String, sec: float) -> void:
+	pad(index, action, true)
+	await wait(sec)
+	pad(index, action, false)
+	await frames(2)
+
+
+# A gamepad keeper walks and drills with the left stick, not the d-pad.
+func pad_stick(index: int, dir: Vector2, sec: float) -> void:
+	for axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y]:
+		var e := InputEventJoypadMotion.new()
+		e.device = index - 1
+		e.axis = axis
+		e.axis_value = dir.x if axis == JOY_AXIS_LEFT_X else dir.y
+		Input.parse_input_event(e)
+	await wait(sec)
+	for axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y]:
+		var e := InputEventJoypadMotion.new()
+		e.device = index - 1
+		e.axis = axis
+		e.axis_value = 0.0
+		Input.parse_input_event(e)
+	await frames(2)
+
+
+func pad_press(index: int, action: String) -> void:
+	pad(index, action, true)
+	await frames(3)
+	pad(index, action, false)
+	await frames(3)
+
+
+# Splitscreen loadout (#231, boot `splitscreen: true`): each device that
+# presses a key joins as a local keeper, as a player's does. Index 0 is the
+# keyboard, 1.. gamepads. True once that device's keeper stands in the loadout.
+func join_device(index: int) -> bool:
+	for i in 4:
+		if index == 0:
+			await press("ui_select")
+		else:
+			await pad_press(index, "ui_select")
+		if await until(func(): return Keepers.getLocalKeeperByDeviceId(index) != null, 4.0):
+			return true
+	return false
+
+
+# This instance's keepers (splitscreen: one per device).
+func local_keepers() -> Array:
+	return Keepers.local.getAll().filter(func(k): return is_instance_valid(k))
 
 
 # ---------------------------------------------------------------- capture
@@ -406,17 +478,20 @@ func keeper_tile() -> Vector2i:
 	return Level.map.getTileCoord(keeper().global_position)
 
 
-func teleport_tile(coord: Vector2i) -> void:
-	keeper().teleport(Level.map.getTilePos(coord))
-	snap_camera()
+func teleport_tile(coord: Vector2i, k = null) -> void:
+	if k == null:
+		k = keeper()
+	k.teleport(Level.map.getTilePos(coord))
+	snap_camera(k)
 	await frames(3)
 
 
 # Moves the keeper's camera straight onto the keeper. The game's camera moves
 # at most about twice the keeper's speed, so after a long teleport it would
 # take many seconds to arrive.
-func snap_camera() -> void:
-	var k = keeper()
+func snap_camera(k = null) -> void:
+	if k == null:
+		k = keeper()
 	if Level.viewports == null or k == null:
 		return
 	var cam = Level.viewports.getPlayerCam(k.playerId)

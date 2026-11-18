@@ -33,6 +33,8 @@ var _lost_flash: float = 0.0
 var _gain_flash: float = 0.0
 var _flash: ColorRect = null
 var _layer: CanvasLayer = null
+# Splitscreen (#231): a red wash per local keeper, in that keeper's view.
+var _flashes: Dictionary = {}   # playerId -> ColorRect
 
 
 func _ready() -> void:
@@ -49,6 +51,39 @@ func _ready() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_layer.add_child(_flash)
+
+
+# The red wash for `keeper`'s view: the one above with one local keeper; with
+# several, each keeper's own: a rect in the world over that keeper's camera,
+# drawn in its split view only (a CanvasLayer can't be pointed at a split view
+# safely: custom_viewport errors when the level is freed).
+func _flash_for(keeper) -> ColorRect:
+	if Keepers.local.getCount() <= 1 or Level.viewports == null:
+		return _flash
+	if _flashes.has(keeper.playerId) and is_instance_valid(_flashes[keeper.playerId]):
+		return _flashes[keeper.playerId]
+	var f := ColorRect.new()
+	f.color = Color(1.0, 0.1, 0.12, 0.0)
+	f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	f.z_as_relative = false
+	f.z_index = 200
+	add_child(f)
+	f.visibility_layer = 0
+	Level.viewports.showForLocalKeeper(keeper, f)
+	_flashes[keeper.playerId] = f
+	return f
+
+
+func _place_flashes() -> void:
+	for pid in _flashes:
+		var f = _flashes[pid]
+		var cam = Level.viewports.getPlayerCam(pid) if Level.viewports != null else null
+		if not is_instance_valid(f) or cam == null or not is_instance_valid(cam):
+			continue
+		var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
+		var r := Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(8.0)
+		f.position = to_local(r.position)
+		f.size = r.size
 
 
 func hearts() -> int:
@@ -136,7 +171,7 @@ func _play_hit(keeper, push: Vector2) -> void:
 	if "move" in keeper:
 		keeper.move = Vector2.ZERO
 	InputSystem.shake(14.0, 0.35, 22.0)
-	_flash.color.a = 0.34
+	_flash_for(keeper).color.a = 0.34
 	Audio.sound("gui_err")
 
 
@@ -150,6 +185,10 @@ func _physics_process(delta: float) -> void:
 	_lost_flash = maxf(0.0, _lost_flash - delta)
 	_gain_flash = maxf(0.0, _gain_flash - delta)
 	_flash.color.a = maxf(0.0, _flash.color.a - delta * 0.9)
+	for f in _flashes.values():
+		if is_instance_valid(f):
+			f.color.a = maxf(0.0, f.color.a - delta * 0.9)
+	_place_flashes()
 	for keeper in Keepers.getAll():
 		if keeper == null or not is_instance_valid(keeper):
 			continue
@@ -167,9 +206,13 @@ func _physics_process(delta: float) -> void:
 
 
 func _draw() -> void:
-	var keeper = _me()
-	if keeper == null or not is_instance_valid(keeper) or not keeper.visible:
-		return
+	# The team's hearts over every local keeper (#231; one shared pool, #230).
+	for keeper in Keepers.local.keepers:
+		if keeper != null and is_instance_valid(keeper) and keeper.visible:
+			_draw_hearts(keeper)
+
+
+func _draw_hearts(keeper) -> void:
 	var n: int = Boss.HEARTS
 	var have: int = hearts()
 	var w: float = n * 8.0 - 1.0

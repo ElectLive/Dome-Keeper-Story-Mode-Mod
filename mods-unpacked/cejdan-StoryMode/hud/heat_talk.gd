@@ -22,19 +22,37 @@ const FIELD := "StoryLavaField"
 # The line's foot, over the keeper's head (world px; the heat bar sits at -20).
 const OFFSET := Vector2(0, -30)
 
-# Highest hot section announced since the keeper last cooled off; -1 = none.
-var hot_section: int = -1
-# Every line shown this run, for checks: [{text, kind, t}]
+# Every local keeper talks about its own heat (#231). Per keeper (playerId ->):
+#   hot: highest hot section announced since it last cooled off (-1 = none)
+#   pending / pending_t: the state being settled ("hot:<section>" / "out" / "")
+#   gap: seconds before it may talk again; exit_heat: heat as it left the heat
+#   holder: its line on screen
+var talkers: Dictionary = {}
+# Every line shown this run, for checks: [{text, kind, t, player}]
 var shown: Array = []
 
 var _time: float = 0.0
-var _gap_t: float = 0.0
-# The state being settled: "hot:<section>" / "cool" / "", and for how long.
-var _pending: String = ""
-var _pending_t: float = 0.0
 var _bag: Array = []
-var _holder: Node2D = null
 var _font: FontFile
+
+# The first local keeper's state, as before (playtests read these).
+var hot_section: int:
+	get:
+		return int(_t0().get("hot", -1))
+var _pending: String:
+	get:
+		return str(_t0().get("pending", ""))
+
+
+func _t0() -> Dictionary:
+	var k = Story.local_keeper()
+	return talkers.get(k.playerId, {}) if k != null and is_instance_valid(k) else {}
+
+
+func _talker(pid: String) -> Dictionary:
+	if not talkers.has(pid):
+		talkers[pid] = {"hot": -1, "pending": "", "pending_t": 0.0, "gap": 0.0, "exit_heat": 0.0, "holder": null}
+	return talkers[pid]
 
 
 static func instance():
@@ -54,39 +72,44 @@ func _process(delta: float) -> void:
 	if GameWorld.paused:
 		return
 	_time += delta
-	_gap_t -= delta
-	var keeper = Story.local_keeper()
 	var map = Level.map
-	if keeper == null or not is_instance_valid(keeper) or map == null or not is_instance_valid(map):
+	if map == null or not is_instance_valid(map):
 		return
 	var field = map.get_node_or_null(FIELD)
-	if field == null or keeper.disabled:
+	if field == null:
 		return
+	for keeper in Story.local_keepers():
+		_process_keeper(keeper, map, field, delta)
+
+
+func _process_keeper(keeper, map, field, delta: float) -> void:
+	var t: Dictionary = _talker(keeper.playerId)
+	t["gap"] -= delta
+	if keeper.disabled:
+		return
+	var heat: float = field.heat_of(keeper)
 	var state: String = _state(keeper, map, field)
-	if state != _pending:
+	if state != t["pending"]:
 		# Leaving the heat: the relief line wants heat on the bar at that moment
 		# (it drains fast; an overheat recall has already emptied it).
-		if _pending.begins_with("hot:") and not state.begins_with("hot:"):
-			_heat_at_exit = field.heat
-		_pending = state
-		_pending_t = 0.0
+		if str(t["pending"]).begins_with("hot:") and not state.begins_with("hot:"):
+			t["exit_heat"] = heat
+		t["pending"] = state
+		t["pending_t"] = 0.0
 		return
-	_pending_t += delta
-	if _pending_t < Lines.SETTLE or _gap_t > 0.0:
+	t["pending_t"] += delta
+	if t["pending_t"] < Lines.SETTLE or t["gap"] > 0.0:
 		return
 	if state.begins_with("hot:"):
 		var section: int = int(state.substr(4))
-		if section > hot_section:
-			hot_section = section
-			_say(str(Lines.HOT.get(section, Lines.HOT[Lines.HOT.keys().max()])), Lines.HOT_COLOR, "hot")
-	elif state == "out" and hot_section >= 0:
+		if section > t["hot"]:
+			t["hot"] = section
+			_say(keeper, str(Lines.HOT.get(section, Lines.HOT[Lines.HOT.keys().max()])), Lines.HOT_COLOR, "hot")
+	elif state == "out" and t["hot"] >= 0:
 		# Out of the heat: the next trip down starts from "so hot" again.
-		hot_section = -1
-		if _heat_at_exit > 0.5 or field.heat > 0.5:
-			_say(_next_cool(), Lines.COOL_COLOR, "cool")
-
-
-var _heat_at_exit: float = 0.0
+		t["hot"] = -1
+		if t["exit_heat"] > 0.5 or heat > 0.5:
+			_say(keeper, _next_cool(), Lines.COOL_COLOR, "cool")
 
 
 # "hot:<section>" in passive heat the suit can feel, "out" out of it (the mine
@@ -124,17 +147,17 @@ func _pixel_font() -> FontFile:
 	return _font
 
 
-func _say(text: String, color: Color, kind: String) -> void:
-	_gap_t = Lines.GAP
-	shown.append({"text": text, "kind": kind, "t": snappedf(_time, 0.01)})
-	ModLoaderLog.info("Keeper heat line: " + text, "cejdan-StoryMode")
-	if _holder != null and is_instance_valid(_holder):
-		_holder.queue_free()
-	_holder = _make(text, color, kind)
+func _say(k, text: String, color: Color, kind: String) -> void:
+	var t: Dictionary = _talker(k.playerId)
+	t["gap"] = Lines.GAP
+	shown.append({"text": text, "kind": kind, "t": snappedf(_time, 0.01), "player": k.playerId})
+	ModLoaderLog.info("Keeper heat line (%s): %s" % [k.playerId, text], "cejdan-StoryMode")
+	if t["holder"] != null and is_instance_valid(t["holder"]):
+		t["holder"].queue_free()
+	t["holder"] = _make(text, color, kind)
 	_follow()
 	# Online (#229): the other players see this keeper's line over its head.
-	var k = Story.local_keeper()
-	if _online() and k != null:
+	if _online():
 		if multiplayer.is_server():
 			_relay(k.playerId, text, color, kind, 1)
 		else:
@@ -161,9 +184,9 @@ func _net_line(player_id: String, text: String, color: Color, kind: String) -> v
 		_relay(player_id, text, color, kind, from)
 	elif from != 1:
 		return
-	var mine = Story.local_keeper()
-	if mine != null and mine.playerId == player_id:
-		return
+	for mine in Story.local_keepers():
+		if mine.playerId == player_id:
+			return
 	if _remote.has(player_id) and is_instance_valid(_remote[player_id]):
 		_remote[player_id].queue_free()
 	_remote[player_id] = _make(text, color, kind)
@@ -218,8 +241,7 @@ func _follow() -> void:
 		var k = Keepers.getKeeper(pid) if is_instance_valid(h) and Keepers.hasKeeper(pid) else null
 		if k != null and is_instance_valid(k):
 			h.global_position = (k.global_position + OFFSET).round()
-	if _holder == null or not is_instance_valid(_holder):
-		return
-	var keeper = Story.local_keeper()
-	if keeper != null and is_instance_valid(keeper):
-		_holder.global_position = (keeper.global_position + OFFSET).round()
+	for keeper in Story.local_keepers():
+		var h = talkers.get(keeper.playerId, {}).get("holder", null)
+		if h != null and is_instance_valid(h):
+			h.global_position = (keeper.global_position + OFFSET).round()

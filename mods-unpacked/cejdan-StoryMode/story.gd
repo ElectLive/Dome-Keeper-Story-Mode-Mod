@@ -60,3 +60,37 @@ static func boss_active() -> bool:
 # error when the list is empty, so `Keepers.first() == null` never guards (#249).
 static func local_keeper():
 	return Keepers.local.keepers[0] if not Keepers.local.keepers.is_empty() else null
+
+
+# Every keeper this instance plays (#231): one per device in splitscreen, one
+# in single player and on each online instance (a host with two local players
+# has two). Per-keeper systems (heat, toxin, recall, the HUD over a keeper)
+# loop over these; the team's side stays with the host.
+static func local_keepers() -> Array:
+	return Keepers.local.keepers.filter(func(k): return k != null and is_instance_valid(k))
+
+
+# The world rects the local keepers' split views show (#231), grown by `grow`
+# px. Empty when there are no views yet (headless, between stages).
+static func view_rects(grow: float = 0.0) -> Array:
+	var out: Array = []
+	if Level.viewports == null or not is_instance_valid(Level.viewports):
+		return out
+	for k in local_keepers():
+		var cam = Level.viewports.getPlayerCam(k.playerId)
+		if cam == null or not is_instance_valid(cam) or not cam.is_inside_tree():
+			continue
+		var vs: Vector2 = cam.get_viewport_rect().size / cam.zoom
+		out.append(Rect2(cam.get_screen_center_position() - vs / 2.0, vs).grow(grow))
+	return out
+
+
+# True when any local keeper's view shows `world_pos` (or there are no views).
+static func on_any_view(world_pos: Vector2, grow: float = 0.0) -> bool:
+	var rects: Array = view_rects(grow)
+	if rects.is_empty():
+		return true
+	for r: Rect2 in rects:
+		if r.has_point(world_pos):
+			return true
+	return false

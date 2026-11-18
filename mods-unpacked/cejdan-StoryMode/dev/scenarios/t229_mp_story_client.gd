@@ -80,7 +80,7 @@ func run(h) -> void:
 	h.check("the host keeper's heat line shows here", ht.shown_remote.size() == 1 and ht.shown_remote[0]["text"] == "so hot", ht.shown_remote)
 	await h.shot("client_plea_heat")
 	h.check("no plea of the client's own", pd.say("arrive") == "" and pd.shown.size() == 1)
-	ht._say("so hot", Color("ff7a3c"), "hot")
+	ht._say(Keepers.local.keepers[0], "so hot", Color("ff7a3c"), "hot")
 
 	# --- Retire Rich.
 	var rich = await shared(h, "rich", 60.0)

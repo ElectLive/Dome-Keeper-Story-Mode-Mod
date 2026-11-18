@@ -218,6 +218,12 @@ func prepareGameMode(modeId: String, levelStartData: LevelStartData) -> void:
 	Prices.apply(modeId == Story.MODE_ID)
 	Minerals.use_story_iron(modeId == Story.MODE_ID)
 	if modeId != Story.MODE_ID:
+		# A loadout that ran Story Mode before keeps its modeConfig (the
+		# loadout screen reuses it), flag and all: without this a vanilla run
+		# picked there afterwards got Story Mode's lava and gas (#231).
+		levelStartData.loadout.modeConfig.erase(Story.MODE_FLAG)
+		if Level.loadout != null:
+			Level.loadout.modeConfig.erase(Story.MODE_FLAG)
 		return
 	# A loaded run keeps its level seed (#116). Vanilla saves don't store it, so
 	# a fresh process rolled a new one: a new palette (picked from the seed right
