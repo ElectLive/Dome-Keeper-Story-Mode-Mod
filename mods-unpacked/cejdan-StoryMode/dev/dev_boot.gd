@@ -15,6 +15,10 @@ extends Node
 #   --horror-defeated    with --story: play the saved ending (#97) once the keeper
 #                        can move (handled by gamemode/Storymode.gd)
 #   --nethost            host an online (ENet) session, then open the loadout (#223)
+#   --netload=<slot>     load the online save in that slot (multiplayer folder) the
+#                        way Continue Multiplayer does (#232): it hosts the session the
+#                        save names and opens the keeper choice; the host's scenario
+#                        picks keepers and starts the run there
 #   --netjoin            join the ENet session on 127.0.0.1; the host's stages follow
 # A playtest scenario's boot() dictionary can give the same keys.
 #
@@ -34,7 +38,7 @@ var _done: bool = false
 static func wanted() -> bool:
 	if not OS.has_feature("editor"):
 		return false
-	for n: String in ["story", "scenario", "mode", "loadout", "load", "nethost", "netjoin"]:
+	for n: String in ["story", "scenario", "mode", "loadout", "load", "netload", "nethost", "netjoin"]:
 		if Story.has_user_arg(n):
 			return true
 	return false
@@ -60,6 +64,20 @@ func _process(_delta: float) -> void:
 		# path shows the loading stage and follows whatever stage the host is in.
 		print("RUNNING IN DEV MODE (Story Mode dev boot: join 127.0.0.1)")
 		Network.create_enet_client("127.0.0.1", Network.ENET_LISTEN_PORT)
+		return
+	if Story.has_user_arg("netload"):
+		var nslot: int = int(Story.user_arg("netload"))
+		print("RUNNING IN DEV MODE (Story Mode dev boot: load online save slot %d)" % nslot)
+		StageManager.startStage("stages/title/title")
+		while StageManager.currentStage == null or StageManager.isSwitchingStage():
+			await get_tree().process_frame
+		await get_tree().create_timer(0.5).timeout
+		# TitleStage.continue_multiplayer: once the save's keepers are read,
+		# the keeper choice opens; its start button lets loadGame() go on.
+		SaveGame.keeper_data_loaded.connect(func(): StageManager.startStage("stages/deviceselection/deviceselection"), CONNECT_ONE_SHOT)
+		var nerr = await SaveGame.loadGame("multiplayer", nslot)
+		if nerr != OK:
+			push_error("Dev boot: loading online save slot %d failed (%s)" % [nslot, str(nerr)])
 		return
 	if Story.has_user_arg("nethost"):
 		print("RUNNING IN DEV MODE (Story Mode dev boot: host ENet session)")

@@ -30,6 +30,8 @@ const LOCAL_ONLY := ["story_seed"]
 
 # The settled resend (#242): see _host_resend.
 const RESEND_PREFIXES := ["team1.story.", "story.", "team1.inventory.", "team1.suit."]
+# The host's own save blobs (save_blob): never sent.
+const HOST_ONLY := ["story.lava", "story.gas"]
 const RESEND_SETTLE := 1.0     # seconds after the last chunked Data message to a peer left
 const RESEND_BATCH := 700      # bytes per message: under the chunker's 900, so sent whole
 
@@ -54,6 +56,18 @@ static func online() -> bool:
 
 static func is_client() -> bool:
 	return Network.is_client()
+
+
+# The lava's and the gas's save blob (story.lava, story.gas: tens of KB) goes
+# into Data for vanilla's save. Online, Data.apply would also send it to every
+# client as one big delta at each autosave (every wave's start and end), which
+# holds up the chunker's other Data messages to them (#246); clients get the
+# lava and gas from the host's stream instead, so the host keeps it to itself.
+static func save_blob(key: String, blob: String) -> void:
+	if online() and not is_client():
+		Data.server_apply(key, blob)
+	else:
+		Data.apply(key, blob)
 
 
 # True once `map`'s story meta can be read: always on the host and offline; on
@@ -212,6 +226,8 @@ func _resend(peer: int, w: Dictionary) -> void:
 	var keys: Array = []
 	var stale := 0
 	for k in Data.values:
+		if k in HOST_ONLY:
+			continue
 		if vals.has(k):
 			if not _same(vals[k], Data.values[k]):
 				keys.append(k)

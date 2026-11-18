@@ -44,12 +44,14 @@ func _process(_delta: float) -> void:
 		return
 	if scenario == null:
 		return
+	if scenario.boot().get("netjoin", false):
+		_client_choose_keeper()
 	if scenario.boot().get("loadout", false):
-		if Level.stage != null and Level.stage.get("initialized") == true:
+		if is_instance_valid(Level.stage) and Level.stage.get("initialized") == true:
 			_started = true
 			_run()
 		return
-	if Level.stage != null and Level.stage.get("keeperInputStarted") == true and Level.map != null and Level.map.isMapReady():
+	if is_instance_valid(Level.stage) and Level.stage.get("keeperInputStarted") == true and is_instance_valid(Level.map) and Level.map.isMapReady():
 		_started = true
 		_run()
 
@@ -266,6 +268,103 @@ func map_png(label: String, colors: Dictionary = {}, scale: int = 6, tile_data =
 	img.save_png(out_dir.path_join(file))
 	note("map " + file, {"rect": [rect.position.x, rect.position.y, rect.size.x, rect.size.y]})
 	return file
+
+
+# ---------------------------------------------------------------- keeper choice (#232)
+# Vanilla's keeper choice (DeviceSelectionStage) opens when a host loads an
+# online save (every player walks to a saved keeper; the host starts) and for a
+# client that joins a run under way (it picks a keeper whose player left and
+# starts itself, clientOnlyMode). Scenarios can't walk there, so they pick by
+# call: the host takes the saved keeper that was the host's (peer 1), a client
+# joining a run under way a free one.
+#
+# Keepers.local is no help here: it can hold another player's keeper once the
+# host has swapped keepers. This instance's keeper is found by its lobby player
+# id (the stand-in "player10x") or by the stage's peer/device map once chosen.
+
+var _choose_t := 0.0
+var _choose_started := false
+var _choose_seen := ""
+
+
+# The free saved keeper (LoadoutKeeper) for this instance, or null.
+func free_saved_keeper(host: bool):
+	var st = Level.stage
+	if not is_instance_valid(st) or not st is DeviceSelectionStage:
+		return null
+	var taken: Array = st.playerIdByPeerDeviceId.values()
+	var free: Array = Level.loadout.keeperTemplates.filter(func(lk): return not taken.has(lk.playerId))
+	if free.is_empty():
+		return null
+	var mine: Array = free.filter(func(lk): return (lk.peerId == 1) == host)
+	return mine[0] if not mine.is_empty() else free[0]
+
+
+# This instance's keeper in the keeper choice, or null.
+func choice_keeper():
+	var st = Level.stage
+	var me: int = multiplayer.get_unique_id()
+	var want: Array = []
+	if is_instance_valid(st) and st is DeviceSelectionStage:
+		for key in st.playerIdByPeerDeviceId:
+			if str(key).begins_with("%d-" % me):
+				want.append(st.playerIdByPeerDeviceId[key])
+	for m in Lobby.members:
+		if m.peer_id == me:
+			want.append("player%d" % m.player_id)
+	for pid in want:
+		for k in Keepers.all.keepers:
+			if is_instance_valid(k) and k.playerId == pid and not k.is_queued_for_deletion():
+				return k
+	return null
+
+
+# Walks this instance's keeper into a saved keeper (one try; true if asked).
+func choose_keeper(host: bool) -> bool:
+	var st = Level.stage
+	var k = choice_keeper()
+	if not is_instance_valid(st) or not st is DeviceSelectionStage or not st.initialized or k == null or not k.isMovementDummy:
+		return false
+	var lk = free_saved_keeper(host)
+	if lk == null:
+		return false
+	note("keeper choice: taking " + lk.playerId, {"client only": st.clientOnlyMode, "taken": st.playerIdByPeerDeviceId, "keeper": k.playerId, "lobby": lobby_rows()})
+	st.changeKeeper(k, lk)
+	return true
+
+
+func lobby_rows() -> Array:
+	return Lobby.members.map(func(m): return [m.peer_id, m.device_id, m.player_id])
+
+
+func _client_choose_keeper() -> void:
+	var st = Level.stage
+	if not is_instance_valid(st) or not st is DeviceSelectionStage or not st.initialized or _choose_started:
+		return
+	var t: float = now()
+	if t - _choose_t < 1.0:
+		return
+	_choose_t = t
+	var k = choice_keeper()
+	var seen := str([k.playerId if k != null else "", k.isMovementDummy if k != null else null, st.playerIdByPeerDeviceId, lobby_rows(), st.clientOnlyMode,
+		Keepers.all.keepers.filter(func(x): return is_instance_valid(x)).map(func(x): return [x.playerId, x.peerId, x.deviceId, x.isMovementDummy])])
+	if seen != _choose_seen:
+		_choose_seen = seen
+		note("keeper choice (client)", seen)
+	if k == null:
+		return
+	if k.isMovementDummy:
+		# Joining a run under way. (In a loaded save's keeper choice the host
+		# picks for every player: there a client's own view of the keepers is
+		# off, with its own keeper missing and the host's twice, so the host
+		# scenario asks for the client's choice itself; t232_mp_load_host.)
+		if st.clientOnlyMode:
+			choose_keeper(false)
+	elif st.clientOnlyMode:
+		# Joining a run under way: this client starts itself.
+		_choose_started = true
+		note("keeper choice: joining the run as " + k.playerId)
+		st.clientStartRunSelected()
 
 
 # ---------------------------------------------------------------- world helpers

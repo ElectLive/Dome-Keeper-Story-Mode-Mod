@@ -542,7 +542,7 @@ func serialize() -> Dictionary:
 	var rock: Array = []
 	for c in magma:
 		rock.append([c.x, c.y])
-	Data.apply(SAVE_KEY, JSON.stringify({"seed": Level.levelSeed, "mass": cells, "sources": src, "magma": rock,
+	StoryNet.save_blob(SAVE_KEY, JSON.stringify({"seed": Level.levelSeed, "mass": cells, "sources": src, "magma": rock,
 		"heat": heat, "breaches": breaches, "recalls": recalls, "ocean_cells": ocean_cells, "boss_chamber_reached": boss_chamber_reached}))
 	return {"meta.priority": 9000, "meta.kind": "storylava"}
 
