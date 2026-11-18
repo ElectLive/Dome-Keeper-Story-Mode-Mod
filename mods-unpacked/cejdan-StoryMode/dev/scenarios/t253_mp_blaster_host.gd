@@ -11,9 +11,15 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/mp_scenario.gd"
 #                     (LevelStage.addGadgetUpgrade's grant)
 #   --early:          (with any of them) given the moment the client is in sync
 #   --bigdelta:       (with any of them) right behind a chunked Data delta
+#   --give=<gadget>:  (#261) another keeper gadget instead, given straight
+#                     (serverAddUpgrade, in either mode): probe, ...; the
+#                     client checks every key of it was there when it came
+#   --heldchunker:    (#261) the chunker holds a small delta whole behind a
+#                     queued one, as before #261, to show the keys come late
 # Pair: t253_mp_blaster_client.
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
+const OrderedChunker = preload("res://mods-unpacked/cejdan-StoryMode/net/ordered_chunker.gd")
 const TIMEOUT := 300
 
 
@@ -36,9 +42,16 @@ func run(h) -> void:
 		Data.apply("story.dev.pad", "x".repeat(20000))
 		Data.synchronizer.manual_tick()
 	var keepers: Array = Keepers.getAll()
+	var give: String = Story.user_arg("give", "suitblaster")
 	var path: String = "vanilla gadget" if vanilla else ("dev gear" if Story.has_user_arg("devgear") else "shop")
-	h.note("giving the Suit Blaster", path)
-	if vanilla:
+	if give != "suitblaster":
+		path = "given " + give
+	h.note("giving", [give, path])
+	var ahead0: int = OrderedChunker.sent_ahead
+	if give != "suitblaster":
+		for k in keepers:
+			GameWorld.serverAddUpgrade(k.playerId + "." + give, k.teamId)
+	elif vanilla:
 		for k in keepers:
 			GameWorld.serverAddUpgrade(k.playerId + ".suitblaster", k.teamId)
 	elif Story.has_user_arg("devgear"):
@@ -51,9 +64,17 @@ func run(h) -> void:
 		Data.apply("team1.inventory.money", 5000)
 		await h.wait(0.5)
 		GameWorld.buyUpgrade("team1.storysuitblaster", "team1", Keepers.first().playerId)
-	var all: bool = await h.until(func(): return keepers.all(func(k): return GameWorld.boughtUpgrades.has(k.playerId + ".suitblaster")), 10.0)
-	h.check("every keeper has the Suit Blaster (%s)" % path, all, keepers.map(func(k): return [k.playerId, GameWorld.boughtUpgrades.has(k.playerId + ".suitblaster")]))
+	var all: bool = await h.until(func(): return keepers.all(func(k): return GameWorld.boughtUpgrades.has(k.playerId + "." + give)), 10.0)
+	h.check("every keeper has the %s (%s)" % [give, path], all, keepers.map(func(k): return [k.playerId, GameWorld.boughtUpgrades.has(k.playerId + "." + give)]))
+	var ahead: int = OrderedChunker.sent_ahead - ahead0
+	h.note("Data keys sent ahead of queued Data (#261)", ahead)
 	await h.wait(4.0)
-	share("given", {"path": path, "players": keepers.map(func(k): return k.playerId)})
+	# The gadget's own Data keys (its property changes, per team and player).
+	var keys: Array = []
+	for key in Data.values:
+		if String(key).contains("." + give + "."):
+			keys.append(key)
+	h.note("%s keys" % give, keys)
+	share("given", {"path": path, "give": give, "keys": keys, "players": keepers.map(func(k): return k.playerId)})
 	await h.shot("host_blaster")
 	await host_wait_clients_left(h, 90.0)
