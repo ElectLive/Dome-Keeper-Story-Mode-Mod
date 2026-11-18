@@ -61,6 +61,8 @@ const EXTENSIONS: Array[String] = [
 	"content/caves/bombcave/CaveBomb.gd",
 	"content/gadgets/blastMining/Mine.gd",
 	"systems/camera/KeeperCamera.gd",
+	"content/gadgets/droneyard/TransportDrone.gd",
+	"content/gadgets/droneyard/Squidley.gd",
 ]
 
 # Scripts that name a class_name of EXTENSIONS in a type: extends, a typed
@@ -137,6 +139,8 @@ const SCENES: Array[String] = [
 	"res://content/dome/dome3/Dome3.tscn",
 	"res://content/gadgets/blastMining/Mine.tscn",
 	"res://content/gadgets/drillbot/Drillbot.tscn",
+	"res://content/gadgets/droneyard/Squidley.tscn",
+	"res://content/gadgets/droneyard/TransportDrone.tscn",
 	"res://content/gadgets/minedriller/Drill.tscn",
 	"res://content/gadgets/minedriller/SideDriller.tscn",
 	"res://content/gadgets/mineraltree/MineralTree.tscn",
