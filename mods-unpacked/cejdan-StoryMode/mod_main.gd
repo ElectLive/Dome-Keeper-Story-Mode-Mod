@@ -93,6 +93,10 @@ func _ready():
 	var gas = load("res://mods-unpacked/cejdan-StoryMode/gas/gas_director.gd").new()
 	gas.name = "GasDirector"
 	add_child(gas)
+	# Online multiplayer (#225): the run setup clients don't get from vanilla.
+	var net = load("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd").new()
+	net.name = "StoryNet"
+	add_child(net)
 	# Dev-only: F10 jumps the keeper to the next gas pocket; needs `-- --gas`.
 	var gas_finder = load("res://mods-unpacked/cejdan-StoryMode/gas/dev_gas_finder.gd").new()
 	gas_finder.name = "DevGasFinder"

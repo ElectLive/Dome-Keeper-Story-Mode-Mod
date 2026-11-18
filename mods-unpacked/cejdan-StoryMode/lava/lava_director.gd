@@ -13,6 +13,7 @@ const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const MODE_FLAG := "cejdan-storymode"
 const FIELD_NAME := "StoryLavaField"
 const Chains = preload("res://mods-unpacked/cejdan-StoryMode/map/chains.gd")
+const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 
 
 func _process(_delta: float) -> void:
@@ -28,6 +29,9 @@ func _process(_delta: float) -> void:
 	if not Level.stage is LevelStage:
 		return
 	if not _wants_lava():
+		return
+	# A client builds its field from the host's map facts (#225).
+	if not StoryNet.map_meta_ready(map):
 		return
 	var field := LavaField.new()
 	field.name = FIELD_NAME

@@ -37,6 +37,8 @@ func init() -> void:
 
 
 func afterInitialized() -> void:
+	# Every player sees the money (#225); the rest is the host's.
+	Level.addHudElement(load(Story.MOD_DIR + "hud/MoneyHud.tscn"), "team1")
 	if not multiplayer.is_server():
 		return
 	# The level seed goes into the map data, which every save writes out, so a
@@ -72,7 +74,6 @@ func afterInitialized() -> void:
 		Data.listen(self, "team1.inventory." + m)
 	# Translators installed at the dome (#93).
 	Data.listen(self, "team1.inventory.translator")
-	Level.addHudElement(load(Story.MOD_DIR + "hud/MoneyHud.tscn"), "team1")
 	if OS.has_feature("editor") and Story.has_user_arg("horror-defeated"):
 		_dev_horror_defeated()
 
