@@ -9,6 +9,7 @@ const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd"
 const MapConfig = preload("res://mods-unpacked/cejdan-StoryMode/data/map_config.gd")
 const Metal = preload("res://mods-unpacked/cejdan-StoryMode/data/metal.gd")
 const LavaData = preload("res://mods-unpacked/cejdan-StoryMode/data/lava.gd")
+const GasData = preload("res://mods-unpacked/cejdan-StoryMode/data/gas.gd")
 
 # Special tiles a gate never swallows: gadget, relic, relic switch, power core.
 const KEEP_IDS: Array = [3, 4, 6, 7]  # Data.TILE_GADGET, TILE_RELIC, TILE_RELIC_SWITCH, TILE_SUPPLEMENT
@@ -32,6 +33,8 @@ static func after_resources(_gen, map_data, rand: RandomNumberGenerator) -> void
 	place_bones(map_data, _sub_rand(rand, "bones"))
 	place_gate_gold(map_data, _sub_rand(rand, "gategold"))
 	place_ocean(map_data, rand)
+	# Gas caverns (#201) go in last, with their own generator: nothing above moves.
+	place_gas_caverns(map_data, _sub_rand(rand, "gascaverns"))
 
 
 # A generator of its own for one placement step, seeded from the map's.
@@ -336,6 +339,87 @@ static func _pool_cell_ok(map_data, c: Vector2i, taken: Dictionary, mine: Dictio
 			if taken.has(n) or map_data.get_biomev(n) < 0:
 				return false
 			# Plain rock and mineral tiles make walls; anything else is too close.
+			var r: int = map_data.get_resourcev(n)
+			if r != Data.TILE_DIRT_START and Minerals.by_tile_id(r) == "":
+				return false
+	return true
+
+
+# Sealed gas caverns (#201): enclosed caverns from B2 down to above the lava
+# ocean, carved here as open cells and filled with gas by the gas field when
+# the run starts. Grown like the lava pools (a seeded random walk through
+# plain rock, wider than tall), keeping GasData.CAVERN_GAP tiles of rock from
+# anything open or special, lava pools included. Called last, with a generator
+# of its own, so everything placed before it is where it was. The cells go in
+# map_data's "story_gas_caverns" meta (a list of caverns).
+static func place_gas_caverns(map_data, rand: RandomNumberGenerator) -> Array:
+	var ocean: Dictionary = map_data.get_meta("story_ocean", {})
+	var y_limit: int = (int(ocean["ceiling"]) - 3) if not ocean.is_empty() else (1 << 20)
+	var cells: Array = map_data.get_used_biome_cells()
+	cells.sort()
+	var y_top: int = 1 << 20
+	var y_bottom: int = -(1 << 20)
+	var rock: Array = []
+	for c: Vector2i in cells:
+		if map_data.get_biomev(c) >= GasData.CAVERN_START_BIOME and c.y < y_limit:
+			y_top = mini(y_top, c.y)
+			y_bottom = maxi(y_bottom, c.y)
+			if map_data.get_resourcev(c) == Data.TILE_DIRT_START:
+				rock.append(c)
+	var caverns: Array = []
+	if rock.is_empty():
+		map_data.set_meta("story_gas_caverns", caverns)
+		return caverns
+	var taken: Dictionary = {}
+	var span: float = maxf(1.0, float(y_bottom - y_top))
+	var seeds: Array = rock.duplicate()
+	_shuffle(seeds, rand)
+	var budget: float = 0.0
+	for start: Vector2i in seeds:
+		var depth: float = clampf(float(start.y - y_top) / span, 0.0, 1.0)
+		budget += 1.0 / lerpf(GasData.CAVERN_ROCK_PER_CAVERN[0], GasData.CAVERN_ROCK_PER_CAVERN[1], depth)
+		if budget < 1.0:
+			continue
+		if not _cavern_cell_ok(map_data, start, taken, {}, y_limit):
+			continue
+		var size: int = int(round(lerpf(GasData.CAVERN_SIZE[0], GasData.CAVERN_SIZE[1], depth)))
+		var cavern: Array = [start]
+		var mine: Dictionary = {start: true}
+		var dirs: Array = [Vector2i(1, 0), Vector2i(1, 0), Vector2i(-1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+		for attempt in size * 8:
+			if cavern.size() >= size:
+				break
+			var from: Vector2i = cavern[rand.randi() % cavern.size()]
+			var n: Vector2i = from + dirs[rand.randi() % dirs.size()]
+			if mine.has(n) or not _cavern_cell_ok(map_data, n, taken, mine, y_limit):
+				continue
+			cavern.append(n)
+			mine[n] = true
+		if cavern.size() < 3:
+			continue
+		budget -= 1.0
+		for c: Vector2i in cavern:
+			map_data.set_resourcev(c, Data.TILE_EMPTY)
+			taken[c] = true
+		caverns.append(cavern)
+	map_data.set_meta("story_gas_caverns", caverns)
+	return caverns
+
+
+# May cell `c` become part of a gas cavern? Plain rock in a gas biome above the
+# ocean, with only plain rock or minerals (or the cavern itself) within
+# CAVERN_GAP tiles.
+static func _cavern_cell_ok(map_data, c: Vector2i, taken: Dictionary, mine: Dictionary, y_limit: int) -> bool:
+	if map_data.get_resourcev(c) != Data.TILE_DIRT_START or map_data.get_biomev(c) < GasData.CAVERN_START_BIOME or c.y >= y_limit:
+		return false
+	var g: int = GasData.CAVERN_GAP
+	for ox in range(-g, g + 1):
+		for oy in range(-g, g + 1):
+			var n: Vector2i = c + Vector2i(ox, oy)
+			if mine.has(n):
+				continue
+			if taken.has(n) or map_data.get_biomev(n) < 0:
+				return false
 			var r: int = map_data.get_resourcev(n)
 			if r != Data.TILE_DIRT_START and Minerals.by_tile_id(r) == "":
 				return false

@@ -29,6 +29,8 @@ var mass: Dictionary = {}          # Vector2i -> float, cells holding gas
 var rock: Dictionary = {}          # Vector2i -> true, gas rock still solid
 var sources: Dictionary = {}       # Vector2i -> float, gas a breached cell still holds
 var breaches := 0
+var caverns: Array = []            # Array of Array[Vector2i]: sealed caverns filled at run start (#201)
+var caverns_skipped := 0           # caverns left empty because something opened their wall
 var toxin := 0.0                   # the keeper's toxin bar, 0..TOXIN_MAX (#202)
 var breathing := 0.0               # the densest gas the keeper is in right now
 var gassed := 0                    # times the bar filled this run
@@ -66,6 +68,7 @@ func setup(p_map) -> void:
 	_lava = map.get_node_or_null(LAVA_FIELD)
 	if not _restore(str(Data.ofOr(SAVE_KEY, ""))):
 		_place_pockets()
+		_fill_caverns()
 	map.tile_destroyed.connect(_on_tile_destroyed)
 	add_to_group("saveable")
 	if DisplayServer.get_name() != "headless":
@@ -122,6 +125,35 @@ func _place_pockets() -> void:
 				cells.append(n)
 		for c in cells:
 			rock[c] = true
+
+
+# Fills the sealed caverns the map generator carved (#201) with gas, already
+# at rest: a cell k rows above its cavern's lowest row holds 1 + COMPRESS x k,
+# exactly where the flow balances (the upper of two stacked cells holds
+# COMPRESS more; cells side by side hold the same), so nothing moves and the
+# cavern sleeps from the first step. A cavern something else opened (a cave
+# placed at run start) is left empty.
+func _fill_caverns() -> void:
+	for cavern in map.tileData.get_meta("story_gas_caverns", []):
+		var set := {}
+		for c in cavern:
+			set[Vector2i(c)] = true
+		var sealed := true
+		var bottom: int = -(1 << 20)
+		for c in set:
+			bottom = maxi(bottom, c.y)
+			if not _is_open(c):
+				sealed = false
+			for d in DIRS:
+				if not set.has(c + d) and map.is_tile_empty(c + d):
+					sealed = false
+		if not sealed:
+			caverns_skipped += 1
+			continue
+		for c in set:
+			mass[c] = 1.0 + GasData.COMPRESS * float(bottom - c.y)
+		caverns.append(set.keys())
+	wake_all()
 
 
 func add_pocket(cells: Array) -> void:
@@ -562,7 +594,7 @@ func serialize() -> Dictionary:
 	for c in rock:
 		rocks.append([c.x, c.y])
 	Data.apply(SAVE_KEY, JSON.stringify(_save_extra({"seed": Level.levelSeed, "mass": cells, "sources": src, "rock": rocks,
-		"breaches": breaches, "vented": vented, "faded": faded, "burned": burned, "ignitions": ignitions})))
+		"breaches": breaches, "vented": vented, "faded": faded, "caverns": caverns.size(), "burned": burned, "ignitions": ignitions})))
 	return {"meta.priority": 9001, "meta.kind": "storygas"}
 
 

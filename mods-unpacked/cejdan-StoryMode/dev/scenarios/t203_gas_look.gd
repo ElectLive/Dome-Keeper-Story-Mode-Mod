@@ -54,6 +54,7 @@ func run(h) -> void:
 	lava.mass.clear()
 	lava.shown.clear()
 	field.rock.clear()
+	field.mass.clear()
 	var found := false
 	for oy in range(20, 110):
 		for ox in range(-40, 30):

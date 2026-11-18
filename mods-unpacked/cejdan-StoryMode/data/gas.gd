@@ -17,6 +17,19 @@ const POCKET_GROW_ROWS := 40.0
 const VOLUME_PER_ROCK_CELL := 3.0      # cells of gas released by one gas rock tile
 const CRACK_SECONDS := 0.18            # a breached pocket bursts: each gas rock cell next to a broken one breaks this much later
 
+# --- sealed caverns (#201) -----------------------------------------------------
+# Enclosed caverns already full of gas, carved at map generation from biome
+# index CAVERN_START_BIOME (1 = B2) down to above the lava ocean. One cavern per
+# CAVERN_ROCK_PER_CAVERN[0] plain rock cells at the top of that range, falling
+# evenly to [1] at its bottom; CAVERN_SIZE[0] cells at the top, growing evenly
+# to [1] at the bottom. CAVERN_GAP rock tiles are kept between a cavern and
+# anything open or special (lava pools, the gate, metal, story tiles, other
+# caverns).
+const CAVERN_START_BIOME := 1
+const CAVERN_ROCK_PER_CAVERN := [700.0, 380.0]
+const CAVERN_SIZE := [5, 20]
+const CAVERN_GAP := 2
+
 # --- the gas -------------------------------------------------------------------
 const TICK := 0.02                     # seconds per simulation step
 const COMPRESS := 0.5                  # how much more the upper of two full cells holds
