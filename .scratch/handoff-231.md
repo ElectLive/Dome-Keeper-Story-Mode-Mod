@@ -12,7 +12,7 @@ Branch `ticket/231-mp-splitscreen` (worktree wt-mp-242), stacked on #251's PR #2
 ## Done
 - Per local keeper: heat, passive heat, recall spot + recall, heat bar, toxin, fire heat, toxin bar, vignette (world rect in its view), muffle = worst keeper, gas look per view, heat lines, depth watch (all keepers), boss: overheated(keeper), hearts over each local keeper, hit flash per view, chamber camera per keeper.
 - Lava late on P2: lava drew only cells in the first viewport's rect; now the union of every split view (chains, pleas too). Dev `single_view_cull` / `--oldcull` shows the old bug.
-- Aux laser: station 2 had no laser until Second Weapon was bought. Story Mode now grants it when the team has 2+ keepers (Storymode._second_laser).
+- Aux laser: station 2 had no laser until Second Weapon was bought. The free grant (Storymode._second_laser) was dropped later at the user's call: Second Weapon stays vanilla's shop upgrade.
 - Vanilla run after a Story run in the same loadout got Story lava/gas (stale MODE_FLAG in modeConfig): mod_main.prepareGameMode erases it.
 - Black screen on restart: not reproduced (pause-menu restart single/split +- welcome log, lose -> Another Run split/single/vanilla, title path, 1920x1080). User's log 2026-11-17 08:05 ends at "Start Stage: loadout" after a lost splitscreen run (main build).
 

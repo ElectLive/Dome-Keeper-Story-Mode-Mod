@@ -52,7 +52,7 @@ func restart(h) -> void:
 	h.check("new map", Level.levelSeed != seed0, [seed0, Level.levelSeed])
 	h.check("story mode", Story.is_story())
 	var nk: int = Keepers.getAllOfTeam("team1").size()
-	h.check("second laser only with a second keeper", GameWorld.boughtUpgrades.has("team1.domesecondweapon") == (nk > 1) and Level.getDome("team1").stations[1].getControlledWeapons().size() == (1 if nk > 1 else 0),
+	h.check("no second laser until the team buys it (vanilla's Second Weapon)", not GameWorld.boughtUpgrades.has("team1.domesecondweapon") and Level.getDome("team1").stations[1].getControlledWeapons().size() == 0,
 		{"keepers": nk, "station 2 lasers": Level.getDome("team1").stations[1].getControlledWeapons().size()})
 	var ks: Array = h.local_keepers()
 	h.note("keepers after", ks.map(func(k): return [k.playerId, k.deviceId, Level.map.getTileCoord(k.global_position)]))

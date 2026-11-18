@@ -1,8 +1,11 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 # #231: the second keeper's laser in splitscreen. With two keepers the dome has
-# a secondary station, whose laser vanilla sells in the shop (Second Weapon);
-# Story Mode gives it from the start. Keeper 2 (the gamepad) takes the
+# a secondary station, whose laser vanilla sells in the shop (Second Weapon,
+# behind Sand Repair). Story Mode keeps that (the free laser of the first #231
+# pass is gone): the team has no second laser until it buys one, the shop
+# offers it, and the team buys it (money, sand and water set by the harness;
+# the map must hold sand and water to mine). Keeper 2 (the gamepad) takes the
 # secondary station with its own buttons and fires: its laser moves and fires
 # while keeper 1's stays idle; then both fire at once.
 
@@ -32,6 +35,12 @@ func run(h) -> void:
 	})
 	h.check("the dome has a secondary station", dome.stations.size() > 1 and dome.stations[1].visible)
 	h.note("lasers before the second weapon", [dome.stations[0].getControlledWeapons().size(), dome.stations[1].getControlledWeapons().size()])
+	h.check("no free second laser: vanilla's Second Weapon is still to buy", not gw.boughtUpgrades.has(id) and dome.stations[1].getControlledWeapons().is_empty() and not Data.ofOr("team1.dome.secondaryweapon", false),
+		{"bought": gw.boughtUpgrades.has(id), "station 2 lasers": dome.stations[1].getControlledWeapons().size()})
+	# Sand (cobalt) and water to mine for it.
+	var sand_tiles: int = Level.map.tileData.get_resource_cells_by_id(Data.TILE_SAND).size()
+	var water_tiles: int = Level.map.tileData.get_resource_cells_by_id(Data.TILE_WATER).size()
+	h.check("the map holds sand and water to mine", sand_tiles > 0 and water_tiles > 0, {"sand tiles": sand_tiles, "water tiles": water_tiles})
 	# The way to the second weapon in the shop: its predecessor, then it.
 	h.set_inv("money", 5000)
 	h.set_inv("sand", 3)
@@ -48,8 +57,21 @@ func run(h) -> void:
 	await h.wait(1.0)
 	await h.pad_press(1, "ui_cancel")
 	await h.wait(1.0)
-	# Story Mode gives a team of two its second laser from the start (#231).
-	h.check("the second laser comes with the second keeper", gw.boughtUpgrades.has(id) and Data.ofOr("team1.dome.secondaryweapon", false), Data.ofOr("team1.dome.secondaryweapon", null))
+	# The shop's way to it: the Health Meter, then Sand Repair (a repeatable
+	# predecessor: it counts while it can be bought), then Second Weapon.
+	var chain: Dictionary = {}
+	h.check("the Health Meter is in the shop", gw.isUpgradeAddable("team1.domehealthmeter") or gw.boughtUpgrades.has("team1.domehealthmeter"))
+	if not gw.boughtUpgrades.has("team1.domehealthmeter"):
+		gw.buyUpgrade("team1.domehealthmeter", "team1", k2.playerId)
+		await h.wait(0.5)
+	for u in ["team1.domehealthmeter", "team1.domesandrepair", id]:
+		chain[u] = {"bought": gw.boughtUpgrades.has(u), "addable": gw.isUpgradeAddable(u), "cost": gw.upgrades.get(u, {}).get("cost", null)}
+	h.note("the way to the second weapon", chain)
+	h.check("Sand Repair and Second Weapon are in the shop", gw.isUpgradeAddable("team1.domesandrepair") and gw.isUpgradeAddable(id), chain)
+	h.check("the team can afford Second Weapon", gw.canAfford(gw.upgrades.get(id, {}).get("cost", {}), "team1"), gw.upgrades.get(id, {}).get("cost", null))
+	gw.buyUpgrade(id, "team1", k2.playerId)
+	await h.wait(1.0)
+	h.check("Second Weapon bought: the secondary station has its laser", gw.boughtUpgrades.has(id) and Data.ofOr("team1.dome.secondaryweapon", false), {"bought": gw.boughtUpgrades.has(id), "money": Data.of("team1.inventory.money"), "water": Data.of("team1.inventory.water")})
 	await h.wait(1.0)
 	var w1: Array = dome.stations[0].getControlledWeapons()
 	var w2: Array = dome.stations[1].getControlledWeapons()

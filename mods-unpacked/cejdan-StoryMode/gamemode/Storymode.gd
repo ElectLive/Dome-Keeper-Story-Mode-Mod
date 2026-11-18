@@ -67,13 +67,6 @@ func afterInitialized() -> void:
 	if not GameWorld.isUpgradeLimitAvailable("team1.storyonly"):
 		GameWorld.setUpgradeLimitAvailable("team1.storyonly")
 		GameWorld.updateAvailableUpgrades("team1")
-	# Every keeper's laser (#231): with two or more keepers vanilla gives the
-	# dome a secondary station whose laser is a shop upgrade (Second Weapon,
-	# behind Sand Repair). In Story Mode the team has it from the start, so a
-	# second keeper's station fires as soon as there is one.
-	_second_laser()
-	if not Keepers.keepers_changed.is_connected(_second_laser):
-		Keepers.keepers_changed.connect(_second_laser)
 	if not Data.has(MONEY):
 		Data.apply(MONEY, 0)
 		Data.apply("team1.inventory.iron", 0)
@@ -87,28 +80,6 @@ func afterInitialized() -> void:
 	Data.listen(self, "team1.inventory.translator")
 	if OS.has_feature("editor") and Story.has_user_arg("horror-defeated"):
 		_dev_horror_defeated()
-
-
-const SECOND_LASER := "domesecondweapon"
-
-
-func _second_laser() -> void:
-	# (The level stage is still being built here: StageManager.isInLevel() is
-	# false yet, so this run's own mode node and dome are what count.)
-	if not is_inside_tree() or not multiplayer.is_server() or not Story.is_story() or Level.mode != self or not Level.domesByTeamId.has("team1"):
-		return
-	if Keepers.getAllOfTeam("team1").size() < 2 or GameWorld.boughtUpgrades.has("team1." + SECOND_LASER):
-		return
-	if not GameWorld.upgrades.has("team1." + SECOND_LASER):
-		return
-	GameWorld.serverAddUpgrade("team1." + SECOND_LASER, "team1")
-	GameWorld.updateAvailableUpgrades("team1")
-	ModLoaderLog.info("Second laser given: the team has %d keepers" % Keepers.getAllOfTeam("team1").size(), Story.LOG)
-
-
-func _exit_tree() -> void:
-	if Keepers.keepers_changed.is_connected(_second_laser):
-		Keepers.keepers_changed.disconnect(_second_laser)
 
 
 # The keeper's own log (#123): Halcyon's welcome memo, a moment after the run
