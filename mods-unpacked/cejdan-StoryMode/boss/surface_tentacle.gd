@@ -17,6 +17,13 @@ extends "res://content/monster/Monster.gd"
 # Velle's great eye is its own monster: boss/great_eye.gd.
 #
 # Built in code by make(); nothing here needs a scene file.
+#
+# Online (#230) the host's tentacle is the real one. A client builds a
+# `puppet` copy (make_copy(), from net_record()): the same id, so the client's
+# own dome weapon hits reach the host's tentacle through vanilla's monster
+# synchronizer, which also brings the host's health and the death back. The
+# copy draws itself on its own clocks and takes its slams and lost eyes from
+# the host (net_apply()); it never decides anything, nor hurts the dome.
 
 const Pix = preload("res://mods-unpacked/cejdan-StoryMode/boss/pix.gd")
 const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
@@ -52,6 +59,7 @@ var _cracks: Array = []
 var _burst_flash: float = 0.0
 var _hitbox: CollisionShape2D = null
 var _did_hit: bool = false
+var puppet: bool = false
 
 const EMERGE_TIME := 0.75
 const SLAM_TELE := 1.0
@@ -295,12 +303,12 @@ func subProcess(delta: float) -> void:
 		if slam_t >= SLAM_TELE + SLAM_STRIKE + SLAM_HOLD + SLAM_BACK:
 			slam_t = -1.0
 			next_slam = Boss.FINALE_SLAM_EVERY * randf_range(0.8, 1.25) * fury
-	else:
+	elif not puppet:
 		next_slam -= delta
 		if next_slam <= 0.0:
 			_did_hit = false
 			slam_t = 0.0
-	if emerge_t >= EMERGE_TIME and eyes_left > 0:
+	if emerge_t >= EMERGE_TIME and eyes_left > 0 and not puppet:
 		pop_t += delta
 		if pop_t >= Boss.FINALE_EYE_POP_EVERY:
 			pop_t = 0.0
@@ -340,16 +348,70 @@ func _pop_eye() -> void:
 
 func _hit_dome() -> void:
 	var dome = Level.getDome(teamId)
-	if dome == null or not multiplayer.is_server():
+	if dome == null or (not multiplayer.is_server() and not puppet):
 		return
 	slams += 1
-	dome.requestMeleeDamage(int(Boss.FINALE_SLAM_DAMAGE), to_global(tip()), self)
+	if not puppet:
+		dome.requestMeleeDamage(int(Boss.FINALE_SLAM_DAMAGE), to_global(tip()), self)
 	InputSystem.shake(16.0, 0.4, 20.0, global_position)
 	Sfx.play("whip", -2.0, 1.0)
 
 
 func handleDamage():
 	flash = 0.1
+
+
+# ---------------------------------------------------------------- online (#230)
+
+# A client's copy takes no damage itself: the hit goes to the host (vanilla's
+# weapon sends it), whose health comes back through the synchronizer.
+func hit(source: String, damage: float, stun: float, immediateStun: = false):
+	if puppet:
+		if hittable:
+			flash = maxf(flash, 0.05)
+		return
+	super(source, damage, stun, immediateStun)
+
+
+# What a client needs to build this tentacle and draw it: [kind, id, dead,
+# place, looks..., state].
+func net_record() -> Array:
+	return ["tentacle", UID, dead, global_position, crack_seed, height, eyes_total, seed_f, dome_dir,
+		PackedFloat32Array([slam_t, eyes_left, emerge_t, time])]
+
+
+# A client's copy of the host's tentacle from net_record(), not yet in the tree.
+static func make_copy(r: Array):
+	var m = make(r[3], 0.0, int(r[4]))
+	m.puppet = true
+	m.UID = int(r[1])
+	m.height = float(r[5])
+	m.eyes_total = int(r[6])
+	m.eyes_left = m.eyes_total
+	m.seed_f = float(r[7])
+	m.dome_dir = float(r[8])
+	m._hitbox.shape.size = Vector2(22.0, m.height)
+	m._hitbox.position = Vector2(0, -m.height * 0.5)
+	return m
+
+
+func net_apply(d: PackedFloat32Array) -> void:
+	if d.size() < 4 or dead:
+		return
+	var hs: float = d[0]
+	# (A slam already near its end on the host is the tail of one this copy
+	# has just finished, not a new one.)
+	if hs >= 0.0 and (slam_t >= 0.0 or hs < SLAM_TELE + SLAM_STRIKE + SLAM_HOLD) and (slam_t < 0.0 or absf(slam_t - hs) > 0.25):
+		if slam_t < 0.0:
+			# A new slam: its blow is still to come unless it is long past.
+			_did_hit = hs > SLAM_TELE + SLAM_STRIKE + 0.2
+		slam_t = hs
+	while eyes_left > int(d[1]):
+		_pop_eye()
+	if emerge_t < EMERGE_TIME and absf(emerge_t - d[2]) > 0.3:
+		emerge_t = d[2]
+	if absf(time - d[3]) > 0.5:
+		time = d[3]
 
 
 func animateDeath():

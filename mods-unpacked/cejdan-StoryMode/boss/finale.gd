@@ -18,6 +18,16 @@ extends Node2D
 # among them from that side or from above), tear the remains apart and thank
 # the keeper in their own language (runes unless translators are installed).
 # Then `finished` fires and the boss director plays the saved ending.
+#
+# With a team (#230, online) the host runs the battle. Any keeper taking the
+# dome's weapon ends the breath (a client tells the host). A client builds a
+# `puppet` finale: it follows the host's steps (net_state() -> net_apply())
+# and keeps a copy of each of the host's monsters (net_monsters() ->
+# apply_monsters(); boss/surface_tentacle.gd), which its own dome weapon can
+# hit. Every monster is put in vanilla's monster synchronizer under the same
+# id on every peer, so a client's hits reach the host's monster, and its
+# health and death come back. The cracks, the fall, the monsters' arrival and
+# their thanks play on every instance.
 
 const Boss = preload("res://mods-unpacked/cejdan-StoryMode/data/boss.gd")
 const BossText = preload("res://mods-unpacked/cejdan-StoryMode/data/boss_text.gd")
@@ -26,6 +36,7 @@ const Sfx = preload("res://mods-unpacked/cejdan-StoryMode/boss/sfx.gd")
 const TENTACLE := "res://mods-unpacked/cejdan-StoryMode/boss/surface_tentacle.gd"
 const FLYER := "res://mods-unpacked/cejdan-StoryMode/boss/eye_flyer.gd"
 const GREAT := "res://mods-unpacked/cejdan-StoryMode/boss/great_eye.gd"
+const StoryNet = preload("res://mods-unpacked/cejdan-StoryMode/net/story_net.gd")
 
 signal finished
 signal step_changed(step: String)
@@ -66,6 +77,11 @@ var _clock_fallback: bool = false
 var _idle_ms: float = 0.0     # real ms of the breath spent walking about
 static var _alarm_loud: AudioStream = null   # the game's own alarm, while ours stands in
 var _idle_last: int = -1
+# Online (#230).
+var puppet: bool = false      # a client's copy: follows the host's battle
+var _copies: Dictionary = {}  # a client's monsters, by the host's id
+var _dropped: bool = false
+var _net_time: float = -1.0
 
 
 func setup() -> void:
@@ -73,13 +89,15 @@ func setup() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_rng.randomize()
 	unit_hp = Boss.FINALE_TENTACLE_HP
-	load(TENTACLE).register(Boss.FINALE_TENTACLE_HP)
-	load(GREAT).register(Boss.FINALE_EYE_HP)
-	load(FLYER).register(Boss.FINALE_FLYER_HP)
 	fall_side = 1.0 if _rng.randf() < 0.5 else -1.0
-	# The dome goes to battle stations, as for a wave.
-	Data.apply("team1.monsters.wavepresent", true)
-	Data.apply("team1.monsters.wavebattle", true)
+	if not puppet:
+		# (A client gets the monsters' data and the battle stations through Data.)
+		load(TENTACLE).register(Boss.FINALE_TENTACLE_HP)
+		load(GREAT).register(Boss.FINALE_EYE_HP)
+		load(FLYER).register(Boss.FINALE_FLYER_HP)
+		# The dome goes to battle stations, as for a wave.
+		Data.apply("team1.monsters.wavepresent", true)
+		Data.apply("team1.monsters.wavebattle", true)
 	# The breath is silent: no wave-start gong riser (the game plays it when a
 	# wave begins), and the blinking alarm is turned down for the bells.
 	for p in Audio.soundPlayers:
@@ -201,6 +219,7 @@ func _spawn_round(i: int) -> void:
 		great.fury = fury
 		add_child(great)
 		alive.append(great)
+		_net_register(great)
 		_slow(0.3, 0.35)
 
 
@@ -221,11 +240,12 @@ func _spawn(pos: Vector2, dome_x: float) -> void:
 	m.eye_freed.connect(_eye_freed)
 	add_child(m)
 	alive.append(m)
+	_net_register(m)
 
 
 # An eye tears free of a living tentacle and takes to the sky over the dome.
 func _eye_freed(at: Vector2) -> void:
-	if not step.begins_with("round") or GameWorld.lost:
+	if puppet or not step.begins_with("round") or GameWorld.lost:
 		return
 	var d = _dome()
 	# Its place: on the side it came from, higher with each one already up there.
@@ -236,6 +256,7 @@ func _eye_freed(at: Vector2) -> void:
 	f.fury = fury
 	add_child(f)
 	alive.append(f)
+	_net_register(f)
 	flyers_made += 1
 
 
@@ -268,7 +289,7 @@ func living() -> int:
 
 func _physics_process(delta: float) -> void:
 	if step == "breath":
-		if not GameWorld.lost:
+		if not GameWorld.lost and not puppet:
 			_breath()
 		return
 	if GameWorld.paused or GameWorld.lost:
@@ -304,13 +325,13 @@ func _physics_process(delta: float) -> void:
 				var at: Vector2 = to_local(_ground(offs[_rng.randi() % offs.size()]))
 				_dust.append({"p": at + Vector2(_rng.randf_range(-14, 14), 0), "v": Vector2(_rng.randf_range(-30, 30), _rng.randf_range(-110, -40) * (0.5 + t / RUMBLE)),
 					"life": _rng.randf_range(0.3, 0.7), "col": Color("3b2f44")})
-			if t >= RUMBLE:
+			if t >= RUMBLE and not puppet:
 				_spawn_round(round_i + 1)
 				if round_i == SPOTS.size() - 1:
 					Sfx.play("roar", 0.0, 0.75)
 				_set_step("round%d" % (round_i + 1))
 		"round1", "round2", "round3":
-			if t > 1.5 and living() == 0:
+			if t > 1.5 and living() == 0 and not puppet:
 				if round_i < SPOTS.size() - 1:
 					_set_step("lull")
 				else:
@@ -322,7 +343,9 @@ func _physics_process(delta: float) -> void:
 						great.fall(fall_side)
 					_set_step("fall")
 		"fall":
-			if not is_instance_valid(great):
+			if puppet:
+				pass
+			elif not is_instance_valid(great):
 				_call_allies()
 				_set_step("allies")
 			elif great.fallen and great.fall_t >= great.FALL_SWAY + great.FALL_DROP + FALL_REST:
@@ -331,11 +354,13 @@ func _physics_process(delta: float) -> void:
 				_set_step("allies")
 		"allies":
 			_move_allies(delta)
-			if t >= 7.5:
+			if t >= 7.5 and not puppet:
 				_set_step("thanks")
 		"thanks":
 			_move_allies(delta)
-			if _thanks_i < BossText.THANKS.size() and t >= 0.4 + _thanks_i * 3.6:
+			if puppet:
+				pass
+			elif _thanks_i < BossText.THANKS.size() and t >= 0.4 + _thanks_i * 3.6:
 				_say(_thanks_i)
 				_thanks_i += 1
 			if t >= 0.4 + BossText.THANKS.size() * 3.6 + 0.6:
@@ -476,10 +501,14 @@ func _toll_rumble(delta: float) -> void:
 			_burst(2, 1.0)
 	_toll_grow += (goal - _toll_grow) * minf(1.0, delta * 10.0)
 	_toll_flash = maxf(0.0, _toll_flash - delta * 1.6)
-	if beat >= Boss.FINALE_INTRO_BEATS:
+	if beat >= Boss.FINALE_INTRO_BEATS and not _dropped:
 		# The drop: they break out with the music.
 		InputSystem.shake(20.0, 0.7, 16.0)
 		_burst(30, 1.6)
+		if puppet:
+			# (The host's tentacles arrive with its next word.)
+			_dropped = true
+			return
 		_spawn_round(0)
 		_set_step("round1")
 
@@ -530,3 +559,117 @@ func _draw() -> void:
 			var jit: float = sin(t * 47.0 + i * 3.0) * grow
 			Pix.ellipse(self, p + Vector2(jit, 1), (16.0 if big else 11.0) * (0.5 + 0.5 * grow), heave, Color("2a2130"), -1.0, 0.0)
 			draw_rect(Rect2((p + Vector2(-2, -heave)).round(), Vector2(4, 1)), Color(Pix.VIOLET_LIGHT, glow))
+
+
+# ---------------------------------------------------------------- online (#230)
+
+static func _synchronizer():
+	var mm = Level.monstersByTeamId.get("team1") if Level.monstersByTeamId != null else null
+	return mm.monsterSynchronizer if mm != null and is_instance_valid(mm) else null
+
+
+# Puts monster `m` in vanilla's monster synchronizer, under the same id on
+# every peer: a client's weapon hits it there, and the host's health and
+# death reach the client's copy.
+func _net_register(m) -> void:
+	if not StoryNet.online():
+		return
+	var sync = _synchronizer()
+	if sync == null:
+		return
+	sync.monsters[m.UID] = m
+	m.died.connect(sync._on_monster_died.bind(m))
+
+
+# The host's battle for clients: the step and its clock, and what the copies
+# need to look the same.
+func net_state() -> Array:
+	return [Time.get_ticks_msec() / 1000.0, step, t, round_i, fury, fall_side, eye_at, _thanks_i, bells_by, _crack_seeds, flyers_made]
+
+
+# Every monster of the battle still here: net_record() of each.
+func net_monsters() -> Array:
+	var out: Array = []
+	for m in alive:
+		if is_instance_valid(m) and m.has_method("net_record"):
+			out.append(m.net_record())
+	return out
+
+
+func net_apply(d: Array) -> void:
+	if not puppet or d.size() < 11 or float(d[0]) < _net_time:
+		return
+	_net_time = float(d[0])
+	var s: String = str(d[1])
+	round_i = int(d[3])
+	fury = float(d[4])
+	fall_side = float(d[5])
+	eye_at = d[6]
+	bells_by = str(d[8])
+	for k in d[9]:
+		_crack_seeds[k] = d[9][k]
+	flyers_made = int(d[10])
+	if s != step:
+		var was: String = step
+		step = s
+		t = float(d[2])
+		_net_step(was)
+	elif absf(t - float(d[2])) > 0.4:
+		t = float(d[2])
+	while _thanks_i < int(d[7]) and _thanks_i < BossText.THANKS.size():
+		_say(_thanks_i)
+		_thanks_i += 1
+
+
+# A client's copy enters the host's new step.
+func _net_step(was: String) -> void:
+	ModLoaderLog.info("Finale (client): " + step, "cejdan-StoryMode")
+	step_changed.emit(step)
+	if was == "breath":
+		var m = _music()
+		if m != null:
+			m.finale()
+	match step:
+		"round3":
+			Sfx.play("roar", 0.0, 0.75)
+		"fall":
+			quiet_alarm(false)
+		"allies":
+			_call_allies()
+
+
+# A client: builds a copy of each monster of the host's it has not seen, and
+# passes each its state.
+func apply_monsters(list: Array) -> void:
+	if not puppet:
+		return
+	var scripts: Dictionary = {"tentacle": TENTACLE, "flyer": FLYER, "great": GREAT}
+	for r: Array in list:
+		var uid: int = int(r[1])
+		var m = _copies.get(uid)
+		if m == null or not is_instance_valid(m):
+			if bool(r[2]) or not scripts.has(r[0]) or _copies.has(uid):
+				continue
+			m = load(scripts[r[0]]).make_copy(r)
+			m.fury = fury
+			if r[0] == "tentacle":
+				m.eye_freed.connect(_eye_freed)
+			add_child(m)
+			alive.append(m)
+			_copies[uid] = m
+			_net_register(m)
+			if r[0] == "great":
+				great = m
+				_slow(0.3, 0.35)
+		if m.dead and r[0] != "great":
+			continue
+		# (The dead great eye still takes its fall from the host.)
+		m.net_apply(r[r.size() - 1])
+		if bool(r[2]) and not m.dead:
+			# Dead on the host: its death may still be on its way.
+			var sync = _synchronizer()
+			if sync != null and sync.monsters.has(uid):
+				sync._remote_kill_monster(uid)
+			elif not m.dead:
+				m.die()
+				m.animateDeath()
