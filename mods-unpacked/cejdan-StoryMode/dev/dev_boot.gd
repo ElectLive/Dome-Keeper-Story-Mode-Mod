@@ -14,6 +14,8 @@ extends Node
 #                        scenario wrote with SaveGame.saveGame(..., slot, true)
 #   --horror-defeated    with --story: play the saved ending (#97) once the keeper
 #                        can move (handled by gamemode/Storymode.gd)
+#   --nethost            host an online (ENet) session, then open the loadout (#223)
+#   --netjoin            join the ENet session on 127.0.0.1; the host's stages follow
 # A playtest scenario's boot() dictionary can give the same keys.
 #
 # How: Game.gd cannot be script-extended safely (loading it early enough breaks
@@ -32,7 +34,7 @@ var _done: bool = false
 static func wanted() -> bool:
 	if not OS.has_feature("editor"):
 		return false
-	for n: String in ["story", "scenario", "mode", "loadout", "load"]:
+	for n: String in ["story", "scenario", "mode", "loadout", "load", "nethost", "netjoin"]:
 		if Story.has_user_arg(n):
 			return true
 	return false
@@ -53,6 +55,17 @@ func _process(_delta: float) -> void:
 		return
 	_done = true
 	set_process(false)
+	if Story.has_user_arg("netjoin"):
+		# A second instance on this machine joins the host. Vanilla's client
+		# path shows the loading stage and follows whatever stage the host is in.
+		print("RUNNING IN DEV MODE (Story Mode dev boot: join 127.0.0.1)")
+		Network.create_enet_client("127.0.0.1", Network.ENET_LISTEN_PORT)
+		return
+	if Story.has_user_arg("nethost"):
+		print("RUNNING IN DEV MODE (Story Mode dev boot: host ENet session)")
+		Network.create_enet_host()
+		StageManager.startStage("stages/loadout/multiplayerloadout")
+		return
 	if Story.has_user_arg("load"):
 		var slot: int = int(Story.user_arg("load"))
 		print("RUNNING IN DEV MODE (Story Mode dev boot: load slot %d)" % slot)
