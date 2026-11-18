@@ -12,6 +12,10 @@ Worktree `wt-mp-242`. Stacked branches: `ticket/269-story-domes` (PR #276, base 
 ## #270 done (PR #277)
 - TransportDrone + Squidley extensions, util/carry_art.gd. t270_drone_cargo PASS, t252 PASS.
 
-## #272 todo
-- t26_wired / t99_story beat order; t116_seed_reload; t47_water_lava; delete stale list; t200_dev_key without --gas.
-- Then regressions: t11_money, t13_bronze, t41_save, t44_heat_shield, t160_boss_fight, t162_finale, t252_class_names, t231_split_keeper2, t223, t232 save/load, t265_mp_heat pair.
+## #272 done (branch pushed; PR body draft in scratchpad pr272.md)
+- t26/t99: B4 room dig mines a gem -> first_gem early (#186); _expect reads it. t99 TIMEOUT 600. PASS.
+- t116: overheat recall (#187) bumped marker; save buys Heat Shielding IV. PASS.
+- t47: seed 12345 hole under shaft; _lava seals. PASS.
+- stale scenarios deleted; t200 boot gas:true + dev_gas_finder Story.has_user_arg. PASS.
+- Regressions all PASS: t11, t13, t41, t44, t160_boss_fight, t162_finale, t252, t231_split_keeper2, t223, t232 save/load, t265_mp_heat.
+- Old list (done): t11_money, t13_bronze, t41_save, t44_heat_shield, t160_boss_fight, t162_finale, t252_class_names, t231_split_keeper2, t223, t232 save/load, t265_mp_heat pair.
