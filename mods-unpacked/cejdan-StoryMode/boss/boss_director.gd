@@ -24,9 +24,11 @@ extends Node
 # instance holds its own keeper in (once it is in), and a client builds the
 # boss layer with a puppet Velle that draws what the host sends (_net_velle,
 # _net_events) and reports its own keeper's overheat (_net_overheated). The
-# host also repeats the state and the hearts to clients (_net_boss): a Data
-# change made while a client's full Data sync is on its way is overwritten by
-# that sync and never sent again. In the chase the tentacles hunt one keeper
+# host also repeats the state and the hearts to clients (_net_boss). It began
+# as the workaround for a Data change lost on a client that was just coming
+# into sync; StoryNet's settled resend (#242) fixes that for every key now, and
+# the repeat stays as cheap insurance (two values every 2 s, during the boss
+# sequence only) for the keys a client can't play without. In the chase the tentacles hunt one keeper
 # out in the mine at a time and a touch on any keeper costs a heart; a client
 # draws a puppet chase from the host's trail and tips (_net_chase). The chase
 # is over when every keeper is home (in the dome, at the dome) and at least

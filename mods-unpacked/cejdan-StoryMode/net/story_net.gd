@@ -11,6 +11,8 @@ extends Node
 #   its map. Whatever reads them on a client waits for map_meta_ready().
 # - GameWorld.prepareLevelStart (and with it mod_main.prepareGameMode) runs
 #   only on the host. A client applies Story Mode's prices and iron drop itself.
+# - Data a client got from a big message could be older than a small change
+#   that overtook it; the host sends what went stale again (#242, _host_resend).
 #
 # Lives under the mod's main node (same path on every peer), and polls like the
 # lava director. Offline runs (single player, splitscreen) skip all of it.
@@ -26,7 +28,23 @@ const SYNCED := "story_meta_synced"
 # are generator reports for playtests.
 const LOCAL_ONLY := ["story_seed"]
 
+# The settled resend (#242): see _host_resend.
+const RESEND_PREFIXES := ["team1.story.", "story.", "team1.inventory.", "team1.suit."]
+const RESEND_SETTLE := 1.0     # seconds after the last chunked Data message to a peer left
+const RESEND_BATCH := 700      # bytes per message: under the chunker's 900, so sent whole
+
 var _client_story := false     # a client's prices and drops are Story Mode's
+
+# peer id -> {"vals": key -> value the chunked Data messages to it carry,
+# "full": one of them was a full sync, "story": it reached LEVEL_STAGE_SYNC,
+# "out": msec one was last seen in flight}
+var _resend_wait: Dictionary = {}
+var _resend_read: Dictionary = {}   # chunker request ids already read
+var _resend_synced: Dictionary = {} # peer id -> true while in LEVEL_STAGE_SYNC
+# Playtests: false turns the resend off (t242 shows the race without it);
+# every resend made, newest last.
+static var resend_on := true
+static var resends: Array = []
 
 
 static func online() -> bool:
@@ -55,6 +73,7 @@ func _process(_delta: float) -> void:
 			_client_meta()
 	elif Story.is_story():
 		_host_meta()
+		_host_resend()
 
 
 # --- host ----------------------------------------------------------------------
@@ -87,6 +106,158 @@ func _host_map_data():
 		if td != null and is_instance_valid(td):
 			return td
 	return null
+
+
+# --- the settled resend (#242) -------------------------------------------------
+# Vanilla sends Data to a client in two ways: a full copy of Data.values when it
+# reaches a stage (Network: client.full_data_sync; at the start of a run and on
+# a late join), and each network tick a delta of what changed (DataSynchronizer;
+# what changed while the client was loading goes out in one go when it reaches
+# LEVEL_STAGE_SYNC). Both go through the chunker: a message under 900 bytes is
+# sent at once, a bigger one a few chunks a frame. So a small delta the host
+# sends after a big message can reach the client first, and the big message's
+# older values then overwrite it; vanilla doesn't send the key again until it
+# changes. Seen: the boss state, money and water set as a client came into sync
+# read "" and 0 there for good.
+#
+# So the host reads every chunked Data message to a client while it is in
+# flight, and once none is left and they have had a moment to land, sends that
+# client once more, as vanilla's own delta message, every key whose value now
+# differs from what those messages carried (and, after a full sync, keys that
+# weren't in it). After the client reaches LEVEL_STAGE_SYNC it also gets every
+# Story Mode key (story, money and inventory, suit) whatever they carried.
+# The resend goes in messages small enough to be sent whole, so they keep their
+# order with later deltas.
+
+func _host_resend() -> void:
+	var now: int = Time.get_ticks_msec()
+	var flying: Dictionary = {}
+	var outgoing: Dictionary = Network.chunker.outgoing_rpcs
+	for id in outgoing:
+		var r = outgoing[id]
+		if r.is_sent() or (r.request_type != Chunker.ChunkRequestType.DATA_FULL_SYNC and r.request_type != Chunker.ChunkRequestType.DATA_DELTA_SYNC):
+			continue
+		flying[r.target_peer_id] = true
+		if _resend_read.has(id):
+			continue
+		_resend_read[id] = true
+		var w: Dictionary = _wait(r.target_peer_id)
+		var full: bool = r.request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC
+		var vals: Dictionary = _message_values(r, full)
+		if full:
+			w["full"] = true
+			w["vals"] = vals    # a full sync replaces everything before it
+		else:
+			w["vals"].merge(vals, true)
+	for id in _resend_read.keys():
+		if not outgoing.has(id):
+			_resend_read.erase(id)
+	var peers: Dictionary = {}
+	for c in Network.clients:
+		var p: int = c.peer_id
+		peers[p] = true
+		var in_sync: bool = c.connection_state == Network.ConnectionState.LEVEL_STAGE_SYNC
+		if not in_sync:
+			_resend_synced.erase(p)
+			continue
+		if not _resend_synced.has(p):
+			_resend_synced[p] = true
+			_wait(p)["story"] = true
+		if not _resend_wait.has(p):
+			continue
+		var w: Dictionary = _resend_wait[p]
+		if flying.has(p) or not w.has("out"):
+			w["out"] = now
+			continue
+		if now - int(w["out"]) < int(RESEND_SETTLE * 1000.0):
+			continue
+		_resend_wait.erase(p)
+		if resend_on:
+			_resend(p, w)
+	for p in _resend_wait.keys():
+		if not peers.has(p):
+			_resend_wait.erase(p)
+	for p in _resend_synced.keys():
+		if not peers.has(p):
+			_resend_synced.erase(p)
+
+
+func _wait(peer: int) -> Dictionary:
+	if not _resend_wait.has(peer):
+		_resend_wait[peer] = {"vals": {}, "full": false, "story": false}
+	return _resend_wait[peer]
+
+
+# The Data values a chunked message carries: its bound arguments are
+# (tick, var_to_bytes(changes)) for a delta, (size, zstd bytes) or (tick, size,
+# zstd bytes) for a full sync.
+func _message_values(r, full: bool) -> Dictionary:
+	var buf := PackedByteArray()
+	for ch: PackedByteArray in r.chunks:
+		buf.append_array(ch)
+	var args = bytes_to_var(buf)
+	if not args is Array or args.size() < 2 or not args[-1] is PackedByteArray:
+		return {}
+	var bytes: PackedByteArray = args[-1]
+	if full:
+		if not args[-2] is int:
+			return {}
+		bytes = bytes.decompress(args[-2], FileAccess.CompressionMode.COMPRESSION_ZSTD)
+	var vals = bytes_to_var(bytes)
+	return vals if vals is Dictionary else {}
+
+
+func _resend(peer: int, w: Dictionary) -> void:
+	var vals: Dictionary = w["vals"]
+	var keys: Array = []
+	var stale := 0
+	for k in Data.values:
+		if vals.has(k):
+			if not _same(vals[k], Data.values[k]):
+				keys.append(k)
+				stale += 1
+				continue
+		elif w["full"]:
+			keys.append(k)
+			stale += 1
+			continue
+		if w["story"] and _story_key(String(k)):
+			keys.append(k)
+	if keys.is_empty():
+		return
+	var batch: Dictionary = {}
+	var size := 0
+	var messages := 0
+	for k in keys:
+		var n: int = var_to_bytes(Data.values[k]).size() + String(k).length() + 8
+		if size + n > RESEND_BATCH and not batch.is_empty():
+			_send_delta(peer, batch)
+			messages += 1
+			batch = {}
+			size = 0
+		batch[k] = Data.values[k]
+		size += n
+	if not batch.is_empty():
+		_send_delta(peer, batch)
+		messages += 1
+	resends.append({"peer": peer, "keys": keys.size(), "stale": stale, "messages": messages, "story": w["story"], "msec": Time.get_ticks_msec()})
+	ModLoaderLog.info("Data resent to peer %d once its big messages landed: %d keys (%d changed since), %d messages" % [peer, keys.size(), stale, messages], Story.LOG)
+
+
+# Vanilla's delta message, to one client (DataSynchronizer.on_network_tick).
+func _send_delta(peer: int, batch: Dictionary) -> void:
+	Network.chunker.send(peer, Chunker.ChunkRequestType.DATA_DELTA_SYNC, Data.synchronizer.remote_data_call.bind(Network.tick_count, var_to_bytes(batch)))
+
+
+static func _story_key(k: String) -> bool:
+	for pre: String in RESEND_PREFIXES:
+		if k.begins_with(pre):
+			return true
+	return false
+
+
+static func _same(a, b) -> bool:
+	return typeof(a) == typeof(b) and a == b
 
 
 # --- client --------------------------------------------------------------------
