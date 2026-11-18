@@ -1,29 +1,18 @@
 extends Node
 
-# Story Mode in online multiplayer (#222). Vanilla's netcode carries the map's
-# tiles, Data, the shop and the keepers to clients; this node carries the rest
-# of a run's setup that only the host does (#225):
-#
-# - The map generator's facts (map/story_gen.gd: the lava ocean, the boss
-#   chamber, pools, gas caverns, ...) are meta on the map data, and vanilla
-#   sends clients only the tile layers. The host sends them to every client, a
-#   late joiner too, in small reliable RPCs of its own (_host_meta; they were a
-#   13-16 KB Data key until #247); a client copies them onto its map. Whatever
-#   reads them on a client waits for map_meta_ready().
-# - GameWorld.prepareLevelStart (and with it mod_main.prepareGameMode) runs
-#   only on the host. A client applies Story Mode's prices and iron drop itself.
-# - Data a client got from a big message could be older than a small change
-#   that overtook it; the host sends what went stale again (#242, _host_resend).
-#
-# Lives under the mod's main node (same path on every peer), and polls like the
-# lava director. Offline runs (single player, splitscreen) skip all of it.
+# Story Mode in online multiplayer (#222): the run's setup that only the host
+# does and vanilla's netcode doesn't carry (#225). The map generator's facts go
+# to every client in small RPCs (_host_meta, #247; readers wait for
+# map_meta_ready()); a client applies Story Mode's prices and iron drop itself;
+# Data that went stale behind a big message is sent again (#242,
+# _host_resend). It also relays the lava, gas and tile breaks the host runs.
+# Lives under the mod's main node, the same path on every peer.
 
 const Story = preload("res://mods-unpacked/cejdan-StoryMode/story.gd")
 const Prices = preload("res://mods-unpacked/cejdan-StoryMode/data/prices.gd")
 const Minerals = preload("res://mods-unpacked/cejdan-StoryMode/data/minerals.gd")
 
-# The Data key the map facts went out in before #247. A save from then still
-# has it; the host drops it, and the chunker never sends it.
+# The map facts' Data key before #247: dropped from Data and never sent.
 const MAP_META := "story.mapmeta"
 # Set on a client's map data once the host's meta is on it.
 const SYNCED := "story_meta_synced"
@@ -168,26 +157,13 @@ func _host_map_data():
 
 
 # --- the settled resend (#242) -------------------------------------------------
-# Vanilla sends Data to a client in two ways: a full copy of Data.values when it
-# reaches a stage (Network: client.full_data_sync; at the start of a run and on
-# a late join), and each network tick a delta of what changed (DataSynchronizer;
-# what changed while the client was loading goes out in one go when it reaches
-# LEVEL_STAGE_SYNC). Both go through the chunker: a message under 900 bytes is
-# sent at once, a bigger one a few chunks a frame. So a small delta the host
-# sends after a big message can reach the client first, and the big message's
-# older values then overwrite it; vanilla doesn't send the key again until it
-# changes. Seen: the boss state, money and water set as a client came into sync
-# read "" and 0 there for good.
-#
-# So the host reads every chunked Data message to a client while it is in
-# flight, and once none is left and they have had a moment to land, sends that
-# client once more, as vanilla's own delta message, every key whose value now
-# differs from what those messages carried (and, after a full sync, keys that
-# weren't in it). After the client reaches LEVEL_STAGE_SYNC it also gets every
-# Story Mode key (story, money and inventory, suit; each keeper's suit since
-# #265) whatever they carried.
-# The resend goes in messages small enough to be sent whole, so they keep their
-# order with later deltas.
+# A small Data delta can reach a client before a big (chunked) message sent
+# earlier, whose older values then win; vanilla doesn't send that key again
+# until it changes. So the host reads each chunked Data message to a client in
+# flight and, once they have landed, sends that client every key whose value
+# now differs (after a full sync, also keys it didn't hold), and every Story
+# Mode key once it reaches LEVEL_STAGE_SYNC. In messages under the chunk size,
+# so they keep their order with later deltas.
 
 func _host_resend() -> void:
 	var now: int = Time.get_ticks_msec()
@@ -195,7 +171,7 @@ func _host_resend() -> void:
 	var outgoing: Dictionary = Network.chunker.outgoing_rpcs
 	for id in outgoing:
 		var r = outgoing[id]
-		if r.is_sent() or (r.request_type != Chunker.ChunkRequestType.DATA_FULL_SYNC and r.request_type != Chunker.ChunkRequestType.DATA_DELTA_SYNC):
+		if r.is_sent() or not is_data(r.request_type):
 			continue
 		flying[r.target_peer_id] = true
 		if _resend_read.has(id):
@@ -203,7 +179,7 @@ func _host_resend() -> void:
 		_resend_read[id] = true
 		var w: Dictionary = _wait(r.target_peer_id)
 		var full: bool = r.request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC
-		var vals: Dictionary = _message_values(r, full)
+		var vals: Dictionary = queued_values(r)
 		_log_message(r, full, vals)
 		if full:
 			w["full"] = true
@@ -249,23 +225,31 @@ func _wait(peer: int) -> Dictionary:
 	return _resend_wait[peer]
 
 
-# The Data values a chunked message carries: its bound arguments are
-# (tick, var_to_bytes(changes)) for a delta, (size, zstd bytes) or (tick, size,
-# zstd bytes) for a full sync.
-func _message_values(r, full: bool) -> Dictionary:
-	var buf := PackedByteArray()
-	for ch: PackedByteArray in r.chunks:
-		buf.append_array(ch)
-	var args = bytes_to_var(buf)
+static func is_data(request_type: int) -> bool:
+	return request_type == Chunker.ChunkRequestType.DATA_DELTA_SYNC or request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC
+
+
+# The Data values a Data message's bound arguments carry: (tick,
+# var_to_bytes(changes)) for a delta, (size, zstd bytes) or (tick, size, zstd
+# bytes) for a full sync. Empty when they hold none.
+static func data_values(request_type: int, args) -> Dictionary:
 	if not args is Array or args.size() < 2 or not args[-1] is PackedByteArray:
 		return {}
 	var bytes: PackedByteArray = args[-1]
-	if full:
+	if request_type == Chunker.ChunkRequestType.DATA_FULL_SYNC:
 		if not args[-2] is int:
 			return {}
 		bytes = bytes.decompress(args[-2], FileAccess.CompressionMode.COMPRESSION_ZSTD)
 	var vals = bytes_to_var(bytes)
 	return vals if vals is Dictionary else {}
+
+
+# data_values() of a queued message.
+static func queued_values(r) -> Dictionary:
+	var buf := PackedByteArray()
+	for ch: PackedByteArray in r.chunks:
+		buf.append_array(ch)
+	return data_values(r.request_type, bytes_to_var(buf))
 
 
 func _resend(peer: int, w: Dictionary) -> void:

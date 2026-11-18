@@ -33,11 +33,8 @@ func init() -> void:
 	# The boss sequence: Velle's chamber fight and what follows (#160).
 	add_child(load(Story.MOD_DIR + "boss/boss_director.gd").new())
 	Data.listen(self, "team1.dome.health")
-	GameWorld.upgradeBought.connect(_on_upgrade_bought)
-	# Online (#229): vanilla tells the host of a client's purchase only through
-	# upgradeAdded, so Retire Rich or the Suit Blaster bought by a client count.
-	if not Network.is_offline_mode() and multiplayer.is_server():
-		GameWorld.upgradeAdded.connect(_on_upgrade_bought.bind(""))
+	# upgradeAdded is the host's one signal for every purchase, a client's too (#229).
+	GameWorld.upgradeAdded.connect(_on_upgrade_added)
 	# Per-keeper shop entries (#265): a loaded save gets its keepers' limits, and
 	# one from before #265 has the team's Heat Shielding tier moved to every
 	# keeper, once vanilla has restored the upgrades and Data.
@@ -101,26 +98,23 @@ func _welcome() -> void:
 	StoryBeats.fire(load(Story.MOD_DIR + "data/logs.gd").WELCOME)
 
 
-# The shop's Suit Blaster entry is a stand-in: buying it grants the real gadget
-# the way a gadget chest does (research on #18). Since #265 the entry is per
-# keeper, in each player's own keeper track (player2.storysuitblaster), and
-# grants player2.suitblaster to that keeper only: vanilla gives a keepersuit
-# gadget picked in a run to the keeper who picked it
-# (LevelStage.addGadgetUpgrade, "keeper exclusive gadget").
-const SUITBLASTER_ENTRY := "storysuitblaster"
 # Retire Rich (#31, #54): the only way to win a Story Mode run until the boss.
 const RETIRE_ENTRY := "storyretirerich"
 # Retire Rich's own root, the shop's top section (#144).
 const WIN_ROOT := "storywin"
 
 
-func _on_upgrade_bought(id: String, teamId: String, _playerId: String) -> void:
+# The shop's Suit Blaster entry is a stand-in: buying it grants the real gadget
+# the way a gadget chest does (#18), to that keeper only (#265: the entry is
+# per keeper, player2.storysuitblaster -> player2.suitblaster), as vanilla
+# gives a keepersuit gadget to the keeper who picked it.
+func _on_upgrade_added(id: String, teamId: String) -> void:
 	if not multiplayer.is_server():
 		return
 	if id == teamId + "." + RETIRE_ENTRY:
 		_win()
 		return
-	if not id.begins_with("player") or not id.ends_with("." + SUITBLASTER_ENTRY):
+	if not id.begins_with("player") or not id.ends_with("." + KeeperUpgrades.BLASTER_ENTRY):
 		return
 	var pid: String = id.substr(0, id.find("."))
 	var gid: String = pid + ".suitblaster"
