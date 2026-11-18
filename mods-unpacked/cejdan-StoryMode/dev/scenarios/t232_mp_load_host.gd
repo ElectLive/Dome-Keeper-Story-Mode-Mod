@@ -42,8 +42,8 @@ func run(h) -> void:
 		return
 	await h.until(func(): return h.choose_keeper(true), 30.0)
 	# The client's choice, made here: what its walk into a keeper asks the host
-	# (DeviceSelectionStage.serverChangeKeeper). See dev/harness.gd on why the
-	# client doesn't pick itself in a loaded save.
+	# (DeviceSelectionStage.serverChangeKeeper). A client walking into its own
+	# keeper is t251_mp_load_*.
 	await h.until(func():
 		for k in Keepers.all.keepers:
 			if is_instance_valid(k) and k.isMovementDummy and k.peerId != 1:

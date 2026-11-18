@@ -46,10 +46,6 @@ $script:LogScanAllow = @(
     # GadgetSynchronizer (online), and FurnaceStation.gd reads
     # get_meta("tween", null), which logs when the meta is missing.
     @{ Name = "vanilla furnace"; Pattern = "FurnaceStation/GadgetSynchronizer is parented to a gadget without a state_changed|does not have any 'meta' values with the key 'tween'" },
-    # Online client given the Suit Blaster: its gadget and HUD are there before
-    # the Data keys, so SuitBlaster.propertyChanged subtracts a maxcharge it has
-    # not had yet and the HUD reads the charge keys until they land. #253.
-    @{ Name = "suit blaster on a client (#253)"; Pattern = "Invalid operands 'float' and 'Nil' in operator '-'.*propertyChanged \(res://content/gadgets/suitblaster/SuitBlaster\.gd|unknown data (player[0-9]+\.suitblaster\.charge|team[0-9]+\.suitblaster\.maxcharge) " },
     # Vanilla Relic Hunt's final act with the harness's waves forced
     # (t54_vanilla): Wave.gd reads monsters.timingmod before Monsters.gd has
     # set it, and GameWorld re-adds the between_waves limit.
@@ -62,12 +58,14 @@ $script:LogScanAllow = @(
     # disconnecting (its channels gone) but not yet removed, and whatever sends
     # to it then (vanilla's syncs as much as ours) is dropped by the engine.
     @{ Name = "client leaving"; Pattern = 'Unable to send packet on channel 0, max channels: 0' },
-    # Loading an online save (#232): vanilla's keeper choice (DeviceSelection
-    # stage) gets KeeperSynchronizer packets for a player node it has not made
-    # yet, and Keeper.updatePlayerName reads a member that is not there yet.
-    # Tracked in #251; the RPC lines are the same missing node, seen by the
-    # engine's multiplayer layer.
-    @{ Name = "keeper choice (#251)"; Pattern = 'DeviceSelectionStage/DeviceSelectionStage/player[0-9]+/KeeperSynchronizer|platform_id.*\|\| *at: updatePlayerName \(res://content/keeper/Keeper\.gd' }
+    # Vanilla's keeper choice (DeviceSelection stage; loading an online save,
+    # #232/#251): a player takes a keeper, vanilla's spawner frees the dummy
+    # it walked in as, and a KeeperSynchronizer packet the other instance sent
+    # for the dummy before it heard lands for a node that is gone (one or two
+    # lines, like "loadout teardown"). The race that left a client without
+    # its keeper and logged this every frame (and Keeper.updatePlayerName's
+    # 'platform_id' on Nil) is avoided in Story Mode since #251.
+    @{ Name = "keeper choice: freed dummy"; Pattern = 'DeviceSelectionStage/DeviceSelectionStage/player1[0-9][0-9]/KeeperSynchronizer' }
 )
 
 # The engine logs these right after one of the lines above, about the same

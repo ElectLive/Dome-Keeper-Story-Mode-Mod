@@ -37,6 +37,7 @@ const EXT := "res://mods-unpacked/cejdan-StoryMode/extensions/"
 # source or vanilla base names another extended class in a type (Map.gd's
 # `tile: Tile`, dome3.gd's `extends Dome`) goes in before that class's.
 const EXTENSIONS: Array[String] = [
+	"stages/deviceselection/DeviceselectionStage.gd",
 	"stages/level/LevelStage.gd",
 	"content/techtree/TechTree.gd",
 	"stages/loadout/MultiplayerloadoutStage.gd",
@@ -50,6 +51,8 @@ const EXTENSIONS: Array[String] = [
 	"content/dome/Dome.gd",
 	"content/map/generation/TileDataGenerator.gd",
 	"content/gadgets/suitblaster/SuitblasterExplosion.gd",
+	"content/gadgets/suitblaster/SuitBlaster.gd",
+	"content/gadgets/suitblaster/SuitBlasterHud.gd",
 	"content/caves/treecave/Iron.gd",
 	"content/gadgets/mineraltree/FruitGrowth.gd",
 	"content/gadgets/mineraltree/MineralTree.gd",
@@ -105,7 +108,6 @@ const NAMED_BY: Array[String] = [
 	"res://content/weapons/sword/Sword.gd",
 	"res://game/GameWorld.gd",
 	"res://stages/deviceselection/DeviceSelectionMap.gd",
-	"res://stages/deviceselection/DeviceselectionStage.gd",
 	"res://stages/landing/LandingStage.gd",
 	"res://stages/level/Level.gd",
 	"res://stages/level/Viewports.gd",
@@ -114,6 +116,7 @@ const NAMED_BY: Array[String] = [
 	"res://systems/options/SoundtrackPanel.gd",
 	"res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd",
 	"res://mods-unpacked/cejdan-StoryMode/boss/boss_director.gd",
+	"res://mods-unpacked/cejdan-StoryMode/dev/harness.gd",
 	"res://mods-unpacked/cejdan-StoryMode/dev/mp_scenario.gd",
 	"res://mods-unpacked/cejdan-StoryMode/gas/gas_director.gd",
 	"res://mods-unpacked/cejdan-StoryMode/lava/lava_director.gd",
@@ -133,6 +136,8 @@ const SCENES: Array[String] = [
 	"res://content/gadgets/minedriller/Drill.tscn",
 	"res://content/gadgets/minedriller/SideDriller.tscn",
 	"res://content/gadgets/mineraltree/MineralTree.tscn",
+	"res://content/gadgets/suitblaster/SuitBlaster.tscn",
+	"res://content/gadgets/suitblaster/SuitBlasterHud.tscn",
 	"res://content/gadgets/suitblaster/SuitblasterExplosion.tscn",
 	"res://content/hud/inventory/Inventory.tscn",
 	"res://content/map/generation/TileDataGenerator.tscn",
@@ -143,6 +148,7 @@ const SCENES: Array[String] = [
 	"res://content/techtree/Tech2.tscn",
 	"res://content/techtree/TechTree.tscn",
 	"res://content/techtree/TechTreePopup.tscn",
+	"res://stages/deviceselection/DeviceselectionStage.tscn",
 	"res://stages/level/LevelStage.tscn",
 	"res://stages/loadout/MultiplayerloadoutStage.tscn",
 ]

@@ -333,6 +333,36 @@ func choose_keeper(host: bool) -> bool:
 	return true
 
 
+# Walks this instance's keeper into a free saved keeper's choice in the keeper
+# choice and uses it, as a player does (#251): teleported onto the choice,
+# then the keeper's own use. Returns the saved keeper's playerId it went for,
+# or "" if there was nothing to walk into yet.
+func walk_into_choice(host: bool, want: String = "") -> String:
+	var st = Level.stage
+	var k = choice_keeper()
+	if not is_instance_valid(st) or not st is DeviceSelectionStage or not st.initialized or k == null or not k.isMovementDummy:
+		return ""
+	var lk = free_saved_keeper(host)
+	if want != "":
+		lk = null
+		for l in Level.loadout.keeperTemplates:
+			if l.playerId == want and not st.playerIdByPeerDeviceId.values().has(want):
+				lk = l
+	if lk == null or not st.containerByPlayerId.has(lk.playerId):
+		return ""
+	var choice = st.containerByPlayerId[lk.playerId]
+	if choice.disabled:
+		return ""
+	note("keeper choice: walking into " + lk.playerId, {"keeper": k.playerId, "taken": st.playerIdByPeerDeviceId, "lobby": lobby_rows()})
+	k.teleport(choice.get_global_rect().get_center())
+	await wait(1.0)
+	if not is_instance_valid(k):
+		return ""
+	var used: bool = k.useHit()
+	note("keeper choice: used " + lk.playerId, {"handled": used, "focussed": str(k.focussedUsable.get_parent().id) if is_instance_valid(k.focussedUsable) and k.focussedUsable.get_parent().get("id") != null else ""})
+	return lk.playerId if used else ""
+
+
 func lobby_rows() -> Array:
 	return Lobby.members.map(func(m): return [m.peer_id, m.device_id, m.player_id])
 
@@ -354,10 +384,9 @@ func _client_choose_keeper() -> void:
 	if k == null:
 		return
 	if k.isMovementDummy:
-		# Joining a run under way. (In a loaded save's keeper choice the host
-		# picks for every player: there a client's own view of the keepers is
-		# off, with its own keeper missing and the host's twice, so the host
-		# scenario asks for the client's choice itself; t232_mp_load_host.)
+		# Joining a run under way. (In a loaded save's keeper choice a client
+		# scenario walks into its keeper itself, walk_into_choice(); t251.
+		# t232_mp_load_host still picks for the client from the host.)
 		if st.clientOnlyMode:
 			choose_keeper(false)
 	elif st.clientOnlyMode:
