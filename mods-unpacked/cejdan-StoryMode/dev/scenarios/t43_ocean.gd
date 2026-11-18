@@ -185,8 +185,32 @@ func run(h) -> void:
 				ok = ok and td.get_resourcev(Vector2i(x, y)) == Data.TILE_EMPTY
 			if ok and not clear.has(x) and clear.all(func(cx): return absi(cx - x) >= 3):
 				clear.append(x)
-	h.note("clear dive columns", clear)
-	h.check("three clear dive columns over the chamber", clear.size() >= 3, clear)
+	# The funnel (#184) packs the ocean's unobtainium into less lava, so fewer
+	# columns over the chamber are clear by luck: take the ones with the least
+	# in the way and mine it out first, the way a diving player would.
+	var mined: Array = []
+	if clear.size() < 3:
+		var by_count: Array = []
+		for x in range(-ch.size.x / 2 + 1, ch.size.x / 2 - 1):
+			if x == 0 or x == best.x or clear.has(x):
+				continue
+			var cs: Array = []
+			for y in range(int(o["top"]), int(o["bottom"]) + 1):
+				if td.get_resourcev(Vector2i(x, y)) != Data.TILE_EMPTY:
+					cs.append(Vector2i(x, y))
+			by_count.append([cs.size(), x, cs])
+		by_count.sort_custom(func(a, b): return a[0] < b[0])
+		for e: Array in by_count:
+			if clear.size() >= 3:
+				break
+			if clear.all(func(cx): return absi(cx - int(e[1])) >= 3):
+				clear.append(int(e[1]))
+				mined.append_array(e[2])
+		await h.reveal(mined)
+		await h.clear_tiles(mined)
+		await h.wait(3.0)
+	h.note("dive columns (cells mined out of them first)", {"columns": clear, "mined": mined.size()})
+	h.check("three dive columns over the chamber", clear.size() >= 3, clear)
 	for x in clear.slice(0, 3):
 		await _open_ceiling(h, x)
 	# How long the dive takes, heat aside.
