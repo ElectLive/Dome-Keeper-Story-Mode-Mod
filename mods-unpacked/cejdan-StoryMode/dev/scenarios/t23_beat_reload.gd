@@ -19,7 +19,7 @@ func run(h) -> void:
 	h.snap("loaded", ["team1.story.beatsqueued", "team1.story.beatsplayed"])
 	# The harness marks the keeper's welcome log played (#123); it isn't a beat here.
 	var played: Array = Array(str(Data.ofOr("team1.story.beatsplayed", "")).split(",", false)).filter(func(id): return id != "keeper_welcome")
-	h.check("the played beats came back", played == ["first_gem", "biome_b2", "gate_broken"], played)
+	h.check("the played beats came back", played == ["translator_2", "biome_b2", "gate_broken"], played)
 	var opened: bool = await h.until(func(): return StoryBeats.is_open(), 10.0)
 	h.check("the beat open at save time opens again", opened and StoryBeats.instance().open_id == "translator_1")
 	await h.wait(0.5)
@@ -40,7 +40,7 @@ func run(h) -> void:
 		after.append(snappedf(float(Data.of(CD)), 0.001))
 		await h.wait(0.25)
 	h.check("the countdown runs after it closes", after[0] > after[-1], after)
-	for id: String in ["first_gem", "biome_b2", "gate_broken", "translator_1"]:
+	for id: String in ["translator_2", "biome_b2", "gate_broken", "translator_1"]:
 		h.check("%s doesn't play again after the reload" % id, not StoryBeats.fire(id))
 	h.check("trigger(biome:B2) queues nothing after the reload", StoryBeats.trigger("biome:B2") == 0)
 	await h.wait(1.0)

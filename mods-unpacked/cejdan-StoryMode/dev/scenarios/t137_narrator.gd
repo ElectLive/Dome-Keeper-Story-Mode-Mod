@@ -2,15 +2,18 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 # Ticket 137: the narrator. The first beats open with narration ("> " lines),
 # styled apart from the horror's voice, and page as the user wrote them:
-# B2 and B3 in two pages each, B4 with its new first page. Shoots every page.
+# B2 in three pages (the narrator and the horror never share one, #285), B3 in
+# two; B5 and the first gate (the user's 2026-11-18
+# pass, #285) in three and five. Shoots every page.
 
 const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd")
 const BeatBox = preload("res://mods-unpacked/cejdan-StoryMode/beats/BeatBox.gd")
 
 const EXPECT := {
-	"biome_b2": 2,
+	"biome_b2": 3,
 	"biome_b3": 2,
-	"biome_b4": 2,
+	"biome_b5": 3,
+	"gate_broken": 5,
 }
 
 
@@ -30,8 +33,8 @@ func run(h) -> void:
 		if box != null:
 			var first: String = box._pages[0]
 			var narr: bool = BeatBox.is_narration(first.split("\n")[0])
-			h.check("%s: opens with narration" % id, narr == (id != "biome_b4"), first)
-			# The narrator's lines are drawn in the slanted font, not the horror's effects.
+			h.check("%s: opens with narration" % id, narr, first)
+			# The narrator's lines are drawn in their own font, not the horror's effects.
 			h.check("%s: narration is italic and not waved" % id, not narr or (box._text.text.contains("[i][color=#c7bfb4]") and not box._text.text.begins_with("[center][wave")), box._text.text)
 		var read: String = await h.read_beat(id, 5.0)
 		h.check("%s read to the end" % id, read == id, read)

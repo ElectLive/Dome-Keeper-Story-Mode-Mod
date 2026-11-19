@@ -1,9 +1,9 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 # Ticket 95: the awakening. The keeper mines ten unobtainium tiles in the lava
-# ocean; the log shows the seal weakening with each, and the horror's beats
-# play after the 1st, 3rd, 5th, 7th and 10th. Breaking into the boss chamber
-# wakes it fully: the awakening beat, then the placeholder "not yet" beat.
+# ocean; the log shows the seal weakening with each. The unobtainium beats were
+# cut in the user's script pass (#285), so mining plays nothing. Breaking into
+# the boss chamber wakes it fully and plays the awakening beat.
 # Saves to slot 14 for t95_reload.
 
 const Awakening = preload("res://mods-unpacked/cejdan-StoryMode/beats/awakening.gd")
@@ -32,7 +32,7 @@ func run(h) -> void:
 	h.check("the ocean holds at least 10 unobtainium tiles", cells.size() >= 10, cells.size())
 	h.check("asleep at the start", Awakening.level() == 0.0 and not Awakening.is_awake())
 	var levels: Array = []
-	var expect_beat: Dictionary = {1: "unobtainium_1", 3: "unobtainium_3", 5: "unobtainium_5", 7: "unobtainium_7", 10: "unobtainium_10"}
+	var expect_beat: Dictionary = {}
 	for i in 10:
 		var c: Vector2i = cells[i]
 		await h.reveal([c])

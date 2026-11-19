@@ -31,6 +31,11 @@ var _gem_early: bool = false
 
 
 func _expect(h, id: String, label: String) -> void:
+	if BeatData.by_id(id).is_empty():
+		# Cut from the script (#285): its trigger still fires, nothing plays.
+		await h.wait(1.5)
+		h.check("%s (cut) plays nothing" % id, not StoryBeats.is_open(), StoryBeats.instance().open_id)
+		return
 	var got: String = await h.read_beat(label)
 	# Since the #186 mineral ladder, a room this scenario digs (B4's) can hold
 	# a gem; the dig breaks it like a drill would and first_gem plays first,
@@ -157,4 +162,7 @@ func run(h) -> void:
 	h.check("no beat played twice", not dupes, played)
 	# The harness marks the keeper's welcome log played (#123); it isn't wired here.
 	played = played.filter(func(id): return id != "keeper_welcome")
-	h.check("all 12 wired beats played", played.size() == 12, played.size())
+	# The beats this run wires, less any the script has cut (#285).
+	var wired: Array = ["biome_b2", "biome_b3", "biome_b4", "biome_b5", "biome_b6", "biome_b7", "biome_b8", "lava_ocean",
+		"first_gem", "gate_broken", "lava_death_1", "lava_death_2"].filter(func(id): return not BeatData.by_id(id).is_empty())
+	h.check("all %d wired beats played" % wired.size(), played.size() == wired.size() and wired.all(func(id): return played.has(id)), played)

@@ -8,10 +8,11 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 #   the miner's log), the three
 #   translator chambers (opened, carried home, installed, the horror's reply,
 #   then a plea at the new translation stage), and an overheat death;
-#   the lava ocean, 10 unobtainium (the seal beats), the boss chamber (the
-#   awakening, then "not yet"); Retire Rich bought with the shop open and the
+#   the lava ocean, 10 unobtainium (the seal beats, if the script has them),
+#   the boss chamber (the awakening); Retire Rich bought with the shop open and the
 #   whole doom ending to the end screen.
 # Heat Shielding IV is bought first so depth heat never recalls the keeper.
+# A beat cut from the script (#285) is checked to play nothing where it was.
 # Checks every beat and log opens exactly once, nothing else ever opens, and
 # the run ends won. The saved ending is t97_saved.
 
@@ -52,6 +53,10 @@ var _gem_early: bool = false
 
 
 func _expect(h, id: String, label: String, timeout: float = 8.0) -> void:
+	if BeatData.by_id(id).is_empty() and LogData.by_id(id).is_empty():
+		# Cut from the script (#285): its trigger still fires, nothing plays.
+		await _quiet(h, "%s (cut)" % id)
+		return
 	var got: String = await h.read_beat(label, timeout)
 	# Since the #186 mineral ladder, the B4 room this run digs can hold a gem;
 	# the dig breaks it like a drill would and first_gem rightly plays first

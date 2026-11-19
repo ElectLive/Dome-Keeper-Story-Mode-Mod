@@ -62,9 +62,9 @@ func run(h) -> void:
 
 	# One beat, by id. The keeper holds Right the whole time it is open.
 	var kp0: Vector2 = h.keeper().global_position
-	h.check("fire(first_gem) queues it", StoryBeats.fire("first_gem"))
+	h.check("fire(translator_2) queues it", StoryBeats.fire("translator_2"))
 	var opened: bool = await h.until(func(): return StoryBeats.is_open(), 5.0)
-	h.check("the beat box opens", opened and StoryBeats.instance().open_id == "first_gem")
+	h.check("the beat box opens", opened and StoryBeats.instance().open_id == "translator_2")
 	# A select pressed the moment it opens (a key already in use) doesn't close it.
 	await h.press("ui_select")
 	await h.frames(3)
@@ -74,7 +74,7 @@ func run(h) -> void:
 	await h.wait(0.5)
 	await h.shot("beat_open")
 	var box = Level.stage.find_child("StoryBeatPopup", true, false)
-	h.check("the box shows the beat's lines", box != null and box.text() == "\n".join(PackedStringArray(load("res://mods-unpacked/cejdan-StoryMode/data/beats.gd").by_id("first_gem")["lines"])), box.text() if box else null)
+	h.check("the box shows the beat's lines", box != null and box.text() == "\n".join(PackedStringArray(load("res://mods-unpacked/cejdan-StoryMode/data/beats.gd").by_id("translator_2")["lines"])), box.text() if box else null)
 	var during: Array = await _samples(h, 5.0)
 	h.up("ui_right")
 	h.snap("beat open", ["team1.story.beatsqueued", "team1.story.beatsplayed"])
@@ -83,16 +83,16 @@ func run(h) -> void:
 	h.check("the game is paused while the box is open", GameWorld.paused)
 	var moved: float = h.keeper().global_position.distance_to(kp0)
 	h.check("the keeper stays put while the box is open (Right held)", moved < 1.0, moved)
-	h.check("first_gem is closed on select", await _close(h, "first_gem"))
+	h.check("translator_2 is closed on select", await _close(h, "translator_2"))
 	await h.wait(0.3)
 	await h.shot("after_close")
 	var after: Array = await _samples(h, 2.0)
 	h.note("countdown after", after)
 	h.check("the countdown runs again after the box closes", _falling(after) and not GameWorld.paused, after)
-	h.check("first_gem is marked played", StoryBeats.has_played("first_gem"))
+	h.check("translator_2 is marked played", StoryBeats.has_played("translator_2"))
 
 	# Once per run.
-	h.check("fire(first_gem) again is refused", not StoryBeats.fire("first_gem"))
+	h.check("fire(translator_2) again is refused", not StoryBeats.fire("translator_2"))
 	await h.wait(1.0)
 	h.check("and nothing opens", not StoryBeats.is_open())
 	h.check("an unknown id is refused", not StoryBeats.fire("no_such_beat"))
@@ -121,6 +121,6 @@ func run(h) -> void:
 	await h.wait(1.0)
 	h.snap("saved", ["team1.story.beatsqueued", "team1.story.beatsplayed"])
 	h.check("the save holds the played and queued beats",
-			str(Data.serialize()).contains("first_gem,biome_b2,gate_broken") and str(Data.ofOr("team1.story.beatsqueued", "")) == "translator_1",
+			str(Data.serialize()).contains("translator_2,biome_b2,gate_broken") and str(Data.ofOr("team1.story.beatsqueued", "")) == "translator_1",
 			[Data.ofOr("team1.story.beatsplayed", ""), Data.ofOr("team1.story.beatsqueued", "")])
 	h.note("saved slot", {"slot": SLOT, "cooldown": cd_saved})

@@ -3,17 +3,20 @@ extends RefCounted
 # What the keeper says about the depth heat (#146), shown over its head by
 # hud/heat_talk.gd. Lines and timings are starting values for the user to tune.
 
-# Entering a hotter section, by biome index (3 = B4, where passive heat
-# starts; 8 = the lava ocean). Each shows once on the way down, and again
-# after the keeper has cooled off.
-const HOT: Dictionary = {
-	3: "so hot",
-	4: "feels even hotter",
-	5: "so much sweat",
-	6: "the heat is unbearable",
-	7: "it's scorching in here",
-	8: "the air itself is burning",
-}
+# Reaching a hotter heat level (#285): the level is how far below the suit's
+# shielding the keeper is (data/lava.gd passive_level, with the lava ocean one
+# deeper than B8): 0 is the first level that heats (B4 with no shielding, B5
+# with Heat Shielding I, ... B8 with IV), 1 the next, and so on. Level 5, the
+# lava ocean with no shielding, shouldn't be reachable; it is there in case.
+# Each shows once on the way down, and again after the keeper has cooled off.
+const HOT: Array = [
+	"so hot",
+	"feels even hotter",
+	"the heat is unbearable",
+	"it's scorching down here",
+	"the air itself is burning",
+	"not gonna make it...",
+]
 
 # Back where the heat bar drains: one of these, in a shuffled cycle so the
 # same line doesn't come back until the rest have had their turn.
@@ -27,17 +30,17 @@ const COOL: Array = [
 	"I can breathe again",
 	"the sweat's drying",
 	"that's a relief",
-	"oh, fresh air",
+	"oh, cool air",
 	"okay. okay. better.",
-	"cool rock, sweet cool rock",
-	"never going that deep again. Maybe.",
-	"the heat lets go",
 	"ahh, that's nice",
 	"back where it's bearable",
 	"cooling off",
 	"my visor's clearing up",
-	"ok, I can think again",
-	"sweet, sweet shade",
+	"cooling down",
+	"phew, cool air",
+	"thank the stars, it's cool",
+	"that was too hot",
+	"whew, need a heat suit upgrade",
 ]
 
 const HOT_COLOR := Color("ff6a2a")

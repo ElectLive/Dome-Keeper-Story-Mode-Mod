@@ -15,7 +15,10 @@ const GREEN_TEXT := Color("9ef5c8")
 const GREEN_DIM := Color("1d6b47")
 const BG := Color("06120c")
 const CPS := 70.0
+# Paragraphs per page at most, and a soft limit on a page's characters: a
+# paragraph that would take a page past it starts the next page (#285).
 const PAGE_LINES := 5
+const PAGE_CHARS := 430
 
 var beat_id: String = ""
 var tier: int = 0
@@ -118,11 +121,27 @@ func _ready() -> void:
 	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lines.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_panel.add_child(lines)
-	var body: Array = log.get("lines", [])
-	for i in range(0, body.size(), PAGE_LINES):
-		_pages.append("\n".join(PackedStringArray(body.slice(i, i + PAGE_LINES))))
+	_pages = pages(log.get("lines", []))
 	_set_page(0)
 	modulate.a = 0.0
+
+
+# The body's paragraphs as pages, a blank line between paragraphs.
+static func pages(body: Array) -> Array:
+	var out: Array = []
+	var page: Array = []
+	var chars: int = 0
+	for p in body:
+		var n: int = str(p).length()
+		if not page.is_empty() and (page.size() >= PAGE_LINES or chars + n > PAGE_CHARS):
+			out.append("\n\n".join(PackedStringArray(page)))
+			page = []
+			chars = 0
+		page.append(str(p))
+		chars += n
+	if not page.is_empty():
+		out.append("\n\n".join(PackedStringArray(page)))
+	return out
 
 
 func _label(font: Font, size: int, color: Color) -> Label:

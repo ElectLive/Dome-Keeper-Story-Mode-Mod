@@ -8,7 +8,9 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd")
 const Glitch = preload("res://mods-unpacked/cejdan-StoryMode/beats/fx_glitch.gd")
 
-const BY_TIER := {1: "first_gem", 2: "gate_broken", 3: "biome_b7", 4: "unobtainium_10"}
+# One-page beats where the script has them; the boss chamber (tier 4) pages,
+# and its last page is the {big shake} cue (#285).
+const BY_TIER := {1: "translator_1", 2: "lava_death_1", 3: "translator_3", 4: "boss_chamber"}
 
 
 func boot() -> Dictionary:
@@ -53,8 +55,15 @@ func run(h) -> void:
 			if caught:
 				await h.shot("tier%d_glitch" % tier)
 		h.note("tier %d text" % tier, box.text())
+		var pages: int = box.page_count()
+		for p in range(1, pages):
+			await h.press("ui_select")
+			await h.wait(0.3)
+			await h.until(func(): return not box.is_revealing(), 12.0)
+			await h.wait(0.5)
+			await h.shot("tier%d_page%d" % [tier, p + 1])
 		await h.press("ui_select")
-		h.check("tier %d: the next select closes it" % tier, await h.until(func(): return not StoryBeats.is_open(), 3.0))
+		h.check("tier %d: select pages through its %d page(s), then closes it" % [tier, pages], await h.until(func(): return not StoryBeats.is_open(), 3.0))
 		await h.wait(1.2)
 	await h.shot("after_all")
 	h.check("the game runs again", not GameWorld.paused)

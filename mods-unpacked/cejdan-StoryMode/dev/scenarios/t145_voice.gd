@@ -3,7 +3,8 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 # Ticket 145: the horror's voice grows with depth. B2's "Hello digger." is a
 # whisper: small white text, smaller than the narration, faintly wavy. The
 # same beat replayed after deeper biomes gets bigger and takes on its tier's
-# colour, full style from B5 on. Then B3 and B4 at their own depths.
+# colour, full style from B5 on. Then B3, the first gate (at B4) and B6 at
+# their own depths (B4's beat was cut in #285).
 
 const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd")
 const BeatBox = preload("res://mods-unpacked/cejdan-StoryMode/beats/BeatBox.gd")
@@ -56,15 +57,15 @@ func run(h) -> void:
 		h.note("biome_b2 after B%d" % (d + 1), {"volume": r[0], "size": r[1], "text": r[2]})
 		if d == 1:
 			h.check("B2: a whisper (volume 0)", r[0] == 0.0, r[0])
-			h.check("B2: \"Hello digger.\" smaller than the narration (%d px)" % narr_size, r[1] > 0 and r[1] < narr_size, r[1])
-			h.check("B2: white and faintly wavy", r[2].contains("[color=#f6f4ff]") and r[2].contains("[wave amp=9.0"), r[2])
+			h.check("B2: \"Hello digger.\" a readable whisper, %d px, below the tier's full size" % BeatBox.WHISPER_SIZE, r[1] == BeatBox.WHISPER_SIZE and r[1] < BeatBox.STYLES[1]["size"], r[1])
+			h.check("B2: pale violet and faintly wavy", r[2].contains("[color=#e2ddff]") and r[2].contains("[wave amp=9.0"), r[2])
 		if d == 4:
 			h.check("from B5 on: the tier's full style", r[0] == 1.0 and r[2].contains(BeatBox.STYLES[1]["open"] + "Hello digger."), r[2])
 	h.check("the voice grows with each biome", sizes[0] < sizes[1] and sizes[1] < sizes[2], sizes)
 	var b3: Array = await _play(h, "biome_b3", 2, "b3_natural")
-	var b4: Array = await _play(h, "biome_b4", 3, "b4_natural")
+	var b4: Array = await _play(h, "gate_broken", 3, "gate_at_B4")
 	h.note("natural depths", {"b3": b3.slice(0, 2), "b4": b4.slice(0, 2)})
-	h.check("B3 louder than B2's whisper, B4 louder still", b3[1] > 20 and b4[1] > b3[1], [b3[1], b4[1]])
-	var b5: Array = await _play(h, "biome_b5", 4, "b5_natural")
-	h.check("B5: full violet", b5[0] == 1.0 and b5[2].contains("[wave amp=14 freq=1.4"), b5[2])
+	h.check("B3 louder than B2's whisper, the gate at B4 louder still", b3[1] > 20 and b4[1] > b3[1], [b3[1], b4[1]])
+	var b5: Array = await _play(h, "biome_b6", 5, "b6_natural")
+	h.check("B6: full violet", b5[0] == 1.0 and b5[2].contains("[wave amp=14 freq=1.4"), b5[2])
 	h.snap("end", [])

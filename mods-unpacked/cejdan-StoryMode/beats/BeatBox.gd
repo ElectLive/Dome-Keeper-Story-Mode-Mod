@@ -2,23 +2,28 @@ extends Control
 
 # The horror's story beat box, in one of four style tiers (#24). The voice
 # rises with depth but always stays inviting:
-#   1  calm      the vanilla panel, pale text, typed out gently
+#   1  calm      a quiet violet panel, no glow, typed out gently
 #   2  warm      violet panel (the boss chamber barrier's colours), soft glow,
 #                a slow hypnotic wave, a faint violet dimming of the world
 #   3  glowing   larger, brighter glow, the wave slower and deeper, a pulsing
 #                border, and rare glitch flickers: something wrong underneath
 #   4  awake     no panel: the screen sinks into violet dark, huge glowing
 #                text, glitches and small shudders more often
-# Red shaking text belongs to the monsters' pleas, never to the horror.
+# Red shaking text belongs to the monsters' pleas, never to the horror. The
+# horror's own lines shake only where the script asks, with a "shake" line
+# cue (cue() below, #285), and stay violet.
 #
 # The narrator (#137): a line starting with "> " describes what the keeper
-# hears or thinks, in a plain, muted, slanted voice at three quarters size, the
-# same in every tier, so the horror's own words stand out against it.
+# hears or thinks, in a plain, muted voice at three quarters size, the same in
+# every tier, so the horror's own words stand out against it. Since #285 it is
+# set in a clean upright sans (the game's Noto Sans) with no glow outline,
+# left-aligned, and a narration-only page wears the calm vanilla panel: the
+# user found the slanted, glowing display font hard to read, and violet is
+# for the horror only.
 #
 # The horror's volume (#145): its voice grows louder the deeper the keeper has
-# been. At B2 it is a whisper, small white text below the narrator's size with
-# a faint wave; each biome uncovered after that brings it closer to its tier's
-# full style, which it reaches from B5 on (VOLUME_FULL_AT). The narrator never
+# been. At B2 it is a whisper, smaller pale violet text with a faint wave;
+# each biome uncovered after that brings it closer to its tier's full style, which it reaches from B5 on (VOLUME_FULL_AT). The narrator never
 # changes size.
 #
 # Text comes from the translation key story.beat.<id> (text/strings.gd), with
@@ -35,25 +40,33 @@ const NIGHT := Color("0b0620")
 const NARRATION := "> "
 const NARRATOR_COLOR := Color("c7bfb4")
 const NARRATOR_SCALE := 0.75
-# Slant of the narrator's synthetic italic (x shift per unit of height).
-const NARRATOR_SLANT := 0.2
+const NARRATOR_FONT := "res://gui/fonts/NotoSans-Regular.ttf"
+# A thin dark edge keeps it readable over the world where there is no panel.
+const NARRATOR_OUTLINE := 3
+const NARRATOR_OUTLINE_COLOR := Color("120d20")
 
-# Per tier: text size, colour, glow, width, BBCode wrap, typing speed (chars/s),
+# Per tier: text size, colour, glow, width, BBCode wrap, typing speed (chars/s;
+# about reading speed, so the eye can follow the typing. On 2026-11-18 the
+# user found 45/32/26/20 too fast to follow and too slow to wait out, and
+# 2.5x faster worse, and 24/20/17/13 a hair too slow; left-aligned text is
+# the fallback if centred never reads well),
 # backdrop dimming, glitch rate for the box's shudders.
 const STYLES := {
-	1: {"size": 36, "color": Color("ece6f5"), "glow": Color(0, 0, 0, 0), "glow_size": 0, "width": 860,
-		"open": "", "close": "", "cps": 45.0, "dim": 0.0, "shudder": 0.0},
+	1: {"size": 36, "color": VIOLET_LIGHT, "glow": Color(0, 0, 0, 0), "glow_size": 0, "width": 860,
+		"open": "", "close": "", "cps": 29.0, "dim": 0.0, "shudder": 0.0},
 	2: {"size": 44, "color": VIOLET_LIGHT, "glow": Color(VIOLET, 0.45), "glow_size": 10, "width": 960,
-		"open": "[wave amp=14 freq=1.4 connected=1]", "close": "[/wave]", "cps": 32.0, "dim": 0.28, "shudder": 0.0},
+		"open": "[wave amp=14 freq=1.4 connected=1]", "close": "[/wave]", "cps": 24.0, "dim": 0.28, "shudder": 0.0},
 	3: {"size": 54, "color": Color("d9d3ff"), "glow": Color(Color("8a7cff"), 0.6), "glow_size": 14, "width": 1100,
-		"open": "[wave amp=20 freq=0.9 connected=1][glitch rate=0.25]", "close": "[/glitch][/wave]", "cps": 26.0, "dim": 0.5, "shudder": 0.0},
+		"open": "[wave amp=20 freq=0.9 connected=1][glitch rate=0.25]", "close": "[/glitch][/wave]", "cps": 20.0, "dim": 0.5, "shudder": 0.0},
 	4: {"size": 96, "color": VIOLET_SPARK, "glow": Color(VIOLET, 0.75), "glow_size": 20, "width": 1500,
-		"open": "[wave amp=26 freq=0.6 connected=1][glitch rate=0.7]", "close": "[/glitch][/wave]", "cps": 20.0, "dim": 0.84, "shudder": 0.7},
+		"open": "[wave amp=26 freq=0.6 connected=1][glitch rate=0.7]", "close": "[/glitch][/wave]", "cps": 16.0, "dim": 0.84, "shudder": 0.7},
 }
 
 # The whisper: the horror's text at volume 0.
-const WHISPER_SIZE := 20
-const WHISPER_COLOR := Color("f6f4ff")
+# Raised from 20 for readability (#285): B2's whisper is 30 px, B3's about 32.
+const WHISPER_SIZE := 30
+# A pale violet: even the whisper is the horror's colour (#285).
+const WHISPER_COLOR := Color("e2ddff")
 const WHISPER_WAVE_AMP := 9.0
 const WHISPER_WAVE_FREQ := 1.6
 # Deepest biome index (0 = B1, story_beats.gd DEEPEST) at volume 0, and the one
@@ -70,6 +83,12 @@ var _text: RichTextLabel
 var _hint: Label
 var _frame: Control
 var _panel_box: StyleBoxFlat
+# The narrator's page look (#285): tier 1's vanilla panel, shown on every page
+# that is narration only, in any tier. Violet belongs to the horror.
+var _calm_box: StyleBox
+var _calm: bool = false
+var _dim: ColorRect
+var _halo: TextureRect
 var _reveal: Tween
 var _time: float = 0.0
 var _closing: bool = false
@@ -110,7 +129,9 @@ func _ready() -> void:
 		dim.color = Color(NIGHT, _style["dim"])
 		_full(dim)
 		add_child(dim)
+		_dim = dim
 		var halo: TextureRect = TextureRect.new()
+		_halo = halo
 		halo.name = "Halo"
 		halo.texture = _halo_texture(tier)
 		halo.stretch_mode = TextureRect.STRETCH_SCALE
@@ -136,10 +157,8 @@ func _ready() -> void:
 	_text.install_effect(Glitch.new())
 	var font: Font = load("res://gui/fonts/FontVeryLarge.tres" if tier >= 3 else "res://gui/fonts/FontLarge.tres")
 	_text.add_theme_font_override("normal_font", font)
-	var slanted: FontVariation = FontVariation.new()
-	slanted.base_font = font
-	slanted.variation_transform = Transform2D(Vector2(1, 0), Vector2(-NARRATOR_SLANT, 1), Vector2.ZERO)
-	_text.add_theme_font_override("italics_font", slanted)
+	# The narrator's lines ride the [i] tag, drawn in their own font.
+	_text.add_theme_font_override("italics_font", load(NARRATOR_FONT))
 	_text.add_theme_color_override("default_color", _style["color"])
 	if _style["glow_size"] > 0:
 		_text.add_theme_constant_override("outline_size", _style["glow_size"])
@@ -149,10 +168,13 @@ func _ready() -> void:
 		_text.add_theme_color_override("font_outline_color", Color("221f1f"))
 	_text.add_theme_constant_override("line_separation", 10 if tier < 4 else 22)
 	col.add_child(_text)
-	# Pages: a "---" line breaks the page; otherwise every PAGE_LINES lines.
+	# Pages: a "---" line breaks the page; so does a change of speaker, since
+	# the narrator and the horror never share a page (each has its own panel,
+	# #285); otherwise every PAGE_LINES lines.
 	var group: PackedStringArray = []
 	for l: String in lines_text().split("\n", false) + PackedStringArray(["---"]):
-		if l.strip_edges() == "---" or group.size() == PAGE_LINES:
+		var turn: bool = not group.is_empty() and l.strip_edges() != "---" and is_narration(l) != is_narration(group[group.size() - 1])
+		if l.strip_edges() == "---" or group.size() == PAGE_LINES or turn:
 			if not group.is_empty():
 				_pages.append("\n".join(group))
 			group = []
@@ -164,12 +186,11 @@ func _ready() -> void:
 	_hint.label_settings = load("res://gui/fontsettings/SmallFontSettings.tres")
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if tier < 4 else HORIZONTAL_ALIGNMENT_CENTER
 	_hint.text = tr("story.beat.continue")
-	_hint.modulate = Color(VIOLET_LIGHT if tier > 1 else Color.WHITE, 0.0)
+	_hint.modulate = Color(VIOLET_LIGHT, 0.0)
 	col.add_child(_hint)
-	# Vanilla's Style maps panels and colour rects through the world palette.
-	# Only tier 1's vanilla panel wants that; the horror's violet is real colour.
-	if tier == 1:
-		Style.init(self)
+	# Vanilla's Style maps panels through the world palette; only the calm
+	# vanilla panel wants that (_look sets it), the horror's violet is real colour.
+	_look(_calm, false)
 	modulate.a = 0.0
 
 
@@ -193,30 +214,64 @@ func _set_page(i: int) -> void:
 	while size > 28:
 		var rows: int = 0
 		for l: String in page.split("\n"):
-			var s: float = size * (NARRATOR_SCALE if is_narration(l) else 1.0)
+			var s: float = size * (NARRATOR_SCALE if is_narration(l) else cue(l)["scale"])
 			var per_row: float = maxf(1.0, _style["width"] / (s * 0.5))
-			rows += maxi(1, ceili(l.length() / per_row))
+			rows += maxi(1, ceili(cue(l)["text"].length() / per_row))
 		if rows <= MAX_ROWS[tier]:
 			break
 		size -= 4
 	_text.add_theme_font_size_override("normal_font_size", size)
 	_text.add_theme_font_size_override("italics_font_size", int(size * NARRATOR_SCALE))
 	var tags: Array = _voice_tags(size)
+	# The horror's size at this volume, which its line cues scale.
+	var voice_px: int = size if volume >= 1.0 else int(round(lerpf(WHISPER_SIZE, size, volume)))
 	# Runs of the horror's lines share one effect wrap, so its wave stays connected.
 	var parts: PackedStringArray = []
 	var run: PackedStringArray = []
 	for l: String in page.split("\n"):
 		if is_narration(l):
 			if not run.is_empty():
-				parts.append(tags[0] + _escape("\n".join(run)) + tags[1])
+				parts.append("[center]" + tags[0] + "\n".join(run) + tags[1] + "[/center]")
 				run = []
-			parts.append("[i][color=#%s]%s[/color][/i]" % [NARRATOR_COLOR.to_html(false), _escape(narration_text(l))])
+			parts.append("[left][i][color=#%s][outline_size=%d][outline_color=#%s]%s[/outline_color][/outline_size][/color][/i][/left]" % [NARRATOR_COLOR.to_html(false), NARRATOR_OUTLINE, NARRATOR_OUTLINE_COLOR.to_html(false), _escape(narration_text(l))])
 		else:
-			run.append(l)
+			run.append(_voice_line(l, voice_px))
 	if not run.is_empty():
-		parts.append(tags[0] + _escape("\n".join(run)) + tags[1])
-	_text.text = "[center]" + "\n".join(parts) + "[/center]"
+		parts.append("[center]" + tags[0] + "\n".join(run) + tags[1] + "[/center]")
+	# The narrator reads left to right; the horror's lines are centred (#285).
+	# Each alignment tag is its own paragraph, so the parts need no newline.
+	_text.text = "".join(parts)
 	_text.visible_characters = 0
+	_look(Array(page.split("\n")).all(func(l): return is_narration(l)), i > 0)
+
+
+# Narration-only pages wear the calm vanilla panel with the world undimmed;
+# a page where the horror speaks wears its tier's violet (#285).
+func _look(calm: bool, fade: bool) -> void:
+	_calm = calm
+	if _frame == null:
+		return
+	if calm:
+		if _calm_box == null:
+			_calm_box = load("res://gui/panels/panel_outside.tres").duplicate()
+			_calm_box.set_content_margin_all(36)
+		_frame.add_theme_stylebox_override("panel", _calm_box)
+		# Vanilla's panels are drawn through the world palette (Style.init).
+		_frame.material = Style.spriteShaderLabel
+		_frame.rotation = 0.0
+		_frame.scale = Vector2.ONE
+	else:
+		_frame.add_theme_stylebox_override("panel", _panel_box)
+		_frame.material = null
+	for n: CanvasItem in [_dim, _halo]:
+		if n != null:
+			if fade:
+				create_tween().tween_property(n, "modulate:a", 0.0 if calm else 1.0, 0.3)
+			else:
+				n.modulate.a = 0.0 if calm else 1.0
+	if _hint != null:
+		var a: float = _hint.modulate.a
+		_hint.modulate = Color(Color.WHITE if calm else VIOLET_LIGHT, a)
 
 
 # The horror's wave and glitch per tier: [amp, freq, glitch rate] (0 = none),
@@ -245,6 +300,52 @@ func _voice_tags(size: int) -> Array:
 		open += "[glitch rate=%.2f]" % glitch
 		close = "[/glitch]" + close
 	return [open, close]
+
+
+# Line cues (#285): a horror line may open with a cue in braces that sizes or
+# shakes just that line, e.g. "{small} Thank you." or "{big shake} hungry."
+# Sizes scale the horror's voice at this beat's volume; "shake" trembles it;
+# "glitch" gives it constant glitch bursts (the doom thanks' last word).
+# Small sizes stay readable (#285). With the whisper at 30 px, the first gate's
+# voice is about 39 px: {small} "Thank you." about 35, {smaller} "Only one
+# more seal to break." about 25, the size the user liked.
+const CUE_SCALES := {"smaller": 0.65, "small": 0.9, "big": 1.6, "huge": 2.2}
+const CUE_MIN_PX := 24
+const CUE_SHAKE_RATE := 22.0
+const CUE_SHAKE_LEVEL := 9
+const CUE_GLITCH_RATE := 4.0
+
+
+# {"text": the line without its cue, "scale": size factor, "shake": bool}.
+static func cue(line: String) -> Dictionary:
+	var out: Dictionary = {"text": line, "scale": 1.0, "shake": false, "glitch": false}
+	if not line.begins_with("{") or line.find("}") < 0:
+		return out
+	var close: int = line.find("}")
+	for w: String in line.substr(1, close - 1).to_lower().split(" ", false):
+		if CUE_SCALES.has(w):
+			out["scale"] = CUE_SCALES[w]
+		elif w == "shake":
+			out["shake"] = true
+		elif w == "glitch":
+			out["glitch"] = true
+		else:
+			return out  # not a cue: show the line as written
+	out["text"] = line.substr(close + 1).strip_edges()
+	return out
+
+
+# One horror line as BBCode, its cue applied.
+func _voice_line(line: String, voice_px: int) -> String:
+	var c: Dictionary = cue(line)
+	var s: String = _escape(c["text"])
+	if c["glitch"]:
+		s = "[glitch rate=%.1f]%s[/glitch]" % [CUE_GLITCH_RATE, s]
+	if c["shake"]:
+		s = "[shake rate=%.1f level=%d connected=1]%s[/shake]" % [CUE_SHAKE_RATE, CUE_SHAKE_LEVEL, s]
+	if c["scale"] != 1.0:
+		s = "[font_size=%d]%s[/font_size]" % [maxi(CUE_MIN_PX, int(round(voice_px * c["scale"]))), s]
+	return s
 
 
 static func is_narration(line: String) -> bool:
@@ -283,13 +384,13 @@ func _make_frame() -> Control:
 	var frame: PanelContainer = PanelContainer.new()
 	frame.name = "BeatFrame"
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if tier == 1:
-		var sb: StyleBox = load("res://gui/panels/panel_outside.tres").duplicate()
-		sb.set_content_margin_all(36)
-		frame.add_theme_stylebox_override("panel", sb)
-		return frame
 	_panel_box = StyleBoxFlat.new()
-	if tier == 4:
+	if tier == 1:
+		# The calm tier's horror page (#285): violet, but quiet, with no glow.
+		_panel_box.bg_color = Color(Color("140d33"), 0.94)
+		_panel_box.set_border_width_all(2)
+		_panel_box.border_color = Color(VIOLET, 0.8)
+	elif tier == 4:
 		_panel_box.bg_color = Color(0, 0, 0, 0)
 		_panel_box.border_width_top = 0
 	else:
@@ -298,7 +399,7 @@ func _make_frame() -> Control:
 		_panel_box.border_color = VIOLET if tier == 2 else Color("8a7cff")
 		_panel_box.shadow_color = Color(VIOLET, 0.35 if tier == 2 else 0.55)
 		_panel_box.shadow_size = 18 if tier == 2 else 34
-	_panel_box.set_content_margin_all(44 if tier < 4 else 0)
+	_panel_box.set_content_margin_all(36 if tier == 1 else 44 if tier < 4 else 0)
 	frame.add_theme_stylebox_override("panel", _panel_box)
 	return frame
 
@@ -324,7 +425,7 @@ func _process(delta: float) -> void:
 		var p: float = 0.5 + 0.5 * sin(_time * 1.6)
 		_panel_box.border_color = Color("8a7cff").lerp(VIOLET_SPARK, p * 0.5)
 		_panel_box.shadow_size = int(26 + 14 * p)
-	if _style.get("shudder", 0.0) > 0.0 and _frame != null:
+	if _style.get("shudder", 0.0) > 0.0 and _frame != null and not _calm:
 		if Glitch.burst(_time, _style["shudder"]):
 			var r: float = Glitch._rand(int(_time * 10.0) * 31)
 			_frame.pivot_offset = _frame.size / 2.0
