@@ -3,7 +3,9 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 # Ticket 146: the keeper's heat lines. B3 is calm. B4 says "so hot", B5
 # "feels even hotter". Back up to B4: quiet. Up to B3 with heat on the bar:
 # a relieved line. Down again: "so hot" again, and the next relief is a
-# different line. With Heat Shielding IV (no passive heat) B5 says nothing.
+# different line. The lines go by heat level, counted from the suit's
+# shielding (#285): with Heat Shielding I, B4 is cool and B5 says "so hot".
+# With Heat Shielding IV (no passive heat that high up) B5 says nothing.
 
 const Lines = preload("res://mods-unpacked/cejdan-StoryMode/data/heat_lines.gd")
 
@@ -96,9 +98,18 @@ func run(h) -> void:
 	h.check("down again: \"so hot\" again", again == ["so hot"], again)
 	var cool2: Array = await _go(h, b3, 4.0, "b3_cooler_again")
 	h.check("the next relief is a different line", cool2.size() == 1 and cool2[0] != cool1[0], [cool1, cool2])
-	# Heat Shielding IV: no passive heat, no hot lines.
+	h.check("the levels' lines are the user's", Lines.HOT[0] == "so hot" and Lines.HOT[1] == "feels even hotter" and Lines.HOT.size() == 6, Lines.HOT)
+	# Heat Shielding I: the scale moves down a biome.
 	h.set_inv("money", 100000)
-	for i in range(1, 5):
+	await h.buy("storyheatshield1")
+	await h.wait(3.0)
+	var b4_one: Array = await _go(h, b4, 3.0, "b4_shield1")
+	h.check("with Heat Shielding I, B4 is cool: no hot line", b4_one.filter(func(l): return not Lines.COOL.has(l)).is_empty(), b4_one)
+	var b5_one: Array = await _go(h, b5, 5.0, "b5_shield1")
+	h.check("with Heat Shielding I, B5: \"so hot\"", b5_one == ["so hot"], b5_one)
+	await _go(h, b3, 4.0, "b3_cool_shield1")
+	# Heat Shielding IV: no passive heat, no hot lines.
+	for i in range(2, 5):
 		await h.buy("storyheatshield%d" % i)
 	await h.wait(3.0)
 	var shielded: Array = await _go(h, b5, 4.0, "b5_shielded")

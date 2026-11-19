@@ -9,28 +9,28 @@ const EN := {
 	"loadout.storymode.headline": "Story Mode",
 	"upgrades.storysuitblaster.title": "Suit Blaster",
 	"upgrades.storyheatshield1.title": "Heat Shielding I",
-	"upgrades.storyheatshield1.desc": "Suit lining that slows the heat. Lava heats you 40% slower, and the depth heat lets you go one section deeper.",
+	"upgrades.storyheatshield1.desc": "Suit upgrade that slows the heat. Lava heats you 40% slower, and depth heat starts one layer deeper.",
 	"upgrades.storyheatshield2.title": "Heat Shielding II",
-	"upgrades.storyheatshield2.desc": "Thicker lining. Lava heats you 65% slower, and the depth heat lets you go another section deeper.",
+	"upgrades.storyheatshield2.desc": "Thicker heat shielding. Lava heats you 65% slower, and depth heat starts one additional layer deeper.",
 	"upgrades.storyheatshield3.title": "Heat Shielding III",
-	"upgrades.storyheatshield3.desc": "Ceramic plates. Lava heats you 80% slower, and the depth heat lets you go another section deeper.",
+	"upgrades.storyheatshield3.desc": "Advanced heat shielding. Lava heats you 80% slower, and depth heat starts another additional layer deeper.",
 	"upgrades.storyheatshield4.title": "Heat Shielding IV",
-	"upgrades.storyheatshield4.desc": "The best suit money can buy. The deepest section is bearable. Lava still burns, about 17 times slower.",
+	"upgrades.storyheatshield4.desc": "Maximum heat shielding. You don't have to worry about depth heat, and could even survive a long time in lava.",
 	"upgrades.storywin.title": "Win Condition",
-	"upgrades.storywin.desc": "There is one way out of this mine: get rich enough to leave it.",
+	"upgrades.storywin.desc": "Your job here is simple. Fulfil your assigned mineral quota.",
 	"upgrades.storydrillmetal.title": "Metal Bit",
-	"upgrades.storydrillmetal.desc": "A hardened bit for the Mine Driller. Its drills cut through metal.",
+	"upgrades.storydrillmetal.desc": "A hardened bit for the Mine Driller. Allows the drills to cut through metal.",
 	"upgrades.storydrillbotmetal.title": "Metal Bit",
 	"upgrades.storydrillbotmetal.desc": "New teeth for Drillbert. He chews through metal now.",
-	"upgrades.storyretirerich.title": "Retire Rich",
-	"upgrades.storyretirerich.desc": "Sell the dome, buy an island, never dig again. Ends the run as a win.",
+	"upgrades.storyretirerich.title": "Fill Quota",
+	"upgrades.storyretirerich.desc": "Fulfil your assigned mineral quota for your dig. Ends the run as a win.",
 	"upgrades.storynewgadget1.title": "New Gadget I",
 	"upgrades.storynewgadget2.title": "New Gadget II",
 	"upgrades.storynewgadget3.title": "New Gadget III",
 	"upgrades.storynewgadget4.title": "New Gadget IV",
 	"upgrades.storyventdome.title": "Vent the Dome",
-	"upgrades.storyventdome.desc": "Flush the gas that rose into the dome out through the roof. The dome's air is clean again, until more gas comes up.",
-	"upgrades.storysuitblaster.desc": "Install a mining blaster into your suit. Its blast breaks rock, and the metal that no drill can touch.",
+	"upgrades.storyventdome.desc": "Flush all of the gas buildup out of the dome. The dome's air will be clean again.",
+	"upgrades.storysuitblaster.desc": "Install a mining blaster into your suit. Its blast breaks rock and metal blocks.",
 }
 
 
@@ -40,7 +40,7 @@ static func register() -> void:
 	for k: String in EN:
 		t.add_message(k, EN[k])
 	for i in range(1, 5):
-		t.add_message("upgrades.storynewgadget%d.desc" % i, "Roll a random gadget for the dome, as if you found one in a cave. Reroll with water. Paid when you pick.")
+		t.add_message("upgrades.storynewgadget%d.desc" % i, "Roll a random gadget for the dome.")
 	# Story beats (data/beats.gd): story.beat.<id> holds the beat's lines.
 	t.add_message("story.beat.continue", "Continue")
 	t.add_message("story.beat.waiting", "Waiting for the other players...")

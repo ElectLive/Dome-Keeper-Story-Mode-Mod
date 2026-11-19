@@ -1,7 +1,7 @@
 extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 
 # Ticket 123: a new Story Mode run opens with the keeper's own company log,
-# Halcyon's welcome memo, a moment after the keeper can move. It opens once,
+# Halcyon Minerals' welcome memo, a moment after the keeper can move. It opens once,
 # in the log box with the company header, and never gives the keeper's number.
 # Saves to slot 17 with the welcome taken back out of the played list, for
 # t123_reload (a loaded run must not show it, even then).
@@ -27,7 +27,7 @@ func run(h) -> void:
 	var id: String = await h.read_beat("welcome", 3.0)
 	h.check("a new run opens the welcome log", id == LogData.WELCOME, id)
 	h.check("it opens about a second after the keeper can move (0.8 to 3 s)", not opened.is_empty() and opened[0][1] >= 0.8 and opened[0][1] <= 3.0, opened)
-	h.check("the box shows the company header, not a salvaged log", header.begins_with("HALCYON EXTRACTION"), header)
+	h.check("the box shows the company header, not a salvaged log", header.begins_with("HALCYON MINERALS"), header)
 	var entry: Dictionary = LogData.by_id(LogData.WELCOME)
 	var text: String = " ".join(PackedStringArray(entry.get("lines", []))) + entry.get("title", "") + entry.get("header", "")
 	h.check("the welcome never gives the keeper's number", not text.contains("9"), text)

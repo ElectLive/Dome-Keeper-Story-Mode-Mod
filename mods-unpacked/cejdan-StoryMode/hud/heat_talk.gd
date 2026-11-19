@@ -3,13 +3,15 @@ extends Node
 # The keeper talks about the depth heat (#146): a small wavy line over its
 # head, so the heat bar explains itself.
 #   - Entering passive heat: "so hot" (red-orange).
-#   - Each deeper, hotter section after that: the next line of data/heat_lines.gd
-#     HOT ("feels even hotter", ...). Going back up a section stays quiet.
+#   - Each hotter heat level after that: that level's line in data/heat_lines.gd
+#     HOT ("feels even hotter", ...). The level counts from the suit's
+#     shielding (#285), so with Heat Shielding I "so hot" comes at B5. Going
+#     back up stays quiet.
 #   - Out of the heat with the bar draining (the mine above B4, or the dome):
 #     a relieved line from a shuffled cycle (pale blue). Then the next trip
 #     down starts from "so hot" again.
-# Heat Shielding that stops passive heat (tier IV) stops the hot lines, since
-# the bar no longer fills. Lava itself is not depth heat: no lines there.
+# Where the suit's shielding stops the depth heat there are no hot lines, since
+# the bar doesn't fill. Lava itself is not depth heat: no lines there.
 #
 # Lives under the Story Mode node; does nothing without the run's lava field.
 
@@ -23,8 +25,8 @@ const FIELD := "StoryLavaField"
 const OFFSET := Vector2(0, -30)
 
 # Every local keeper talks about its own heat (#231). Per keeper (playerId ->):
-#   hot: highest hot section announced since it last cooled off (-1 = none)
-#   pending / pending_t: the state being settled ("hot:<section>" / "out" / "")
+#   hot: highest heat level announced since it last cooled off (-1 = none)
+#   pending / pending_t: the state being settled ("hot:<level>" / "out" / "")
 #   gap: seconds before it may talk again; exit_heat: heat as it left the heat
 #   holder: its line on screen
 var talkers: Dictionary = {}
@@ -101,10 +103,10 @@ func _process_keeper(keeper, map, field, delta: float) -> void:
 	if t["pending_t"] < Lines.SETTLE or t["gap"] > 0.0:
 		return
 	if state.begins_with("hot:"):
-		var section: int = int(state.substr(4))
-		if section > t["hot"]:
-			t["hot"] = section
-			_say(keeper, str(Lines.HOT.get(section, Lines.HOT[Lines.HOT.keys().max()])), Lines.HOT_COLOR, "hot")
+		var level: int = int(state.substr(4))
+		if level > t["hot"]:
+			t["hot"] = level
+			_say(keeper, str(Lines.HOT[mini(level, Lines.HOT.size() - 1)]), Lines.HOT_COLOR, "hot")
 	elif state == "out" and t["hot"] >= 0:
 		# Out of the heat: the next trip down starts from "so hot" again.
 		t["hot"] = -1
@@ -112,8 +114,10 @@ func _process_keeper(keeper, map, field, delta: float) -> void:
 			_say(keeper, _next_cool(), Lines.COOL_COLOR, "cool")
 
 
-# "hot:<section>" in passive heat the suit can feel, "out" out of it (the mine
-# above B4, or the dome), "" for anything else (in lava).
+# "hot:<level>" in passive heat the suit can feel, "out" out of it (the mine
+# above B4, or the dome), "" for anything else (in lava). The level is
+# data/lava.gd's passive_level, except that the lava ocean counts one deeper
+# than B8 here (it heats like B8, but gets its own line).
 func _state(keeper, map, field) -> String:
 	if field.keeper_in_lava(keeper):
 		return ""
@@ -125,7 +129,7 @@ func _state(keeper, map, field) -> String:
 	if not ocean.is_empty() and c.y > int(ocean["ceiling"]):
 		section = 8
 	if section >= LavaData.PASSIVE_HEAT_START_BIOME and LavaData.passive_rate(section, keeper) > 0.0:
-		return "hot:%d" % section
+		return "hot:%d" % (section - LavaData.PASSIVE_HEAT_START_BIOME - LavaData.shield_tier(keeper))
 	return "out"
 
 

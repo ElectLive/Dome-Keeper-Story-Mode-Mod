@@ -304,7 +304,8 @@ func _voice_tags(size: int) -> Array:
 
 # Line cues (#285): a horror line may open with a cue in braces that sizes or
 # shakes just that line, e.g. "{small} Thank you." or "{big shake} hungry."
-# Sizes scale the horror's voice at this beat's volume; "shake" trembles it.
+# Sizes scale the horror's voice at this beat's volume; "shake" trembles it;
+# "glitch" gives it constant glitch bursts (the doom thanks' last word).
 # Small sizes stay readable (#285). With the whisper at 30 px, the first gate's
 # voice is about 39 px: {small} "Thank you." about 35, {smaller} "Only one
 # more seal to break." about 25, the size the user liked.
@@ -312,11 +313,12 @@ const CUE_SCALES := {"smaller": 0.65, "small": 0.9, "big": 1.6, "huge": 2.2}
 const CUE_MIN_PX := 24
 const CUE_SHAKE_RATE := 22.0
 const CUE_SHAKE_LEVEL := 9
+const CUE_GLITCH_RATE := 4.0
 
 
 # {"text": the line without its cue, "scale": size factor, "shake": bool}.
 static func cue(line: String) -> Dictionary:
-	var out: Dictionary = {"text": line, "scale": 1.0, "shake": false}
+	var out: Dictionary = {"text": line, "scale": 1.0, "shake": false, "glitch": false}
 	if not line.begins_with("{") or line.find("}") < 0:
 		return out
 	var close: int = line.find("}")
@@ -325,6 +327,8 @@ static func cue(line: String) -> Dictionary:
 			out["scale"] = CUE_SCALES[w]
 		elif w == "shake":
 			out["shake"] = true
+		elif w == "glitch":
+			out["glitch"] = true
 		else:
 			return out  # not a cue: show the line as written
 	out["text"] = line.substr(close + 1).strip_edges()
@@ -335,6 +339,8 @@ static func cue(line: String) -> Dictionary:
 func _voice_line(line: String, voice_px: int) -> String:
 	var c: Dictionary = cue(line)
 	var s: String = _escape(c["text"])
+	if c["glitch"]:
+		s = "[glitch rate=%.1f]%s[/glitch]" % [CUE_GLITCH_RATE, s]
 	if c["shake"]:
 		s = "[shake rate=%.1f level=%d connected=1]%s[/shake]" % [CUE_SHAKE_RATE, CUE_SHAKE_LEVEL, s]
 	if c["scale"] != 1.0:

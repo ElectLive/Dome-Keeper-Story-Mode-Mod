@@ -3,8 +3,10 @@ extends "res://mods-unpacked/cejdan-StoryMode/dev/scenario.gd"
 # Ticket 285: the user's script pass. Plays every beat they rewrote at the
 # depth it fires at, shoots every page, and checks the line cues: the first
 # gate's "{small} Thank you." and "{smaller shake} ..." come out smaller (and
-# shaking), the boss chamber's "{big shake} hungry." bigger and shaking, and no
-# cue's braces reach the screen. The cut beats are gone from the data.
+# shaking), the boss chamber's "{big shake} hungry." bigger and shaking, the
+# doom thanks' "{huge shake glitch} feast." biggest, shaking and glitching, and
+# no cue's braces reach the screen. The cut beats are gone from the data.
+# Second pass (2026-11-19): lava_death_1, the translators and the doom thanks.
 
 const StoryBeats = preload("res://mods-unpacked/cejdan-StoryMode/beats/story_beats.gd")
 const BeatBox = preload("res://mods-unpacked/cejdan-StoryMode/beats/BeatBox.gd")
@@ -19,10 +21,16 @@ const BEATS := {
 	"biome_b8": 7,
 	"lava_ocean": 8,
 	"boss_chamber": 8,
+	"lava_death_1": 4,
+	"translator_1": 2,
+	"translator_2": 4,
+	"translator_3": 6,
+	"doom_thanks": 8,
 }
 # Every page types out at the read-along pace, so the run is long.
 const TIMEOUT := 900
-const CUT := ["biome_b4", "first_gem", "unobtainium_1", "unobtainium_3", "unobtainium_5", "unobtainium_7", "unobtainium_10"]
+const CUT := ["biome_b4", "first_gem", "unobtainium_1", "unobtainium_3", "unobtainium_5", "unobtainium_7", "unobtainium_10",
+	"lava_death_2", "lava_death_3", "lava_death_4", "lava_death_5"]
 
 
 func boot() -> Dictionary:
@@ -75,8 +83,9 @@ func run(h) -> void:
 	await h.wait(1.0)
 	for id: String in CUT:
 		h.check("%s is cut from the data" % id, BeatData.by_id(id).is_empty())
-	h.check("cue() reads size and shake", BeatBox.cue("{smaller shake} Only one.") == {"text": "Only one.", "scale": 0.7, "shake": true}
-			and BeatBox.cue("{oops} hi") == {"text": "{oops} hi", "scale": 1.0, "shake": false} and BeatBox.cue("plain")["scale"] == 1.0)
+	h.check("cue() reads size, shake and glitch", BeatBox.cue("{smaller shake} Only one.") == {"text": "Only one.", "scale": BeatBox.CUE_SCALES["smaller"], "shake": true, "glitch": false}
+			and BeatBox.cue("{huge shake glitch} feast.") == {"text": "feast.", "scale": BeatBox.CUE_SCALES["huge"], "shake": true, "glitch": true}
+			and BeatBox.cue("{oops} hi") == {"text": "{oops} hi", "scale": 1.0, "shake": false, "glitch": false} and BeatBox.cue("plain")["scale"] == 1.0)
 	for id: String in BEATS:
 		var pages: Array = await _play(h, id, BEATS[id])
 		var want: int = 1
@@ -102,4 +111,8 @@ func run(h) -> void:
 		if id == "boss_chamber" and pages.size() == 3:
 			var s: Array = _sizes(pages[2]["bb"])
 			h.check("boss: \"hungry.\" big and shaking", s.size() == 1 and s[0] > BeatBox.STYLES[4]["size"] and pages[2]["bb"].contains("[shake "), [s, pages[2]["bb"]])
+		if id == "doom_thanks" and pages.size() == 5:
+			var s: Array = _sizes(pages[4]["bb"])
+			var bb: String = pages[4]["bb"]
+			h.check("doom thanks: \"feast.\" huge, shaking and glitching", s.size() == 1 and s[0] > BeatBox.STYLES[4]["size"] * 2 and bb.contains("[shake ") and bb.contains("[glitch rate=4"), [s, bb])
 	h.snap("end", ["team1.story.beatsplayed"])

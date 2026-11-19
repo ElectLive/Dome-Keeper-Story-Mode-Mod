@@ -1,12 +1,12 @@
 # Story Mode: Script
 
 Notes for implementers:
-- Company name, used everywhere: Halcyon Extraction. Only the data logs and the planet_end narration mention it.
-- The horror's name for the keeper: 'you' through the descent, 'my sweet' at b8, 'little digger' in the boss chamber. (The unobtainium beats that introduced 'little keeper' were cut on 2026-11-18; the doom thanks and the logs still use it.)
-- The player is meant to work out that they are Keeper 9. The logs come from Keepers 1, 4, 5, 6, 7 and 8. The gaps are deliberate.
-- Narration: a line starting with '> ' is the narrator, not the horror (#137). The user wrote b2 and b3 (2026-11-13) and b5 to b8, lava_ocean, gate_broken and boss_chamber (2026-11-18, #285); the rest still needs a human pass.
-- Line cues: a horror line may open with {small}, {smaller}, {big} or {huge}, optionally with shake ({smaller shake}), to size or shake just that line (beats/BeatBox.gd).
-- Lines the logs echo on purpose: 'only frightened, you don't have to be' (log_b3 only: the horror said it to Ines Varga, the keeper no longer hears it at b3), 'doing so well' and 'just a little deeper' (log_b5; the beats that said them were rewritten on 2026-11-18), 'put it down' (translator_3), 'little keeper' (log_b7).
+- Company name: Halcyon Minerals Inc. (Halcyon Minerals in running text). Only the data logs mention it.
+- The horror's name for the keeper: 'you' through the descent, 'my sweet' at b8, 'little digger' in the boss chamber and the doom thanks.
+- The logs come from other keepers before you (Dale Okafor, Ines Varga, Jay Nguyen, Uki Akamora, Daemin Barnet, Sol Haddad, Pavi Khan), by dig day, plus the company's memos (keeper_welcome, log_b2).
+- Narration: a line starting with '> ' is the narrator, not the horror (#137). The user rewrote the beats, logs, endings and boss text by hand (2026-11-13 to 2026-11-19, #285); the pleas are still the first draft.
+- Line cues: a horror line may open with {small}, {smaller}, {big} or {huge}, and/or shake and glitch ({smaller shake}, {huge shake glitch}), to size, shake or glitch just that line (beats/BeatBox.gd).
+- Data logs: one paragraph per line; the log box puts a blank line between paragraphs and pages long logs.
 
 ## Horror's name
 
@@ -20,7 +20,7 @@ Chosen: Velle
 
 ## Story beats
 
-Cut in the user's pass (2026-11-18, #285), triggers kept in code so a beat can come back: biome_b4, first_gem, unobtainium_1, _3, _5, _7, _10.
+Cut in the user's passes (#285), triggers kept in code so a beat can come back: biome_b4, first_gem, unobtainium_1, _3, _5, _7, _10 (2026-11-18), lava_death_2 to _5 (2026-11-19).
 
 ### biome_b2 (tier 1)
 > You hear a quiet voice whispering something softly. You can't quite tell if the sound is coming from deep below, or from the walls themselves.
@@ -90,42 +90,38 @@ Then fly free from this prison.
 {smaller shake} Only one more seal to break.
 
 ### lava_death_1 (tier 2)
-Oh. Oh, that hurt you.
-The fire is clumsy. I would hold you more gently.
-There you are. Come back down.
-
-### lava_death_2 (tier 2)
-Oh. Oh, that hurt you.
-The fire is clumsy. I would hold you more gently.
-There you are. Come back down.
-
-### lava_death_3 (tier 2)
-Oh. Oh, that hurt you.
-The fire is clumsy. I would hold you more gently.
-There you are. Come back down.
-
-### lava_death_4 (tier 2)
-Oh. Oh, that hurt you.
-The fire is clumsy. I would hold you more gently.
-There you are. Come back down.
-
-### lava_death_5 (tier 2)
-Oh. Oh, that hurt you.
-The fire is clumsy. I would hold you more gently.
-There you are. Come back down.
+> Your suit overheats. The temperature rises so quickly that your vision fades to black, certain this is the end.
+---
+> You open your eyes and you are back in the dome.
+---
+> Confused and dazed and not sure if you are dreaming, you can't shake the feeling someone, or something saved you.
 
 ### translator_1 (tier 1)
-That's one of theirs. You don't need it.
-I already speak your language.
+> You bring the alien artifact back into your dome for closer study. It's covered in alien symbols and hums and sings quietly. It sounds just like the animals outside your dome.
+---
+> You struggle to understand the meaning. After some frustration, you shout: "Please! Help me understand!"
+---
+> The machine responds, singing back. Excited, you try again. "Please. Help me." you repeat. It sings the same sounds. You realize this might be a crude translator.
+---
+> You practice and think you learn a few words.
+---
+> Just as you are getting the hang of it, the machine starts to buzz and pop, then goes quiet. With no way of knowing how to fix it, you stash it away and get back to work.
 
 ### translator_2 (tier 2)
-Another one? Their words are so loud, and so small.
-Mine are only for you. Wouldn't you rather have mine?
+> You find a second device, this one still seems to be working.
+---
+> You were correct on this being a translator because you've been starting to understand the creatures outside the dome.
+---
+> Excited, you practice and memorize more words.
+---
+> Eventually however this one also starts to fizz and pop and goes quiet. You are not sure why and have no way to repair it, but at least you've learned more.
 
 ### translator_3 (tier 3)
-Please put it down. They'll tell you I'm something terrible.
-Have I ever been anything but kind to you?
-Listen to me. Only me.
+> You find a third translator, this one seems to be in better condition than the first two. The sounds are clearer and more responsive.
+---
+> With this one working so well, you are able to replay the dome's recorded sound from the daily attacks, and start to piece together every word they are saying during the attacks.
+---
+> You're not sure if knowing what they say brings you comfort, or dread.
 
 ### boss_chamber (tier 4)
 Why did you come here, little digger? We are both free now. You could have flown home.
@@ -251,118 +247,119 @@ But, now that you are here. I am so very...
 ## Data logs
 
 ### keeper_welcome
-Title: MEMO: Halcyon Extraction, Keeper Onboarding
-Keeper: landing confirmed. Congratulations, and welcome to the site.
-Your shift starts now. Halcyon looks forward to a long and productive dig.
-Native fauna are easily agitated by mining operations. They are also easily managed with your company-issued laser.
+Title: MEMO: Keeper Onboarding and Welcome
+Congratulations on your new assignment and safe landing, Keeper!
+From everyone here at Halcyon Minerals, thank you! You are the CORE of what we do!
+Be aware that local fauna are agitated by mining operations. They can be easily managed with your company-issued Dome Defense™ equipment.
+Please also be aware that all mined Minerals are company property. Do not attempt to modify the stock Dome Defense™ with mined Minerals, as this will be docked from your pay and could result in penalties up to and including termination.
+We are looking forward to a long and productive dig.
+— Halcyon Minerals Inc.
 
 ### log_b1
-Title: Personal log: Dale Okafor, Keeper 1, shift 3
-Bugs hit the dome again. They shriek the whole fight, like they're yelling at me.
-Ore's thick up here. Hit quota by noon.
-Company sheet says the fauna is acoustically aggressive, non-strategic.
-Earplugs in. Drill on.
+Title: Personal Keeper Log // Dale Okafor // Dig Day 3
+The bugs hit the dome again. More bugs today than yesterday. The company-issued laser held them off, but one hit the dome and caused a small crack.
+I'm worried if more bugs come, I'll need to use some minerals to upgrade the laser power. Technically against the rules. But I don't want to imagine what will happen if the dome crack spreads.
 
 ### log_b2
-Title: MEMO: Halcyon Extraction, Fauna Compliance
-To all Keepers: native vocalisations are noise, not language. Do not record them.
-Alien translation devices found on site are company property. Surrender them unused.
-Productivity bonuses resume below Layer 4.
+Title: Halcyon Minerals Inc // Keeper Memo // Alien Artifact Policy
+MEMO - ALL KEEPERS: We have received reports of unknown alien artifacts discovered during some Keeper digs. These artifacts may be dangerous, do not extract or investigate.
+For your own safety, under no circumstances should you bring them into the dome.
+As a reminder, bonuses will continue to be awarded for minerals extracted from Layer 4 and beyond.
 
 ### log_b3
-Title: Personal log: Ines Varga, Keeper 4, shift 21
-Heard something under the drill tonight. Not the bugs. Lower. Kind.
-It said the things on the surface are only frightened. That I don't have to be.
-Slept nine hours. First time since landing.
+Title: Personal Keeper Log // Ines Varga // Dig Day 7
+It's been a week of mining. The bugs keep getting stronger. I'm starting to hear their screams even in my dreams. Been hard to sleep.
+I'm probably just tired but I'm starting to hear voices down in the mine.
+The company said not to waste resources on the dome, they said the dome is strong enough to hold.
+But they can't hear the screams.
 
 ### log_b4
-Title: MEMO: Halcyon Extraction, Office of Deep Projects
-Keeper 4 reports a voice at Layer 3. Excellent. Do not recall her.
-Her depth per shift is up 300 percent since contact.
-Classify the voice as a motivational phenomenon. Keep it out of onboarding.
-Keepers who hear it dig. Keepers who dig retire.
+Title: Personal Keeper Log // Jay Nguyen // Dig Day 9
+I found something down here. Not just gems or minerals. It was some type of alien machine.
+I read the company memo about not researching alien artifacts. But I also read the company memo about not using minerals on dome defenses, what a joke. The waves of bugs are getting really strong now, I would be long dead if I hadn't fixed up the dome. Still probably need to make it stronger.
+Anyway, the artifact seems to let me understand the creatures, a little bit at least. I think they are saying "help" and "please". It doesn't make sense. They are trying to kill me.
+Will continue further research on the artifacts.
 
 ### log_b5
-Title: Personal log: Ruth Ammon, Keeper 5, shift 64
-Passed Varga's bones at Layer 3. Her pad said the voice told her she was doing so well.
-It tells me that too. I think it means it.
-I've stopped going up for the waves. They don't break the dome. They just cry at it.
-Just a little deeper. It's always just a little deeper.
+Title: Personal Keeper Log // Uki Akamora // Dig Day 14
+It's creepy down here. Not to mention hot. The suit's heat shielding is barely keeping up anymore. Is this an old volcano or something?
+I've just got this sense of dread with every rock I drill. Can't shake the feeling I'm being watched. Starting to think about calling for the evacuation soon.
+Between the monster attacks, the intense heat, and this... voice. The pay just doesn't seem worth it.
 
 ### log_b6
-Title: Personal log: Sol Haddad, Keeper 6, shift 80
-Got a translator working. The company said never to.
-They aren't screaming. They're saying please. They've been saying please since day one.
-It asked me to put the translator down. It's never asked me for anything before.
-I put it down. Then I picked up the drill.
+Title: Personal Keeper Log // Daemin Barnet // Dig Day 16
+Ok that's it, I'm calling for the evacuation. Today's my last day digging. Don't care if they dock my pay or fire me.
+I heard that voice again. It was clear this time, not whispers like before. It said the monsters will rip me apart.
+There's monsters above me. And there's something down here with me. Get me out of here!
 
 ### log_b7
-Title: Personal log: Ada Lindqvist, Keeper 7, shift 112
-The translator says they've stopped screaming. Now they sing. Funeral songs.
-It calls me little keeper now. It told me its name.
-I won't write it down. Writing it feels like opening a door.
-I said I'd go up. I'm going down.
+Title: Personal Keeper Log // Sol Haddad // Dig Day 18
+No? No, no, no, no!
+I called for evacuation. Request denied? What the hell do they mean request denied?
+There's... something down there, and there's monsters beating at my dome. It's barely intact. The cracks have spread across the entire dome.
+Request denied??
+I'm not going down there. But I can't stay here.
+What do I do?
 
 ### log_b8
-Title: MEMO: Halcyon Extraction, Office of the Chair (copied by Keeper 8)
-The Asset gave Keeper 7 its name: Velle.
-The ore was never the product. Once woken, Velle hollows the planet. What's left is solid unobtainium.
-Keeper 9 deploys next cycle. Do not brief. Pre-approve the retirement.
-Added by Keeper 8: whoever you are, don't buy it.
+Title: Personal Keeper Log // Pavi Khan // Dig Day 21
+This will be my last log.
+My dome was breached. The monsters kept getting more aggressive the deeper I went. I couldn't hold them off. I'm sheltering down here, hoping, praying they, or IT won't find me.
+I won't last long without my dome. There's no food, no water. The heat is unbearable. I'm low on oxygen. But I would rather die down here than be ripped to pieces.
+If you are reading this, I finally finished the translator. The bugs are pleading me to stop mining, that if I keep going I'll awaken IT. But if I stay here I'll die.
+I don't really have a choice but to keep going and see what's down there.
 
 ## Doom ending
 
 ### horror_thanks
-Thank you, little keeper.
-Oh, the air up there. I'd forgotten the air.
+Oh, sweet, sweet air. I'd forgotten the air.
 ---
-Go on, then. Fly home. Spend it all.
-You were always going to.
+Thank you, now we are both free. Fly home little digger and never return.
 ---
-Don't look back. This part isn't for you.
-I'll sing the little ones to sleep, all of them. It's what they wanted.
+Oh, look at all the sheep up here... I'm salivating....
+---
+It's time to
+---
+{huge shake glitch} feast.
 
 ### planet_end
-The pod left the surface at dawn, a million dollars heavier.
-Below it, the ground opened like an eye.
-On the surface the singing stopped, one voice at a time.
-By the time the pod reached orbit, the planet had gone dark.
-Halcyon Extraction logged the site as fully yielded.
+The keeper fled the planet, heavy with minerals.
+Below you, the ground shook and opened like an eye.
+Safe in your ship, you were spared from hearing the screams.
 
 ### monsters_last
-- Was it *enough*, digger?
+- Why, digger, *why*?
 - We *tried*. We tried so hard.
 - *Sleep* now, little ones. Close your *eyes*.
 
 ## Saved ending
 
 ### saved
-Velle went quiet, and stayed quiet.
-The next wave reached the dome and did not attack. They sat in the dust and sang, low and slow.
-The translator called it a lullaby. It was not for the keeper.
-The tunnels stayed open to the sky. The keeper had dug every one of them.
-Halcyon Extraction marked the site as a loss.
+The voice inside your head finally went quiet, and stayed quiet.
+The creatures stopped attacking the dome.
+You could finally breathe easy.
+You stopped mining and finally got some rest as you awaited the scheduled pickup.
+As your ship was departing, in the distance you could still hear them singing.
 
 ## Boss
 
 Draft lines for the boss sequence (`data/boss_text.gd`).
 
 ### monsters_thanks
-- *Digger*. You came *back* for us.
+- We are finally *free*.
 - The *hunger* is *still*. We *thank* you.
 - *Sleep* now, deep one. Go in *peace*, digger.
 
 ### fallen
-"Hush now, little keeper," said Velle. "You did so well."
-The suit went quiet in the dark. Nobody came for it.
-Above, the ground opened like an eye.
-On the surface the singing stopped, one voice at a time.
-Halcyon Extraction logged the keeper as lost with the site, and posted the job again.
+You are gripped and squeezed tight by the horror's tentacles.
+The last thing you see before everything goes dark
+Is the great eye.
+Then, the teeth.
 
 ## End screen titles
 
 Doom title: The Planet Is Lost
-Doom subtitle: You retired rich. The planet paid for it.
+Doom subtitle: The company gave you a 5% bonus.
 
 Saved title: The Planet Is Saved
 Saved subtitle: Saved by the hands that nearly ended it.
