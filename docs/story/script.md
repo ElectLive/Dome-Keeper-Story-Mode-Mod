@@ -2,10 +2,11 @@
 
 Notes for implementers:
 - Company name, used everywhere: Halcyon Extraction. Only the data logs and the planet_end narration mention it.
-- The horror's name for the keeper, starting at unobtainium_1: little keeper. Every beat that can fire before the first unobtainium (biomes, first_gem, gate_broken, lava deaths, translators) says only 'you', so the address stays right whatever order the player finds things in.
+- The horror's name for the keeper: 'you' through the descent, 'my sweet' at b8, 'little digger' in the boss chamber. (The unobtainium beats that introduced 'little keeper' were cut on 2026-11-18; the doom thanks and the logs still use it.)
 - The player is meant to work out that they are Keeper 9. The logs come from Keepers 1, 4, 5, 6, 7 and 8. The gaps are deliberate.
-- Narration: a line starting with '> ' is the narrator, not the horror (#137). The first beats (b2, b3) open with narration. The user wrote these (2026-11-13); the rest of the script still needs a human pass.
-- Lines the logs echo on purpose: 'only frightened, you don't have to be' (log_b3 only: the horror said it to Ines Varga, the keeper no longer hears it at b3), 'doing so well' and 'just a little deeper' (b4, b6), 'put it down' (translator_3), 'little keeper' (log_b7, then unobtainium_1).
+- Narration: a line starting with '> ' is the narrator, not the horror (#137). The user wrote b2 and b3 (2026-11-13) and b5 to b8, lava_ocean, gate_broken and boss_chamber (2026-11-18, #285); the rest still needs a human pass.
+- Line cues: a horror line may open with {small}, {smaller}, {big} or {huge}, optionally with shake ({smaller shake}), to size or shake just that line (beats/BeatBox.gd).
+- Lines the logs echo on purpose: 'only frightened, you don't have to be' (log_b3 only: the horror said it to Ines Varga, the keeper no longer hears it at b3), 'doing so well' and 'just a little deeper' (log_b5; the beats that said them were rewritten on 2026-11-18), 'put it down' (translator_3), 'little keeper' (log_b7).
 
 ## Horror's name
 
@@ -19,6 +20,8 @@ Chosen: Velle
 
 ## Story beats
 
+Cut in the user's pass (2026-11-18, #285), triggers kept in code so a beat can come back: biome_b4, first_gem, unobtainium_1, _3, _5, _7, _10.
+
 ### biome_b2 (tier 1)
 > You hear a quiet voice whispering something softly. You can't quite tell if the sound is coming from deep below, or from the walls themselves.
 ---
@@ -30,45 +33,61 @@ Hello digger.
 ---
 I'm so happy you're here.
 
-### biome_b4 (tier 2)
-The monsters trapped me. Caged me. Beat me. Flayed me. But you can save me.
----
-You're doing so well.
-Every layer you lift is a blanket off my face.
-Just a little deeper.
-
 ### biome_b5 (tier 2)
-I can hear your heartbeat through the stone.
-It keeps time with the drill. Isn't that lovely?
-Don't go up yet.
+> The heat down here is causing sweat to build up on your face. With no way to wipe it away, the moisture fogs the inside of your visor. Through the fog and rock dust, you think you see something moving.
+---
+> No. Not moving.
+---
+> Something watching.
 
 ### biome_b6 (tier 2)
-Others came before you. They stopped about here, for a while.
-They always came down in the end.
-Just a little deeper.
+> The heat is getting more intense the deeper you drill. You hope it's only from the heat and exhaustion, but you hear the voice again. You really hope it's the heat.
+---
+They are trying to kill you, the monsters above. It's what they did to me. It's what they did to the others.
+---
+The others like you.
+---
+The monsters ripped their homes. Then they ripped their bodies. Only bones remain.  I can help you.  I can save you.
 
 ### biome_b7 (tier 3)
-I've waited such a long time for hands like yours.
-Patient hands. Hungry hands.
-Closer.
+> You continue to push through the heat and the rock. As the days pass, you begin to wonder why the monster attacks are getting stronger every day. But these thoughts are interrupted by the voice again. Only this time, the sound is sweet. Like the voice of a long-lost friend.
+---
+You're trapped here, aren't you?
+---
+Just like me.
+---
+They abandoned you.
+---
+Like a bird with broken wings. No way to fly home.
+---
+But I can heal your wings.
 
 ### biome_b8 (tier 3)
-This is the last crust between us.
-Under it, everything is warm and bright, and all of it is yours.
-I only want one small thing back. Keep digging.
+> The heat here is suffocating. But you have no choice except to continue mining. The valuable gems down here are necessary for fending off the waves and waves of brutal assaults on your dome.
+---
+> Your bones ache from mining. You're sleep deprived. Every night you are awoken by the siren of another attack. You're certain now it's a hallucination when you hear the voice again echo though the cavern.
+---
+You are almost home, my sweet. Keep digging just a bit more. I have what you need to fly home. Simply break the chains.
 
 ### lava_ocean (tier 3)
-Swim, then. The fire won't mind you.
-The bright stone is down there. Your kind call it a fortune.
-Every piece you lift, I breathe a little easier. Take as many as you like.
-
-### first_gem (tier 1)
-Pretty, isn't it?
-There's so much more. All of it further down.
+> You crack the final rock, you are blown back by a wave of intense heat. You regain your bearings, and look down. Below you floats a bubbling ocean of lava.
+---
+> The voice rises from below the lava. This time loud and booming. The voice fills the chamber, clearly heard over the loud churning of the lava.
+---
+Dive in. Take them.
+---
+Then fly free from this prison.
 
 ### gate_broken (tier 2)
-Someone locked that door a long time ago.
-Not against you. Never against you.
+> The metal shards explode in a deafening boom. You wipe the dust from your visor as an eerie silence settles on the cave.
+---
+> ...
+---
+> You hope it's your imagination, but you think you hear the faint voice again from somewhere deep in the gloom.
+---
+{small} Thank you.
+---
+{smaller shake} Only one more seal to break.
 
 ### lava_death_1 (tier 2)
 Oh. Oh, that hurt you.
@@ -108,37 +127,12 @@ Please put it down. They'll tell you I'm something terrible.
 Have I ever been anything but kind to you?
 Listen to me. Only me.
 
-### unobtainium_1 (tier 3)
-Ah. Ahh. Did you feel that?
-Something very old just cracked, little keeper.
-Do it again.
-
-### unobtainium_3 (tier 3)
-Three. I can feel my fingers again, little keeper.
-The first thing they touch will be you.
-
-### unobtainium_5 (tier 3)
-Five. I can see your lamp through my eyelids, little keeper.
-Up there, they're crying. Down here, I'm smiling.
-Keep digging.
-
-### unobtainium_7 (tier 4)
-Seven. My heart has started again. It beats with yours.
-I'm so proud of you, little keeper.
-Bring me the rest, and I'll give you everything you came here for.
-
-### unobtainium_10 (tier 4)
-Ten. The seal is only a whisper now, little keeper.
-Come to the middle of the world. I want to see your face.
-Or go home rich, if you like. I'll be awake to wave goodbye.
-
 ### boss_chamber (tier 4)
-There you are. Oh, look at you. So small, after all that digging.
-You were so good, little keeper. Better than the others.
-The little ones above have a word for me. It means hunger. That's unkind.
-My name is Velle. It means wanting.
-You know all about wanting, don't you?
-Now come closer, and let me open my eyes.
+Why did you come here, little digger? We are both free now. You could have flown home.
+---
+But, now that you are here. I am so very...
+---
+{big shake} hungry.
 
 ## Pleas
 
